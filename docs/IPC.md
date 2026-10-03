@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.5 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.6 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -337,7 +337,8 @@ type TorrentStats = {
   downloadedBytes: number;
   bufferedAheadBytes: number;      // contiguos desde la posición de lectura actual
   availableRanges: [number, number][]; // fracciones 0–1 ya en disco (barra de progreso: "saltar ahí es inmediato")
-  pieceMap: string | null;         // solo mientras hay un stream abierto. Muestreado a 200 celdas: "0" falta, "1" lista, "2" prioritaria (falta y está dentro de la ventana de ~32 MB que librqbit prioriza desde cada posición de lectura), "3" llegando (reservado: hoy no se emite porque librqbit no expone las piezas en vuelo)
+  pieceMap: string | null;         // solo mientras hay un stream abierto. 200 celdas sobre la VENTANA pieceMapWindow (no sobre el archivo entero): "0" falta, "1" lista, "2" prioritaria (falta y está dentro de la ventana de ~32 MB que librqbit prioriza), "3" llegando (reservado, hoy no se emite)
+  pieceMapWindow: { startByte: number; endByte: number } | null; // ventana del pieceMap: 64 MB desde la posición de lectura actual (antes de la primera lectura, desde resumeAtS o el byte 0); si el archivo es más chico, el archivo entero. ~330 KB por celda: el llenado del búfer de 8 MB se ve en ~25 celdas. El progreso global va en progress/availableRanges
 };
 
 type StreamPhase =
@@ -383,3 +384,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.3** (2026-10-03): `coverUrl`/`coverLargeUrl` pasan a `string | null`. Las URLs locales valen solo para la sesión y se reescriben al leer de la DB.
 - **v0.4** (2026-10-03): `MovieSummary.maxSeeds` y `MovieDetail.screenshotUrls`.
 - **v0.5** (2026-10-03): `TorrentStats.seeds` = seeds de YTS (estático); pieceMap "3" reservado y sin emitir; `start_stream` usa el `.torrent` de YTS y cae al magnet si falla (la fase `metadata` solo aparece en ese caso).
+- **v0.6** (2026-10-03): `pieceMap` se muestrea sobre una ventana de 64 MB desde la posición de lectura; nuevo `TorrentStats.pieceMapWindow`.
