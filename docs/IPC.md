@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.1 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.2 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -68,7 +68,7 @@ type MovieSummary = {
   year: number;
   rating: number;                  // IMDb 0–10
   runtimeMin: number;
-  genres: string[];
+  genres: string[];                // con las mayúsculas de la API ("Sci-Fi"); para filtrar se usa el valor en minúsculas (ver Géneros)
   coverUrl: string;                // portada mediana, servida desde caché local
   coverLargeUrl: string;
   backgroundUrl: string | null;
@@ -137,6 +137,8 @@ type ApiEndpointStatus = {
   ok: boolean;
 };
 ```
+
+**Géneros:** no hay comando para listarlos (la API de YTS no los expone). El front tiene una lista fija en `src/lib/genres.ts` de pares `{ value, label }`: `value` es lo que se manda en `ListMoviesParams.genre` (minúsculas, p. ej. `"sci-fi"`) y `label` es el texto en español. Géneros de YTS: action, adventure, animation, biography, comedy, crime, documentary, drama, family, fantasy, film-noir, history, horror, music, musical, mystery, romance, sci-fi, sport, thriller, war, western.
 
 El caché (TTL de unos 30 minutos) y el failover entre URLs base son internos del backend y no cambian el contrato. `get_api_status` alimenta la sección "Catálogo" de Ajustes.
 
@@ -373,3 +375,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 ## Cambios
 - **v0** (2026-10-03): borrador inicial del MVP.
 - **v0.1** (2026-10-03): reglas de opcionales separadas para entradas y salidas, `SettingsPatch` (null = borrar, ausente = no tocar), tipo `ClearCacheResult` con nombre, `dataDir` se aplica al reiniciar, `Torrent.source` desconocido → `"web"`.
+- **v0.2** (2026-10-03): `genres` mantiene las mayúsculas de la API y el filtro va en minúsculas; lista fija de géneros en el front. `Download` no lleva seeds: la salud del enjambre sale de `TorrentStats.seeds`.
