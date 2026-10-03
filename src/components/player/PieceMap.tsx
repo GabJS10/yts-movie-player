@@ -1,6 +1,9 @@
 import { parsePieceMap } from "../../lib/player";
 
-/** 200-cell sample of the torrent: ready pieces fill sequentially ahead of the playhead. */
+/**
+ * 200-cell sample of the torrent: ready pieces fill sequentially ahead of the playhead.
+ * The "arriving" cell style stays for pieceMap "3", which the backend reserves but doesn't emit yet.
+ */
 export function PieceMap({ map }: { map: string | null }) {
   const cells = parsePieceMap(map);
   return (
@@ -18,10 +21,6 @@ export function PieceMap({ map }: { map: string | null }) {
         <span className="inline-flex items-center gap-1.5">
           <i className="inline-block h-[13px] w-[9px] rounded-[1px] shadow-[inset_0_0_0_1px_rgba(106,192,69,.7)]" />
           Prioridad (por delante de la reproducción)
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <i className="inline-block h-[13px] w-[9px] rounded-[1px] bg-[#4d4d4d]" />
-          Llegando de otros peers
         </span>
       </div>
     </div>

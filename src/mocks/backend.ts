@@ -379,8 +379,9 @@ export function createMockBackend(): MockBackend {
   };
 
   /**
-   * One second of a simulated stream: connecting → metadata → buffering (~2 MB/s) → ready.
-   * Versions with fewer than 5 seeds stall after the metadata, to show that state.
+   * One second of a simulated stream, as IPC v0.5 describes it: the .torrent is fetched up front, so
+   * connecting → buffering (~2 MB/s) → ready; `metadata` only on the magnet fallback (not simulated).
+   * Versions with fewer than 5 seeds never get peers and stall, to show that state.
    */
   const streamTick = (sim: StreamSim): TorrentStats => {
     sim.ticks += 1;
@@ -390,32 +391,29 @@ export function createMockBackend(): MockBackend {
     let phase: TorrentStats["phase"];
     if (session.source === "library") phase = "done";
     else if (sim.ticks <= 1) phase = "connecting";
-    else if (sim.ticks <= 2) phase = "metadata";
     else if (starving) phase = "stalled";
     else {
       sim.buffered = Math.min(session.fileSizeBytes, sim.buffered + 1.6 * 1048576 + Math.random() * 1048576);
       phase = sim.buffered >= target ? "ready" : "buffering";
     }
-    const peers = phase === "connecting" ? 3 : starving ? 0 : Math.min(sim.peers, 8 + sim.ticks * 4);
+    const peers = phase === "connecting" || starving ? 0 : Math.min(sim.peers, 4 + sim.ticks * 4);
     const speed =
       phase === "buffering" || phase === "ready" ? 1.6 * 1048576 + Math.random() * 2 * 1048576 : 0;
     const fraction = Math.min(1, sim.buffered / session.fileSizeBytes);
-    // 200 cells: a ready run from the start, a priority window ahead of it, scattered arrivals elsewhere.
-    const readyCells = Math.round((Math.min(sim.buffered, target) / target) * 16);
+    // 200 cells over the whole file: "1" ready, "2" missing inside the ~32 MB window librqbit prioritises
+    // from the read position (0 here). "3" (arriving) is reserved and never emitted.
+    const cell = session.fileSizeBytes / 200;
+    const readyCells = Math.floor(sim.buffered / cell);
+    const windowEnd = Math.ceil((32 * 1048576) / cell);
     const pieceMap =
-      phase === "connecting" || phase === "metadata"
+      phase === "connecting"
         ? "0".repeat(200)
-        : Array.from({ length: 200 }, (_, i) => {
-            if (i < readyCells) return "1";
-            if (i < 40) return "2";
-            const h = (i * 2654435761 + sim.ticks * 97) % 1000;
-            return h < 25 ? "3" : h < 60 ? "1" : "0";
-          }).join("");
+        : Array.from({ length: 200 }, (_, i) => (i < readyCells ? "1" : i < windowEnd ? "2" : "0")).join("");
     return {
       infohash: session.infohash,
       phase,
       peers,
-      seeds: Math.round(peers * 0.7),
+      seeds: sim.seeds, // YTS seeds (static), not connected ones
       downSpeedBps: Math.round(speed),
       upSpeedBps: Math.round(speed * 0.1),
       progress: fraction,
@@ -450,7 +448,7 @@ export function createMockBackend(): MockBackend {
         infohash: d.infohash,
         phase: next.state === "done" ? "done" : "ready",
         peers: next.peers,
-        seeds: Math.round(next.peers * 0.8),
+        seeds: torrentOf(d.infohash).t.seeds,
         downSpeedBps: next.downSpeedBps,
         upSpeedBps: 400 * 1024,
         progress: next.progress,

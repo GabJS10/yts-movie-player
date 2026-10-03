@@ -34,7 +34,7 @@ export function BufferScreen({ movie, torrent, session, stats, alternative, resu
         </h1>
         <div className="mt-3.5 mb-8 flex flex-wrap items-center gap-2.5">
           <ReleaseTag torrent={torrent} on />
-          {/* Swarm size as YTS reports it: connected seeds start at 0 and would read as "pocos seeds". */}
+          {/* Seeds are YTS's static count (IPC v0.5); only peers are live. */}
           <SwarmSignal seeds={torrent.seeds} peers={torrent.peers} />
           {resumeAtS ? <span className="text-[13px] text-muted">Retomando donde lo dejaste</span> : null}
         </div>

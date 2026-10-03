@@ -84,7 +84,7 @@ export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerSta
 
 export const PHASE_TEXT: Record<StreamPhase, string> = {
   connecting: "Conectando al enjambre…",
-  metadata: "Leyendo los datos del torrent…",
+  metadata: "Resolviendo el magnet…", // only on the magnet fallback (no .torrent from YTS)
   buffering: "Llenando el búfer…",
   ready: "Listo",
   stalled: "Sin datos: nadie está enviando piezas",
