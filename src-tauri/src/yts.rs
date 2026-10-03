@@ -322,12 +322,21 @@ impl YtsClient {
             background_url: img(&m.background_image).or_else(|| img(&m.background_image_original)),
             qualities,
             has_x264: torrents.iter().any(|t| t.video_codec == VideoCodec::X264),
+            max_seeds: torrents.iter().map(|t| t.seeds).max().unwrap_or(0),
         }
     }
 
     fn detail(&self, m: RawMovie) -> MovieDetail {
         let torrents = convert_torrents(&m.torrents);
         let summary_fields = self.summary(&m, &torrents);
+        let screenshot_urls = [
+            &m.large_screenshot_image1,
+            &m.large_screenshot_image2,
+            &m.large_screenshot_image3,
+        ]
+        .into_iter()
+        .filter_map(|u| self.images.local_url(u.as_deref()))
+        .collect();
         let cast = m
             .cast
             .unwrap_or_default()
@@ -349,6 +358,7 @@ impl YtsClient {
             language: m.language.unwrap_or_default(),
             mpa_rating: non_empty(&m.mpa_rating),
             yt_trailer_code: non_empty(&m.yt_trailer_code),
+            screenshot_urls,
             cast,
             torrents,
             // Filled from the DB in phase 4.
@@ -575,6 +585,9 @@ struct RawMovie {
     small_cover_image: Option<String>,
     medium_cover_image: Option<String>,
     large_cover_image: Option<String>,
+    large_screenshot_image1: Option<String>,
+    large_screenshot_image2: Option<String>,
+    large_screenshot_image3: Option<String>,
     cast: Option<Vec<RawCast>>,
     torrents: Option<Vec<RawTorrent>>,
 }

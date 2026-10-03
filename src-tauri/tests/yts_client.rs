@@ -95,6 +95,10 @@ async fn list_movies_fixture() {
     assert!(first.imdb_code.starts_with("tt"));
     assert_eq!(first.qualities, vec![Quality::P720, Quality::P1080]);
     assert!(first.has_x264);
+    // Seeds per torrent in the fixture: [0, 0], [0, 100], [0, 23], [56, 100].
+    assert_eq!(first.max_seeds, 0);
+    let max_seeds: Vec<u32> = page.movies.iter().map(|m| m.max_seeds).collect();
+    assert_eq!(max_seeds, vec![0, 0, 100, 23, 100]);
     assert!(is_local_img(first.cover_url.as_deref().unwrap()));
     assert!(is_local_img(first.cover_large_url.as_deref().unwrap()));
     assert!(is_local_img(first.background_url.as_deref().unwrap()));
@@ -126,6 +130,19 @@ async fn movie_details_fixture() {
         vec![Quality::P720, Quality::P1080, Quality::P2160]
     );
     assert!(s.has_x264);
+    // Seeds per torrent: 37, 93, 39, 100, 100.
+    assert_eq!(s.max_seeds, 100);
+    assert_eq!(movie.screenshot_urls.len(), 3);
+    assert!(movie.screenshot_urls.iter().all(|u| is_local_img(u)));
+    assert_eq!(
+        movie.screenshot_urls[0],
+        format!(
+            "{LOCAL}/img/{}",
+            ImageStore::hash_of(
+                "https://yts.gg/assets/images/movies/the_matrix_resurrections_2021/large-screenshot1.jpg"
+            )
+        )
+    );
     assert!(movie
         .summary
         .starts_with("Return to a world of two realities"));
@@ -256,6 +273,43 @@ async fn missing_covers_become_null_and_large_falls_back_to_medium() {
     let value = serde_json::to_value(none).unwrap();
     assert_eq!(value["coverUrl"], serde_json::Value::Null);
     assert_eq!(value["coverLargeUrl"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn details_without_torrents_or_screenshots() {
+    let server = MockServer::start().await;
+    let body = r#"{"status":"ok","data":{"movie":{"id":7,"title":"Bare",
+        "large_screenshot_image1":"","large_screenshot_image2":null,
+        "large_screenshot_image3":"https://yts.gg/assets/s3.jpg"}}}"#;
+    Mock::given(path("/api/v2/movie_details.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+    let h = client(vec![base(&server)]);
+
+    let movie = h.client.get_movie(7).await.unwrap();
+    assert_eq!(movie.summary_fields.max_seeds, 0);
+    assert!(movie.torrents.is_empty());
+    // Empty and null screenshots are dropped.
+    assert_eq!(movie.screenshot_urls.len(), 1);
+    assert!(is_local_img(&movie.screenshot_urls[0]));
+
+    let value = serde_json::to_value(&movie).unwrap();
+    assert_eq!(value["maxSeeds"], 0);
+    assert_eq!(value["screenshotUrls"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn details_with_no_screenshots_is_empty_list() {
+    let server = MockServer::start().await;
+    let body = r#"{"status":"ok","data":{"movie":{"id":8,"title":"None"}}}"#;
+    Mock::given(path("/api/v2/movie_details.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+    let h = client(vec![base(&server)]);
+    let value = serde_json::to_value(h.client.get_movie(8).await.unwrap()).unwrap();
+    assert_eq!(value["screenshotUrls"], serde_json::json!([]));
 }
 
 // ---------------------------------------------------------------------------

@@ -103,6 +103,8 @@ pub struct MovieSummary {
     pub qualities: Vec<Quality>,
     #[serde(rename = "hasX264")]
     pub has_x264: bool,
+    /// Highest seed count among its torrents; 0 without torrents.
+    pub max_seeds: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -123,6 +125,8 @@ pub struct MovieDetail {
     pub language: String,
     pub mpa_rating: Option<String>,
     pub yt_trailer_code: Option<String>,
+    /// Large screenshots served by the local server; empty if none.
+    pub screenshot_urls: Vec<String>,
     pub cast: Vec<CastMember>,
     pub torrents: Vec<Torrent>,
     pub is_favorite: bool,
@@ -460,6 +464,7 @@ mod tests {
             background_url: None,
             qualities: vec![Quality::P720, Quality::P1080, Quality::P2160],
             has_x264: true,
+            max_seeds: 100,
         }
     }
 
@@ -476,7 +481,8 @@ mod tests {
             "coverLargeUrl": "http://127.0.0.1:1/img/b",
             "backgroundUrl": null,
             "qualities": ["720p", "1080p", "2160p"],
-            "hasX264": true
+            "hasX264": true,
+            "maxSeeds": 100
         })
     }
 
@@ -685,6 +691,7 @@ mod tests {
             language: "en".into(),
             mpa_rating: None,
             yt_trailer_code: Some("9ix7TUGVYIo".into()),
+            screenshot_urls: vec!["http://127.0.0.1:1/img/c".into()],
             cast: vec![CastMember {
                 name: "Keanu Reeves".into(),
                 character: Some("Neo".into()),
@@ -701,6 +708,7 @@ mod tests {
             "language": "en",
             "mpaRating": null,
             "ytTrailerCode": "9ix7TUGVYIo",
+            "screenshotUrls": ["http://127.0.0.1:1/img/c"],
             "cast": [{ "name": "Keanu Reeves", "character": "Neo", "imageUrl": null }],
             "torrents": [],
             "isFavorite": false,
