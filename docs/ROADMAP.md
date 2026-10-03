@@ -14,8 +14,8 @@
 |---|---|---|---|
 | 0 | Planificación y diseño | Plan, contrato IPC y prototipo navegable | ✅ Terminada |
 | 1 | Base del proyecto y tooling | La app abre una ventana con la estructura de navegación; CI en verde | ✅ Terminada (`fase-1`) |
-| 2 | Catálogo | Home, Búsqueda y Ficha con datos reales de YTS | ⏳ Siguiente |
-| 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | — |
+| 2 | Catálogo | Home, Búsqueda y Ficha con datos reales de YTS | ✅ Terminada (`fase-2`) |
+| 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | ⏳ Siguiente |
 | 4 | Persistencia: Mi lista, Continuar viendo y Ajustes base | Favoritos y progreso que sobreviven a un reinicio | — |
 | 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | — |
 | 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | — |
@@ -72,7 +72,7 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Tests:** la infraestructura en las dos capas, con al menos un test real por capa y el CI corriéndolos.
 - **Cierre:** `npm run tauri dev` abre la ventana con el shell y se puede navegar entre las rutas (vacías). El CI está en verde. Tag `fase-1`.
 
-## Fase 2: Catálogo
+## Fase 2: Catálogo ✅
 
 **Objetivo:** recorrer el catálogo real de YTS con la interfaz tipo Netflix.
 
@@ -166,6 +166,10 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Cierre:** una película descargada se reproduce **sin red**, la caché no pasa del límite y los límites de velocidad funcionan. Tag `fase-6`.
 
 ## Fase 7: Tráilers, pulido, robustez y E2E
+
+**Problemas conocidos que se arrastran (el usuario los aceptó en la fase 2, se arreglan aquí):**
+- Buscar: los filtros se pierden al ir a Inicio y volver por la navegación (atrás/adelante sí los conserva). Recordar la última búsqueda (p. ej. en Zustand) al volver a `/search`.
+- Teclado: en la app real las flechas solo desplazan la página y no mueven el foco entre tarjetas ni filas (los tests unitarios pasan, así que revisar el foco inicial y el manejo de eventos dentro de la WebView).
 
 **Objetivo:** una app que se siente terminada y que no deja al usuario sin salida.
 
