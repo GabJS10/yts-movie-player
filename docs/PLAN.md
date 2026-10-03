@@ -86,6 +86,7 @@ yts-movie-player/
 - Tema oscuro, navegable con teclado, tarjetas con hover y una animación de escala.
 
 ## Fases de implementación
+> **Sustituido por [`ROADMAP.md`](ROADMAP.md)**, que tiene el detalle por agente, los tests y los criterios de cierre (y cambia el orden: persistencia antes que subtítulos). Esta lista se conserva como referencia.
 1. **Base**: `npm create tauri-app` (React-TS, Vite) + Tailwind, router y TanStack Query. Instalar `libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`, `librsvg2-dev` y `libayatana-appindicator3-dev`.
 2. **Catálogo**: `yts.rs`, comandos, Home con filas, Búsqueda/Filtros, Ficha y caché de imágenes.
 3. **Streaming**: librqbit + servidor local + Player básico. **Este es el hito crítico**, hay que validarlo antes de seguir.

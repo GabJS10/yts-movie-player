@@ -6,11 +6,13 @@ Guía para agentes de IA (y personas) que trabajen en este repositorio.
 **YTS Player**: app de escritorio estilo Netflix para explorar el catálogo de YTS y reproducir películas en streaming desde torrent (con opción de descargarlas), subtítulos en español automáticos, trailers, "Mi lista" y "Continuar viendo".
 
 - Plan completo: [`docs/PLAN.md`](docs/PLAN.md)
+- Roadmap por fases (qué hace cada agente en cada fase, tests y criterios de cierre): [`docs/ROADMAP.md`](docs/ROADMAP.md)
+- Contrato IPC frontend ⇄ backend: [`docs/IPC.md`](docs/IPC.md)
 - Referencia de la API de YTS: [`docs/YTS-API.md`](docs/YTS-API.md)
 - Sistema de diseño (tokens, tipografía, componentes): [`DESIGN.md`](DESIGN.md); contexto de producto: [`PRODUCT.md`](PRODUCT.md)
 - Prototipo navegable de todas las pantallas: `design/prototype/index.html` (servir con `python3 -m http.server` desde esa carpeta)
 
-**Estado actual:** planificación y diseño (prototipo) terminados; todavía no hay código de la app. Siguiente paso: Fase 1 (base del proyecto) y Fase 2 (catálogo) de `docs/PLAN.md`.
+**Estado actual:** fase 0 (planificación y diseño) terminada; todavía no hay código de la app. Siguiente: fase 1 de `docs/ROADMAP.md`.
 
 ## Forma de trabajo (multi-agente)
 El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia tab del workspace `yts-movie-player` de [Herdr](https://herdr.dev). Hoy los tres son Claude Code, pero el flujo no depende del harness (puede entrar Codex u otro): **este `AGENTS.md` es la fuente de verdad**, y `CLAUDE.md` solo lo importa.
