@@ -47,4 +47,13 @@ describe("query hooks (mockIPC)", () => {
     expect(result.current.data!.length).toBeGreaterThan(0);
     expect(result.current.data!.every((m) => m.id !== 1632)).toBe(true);
   });
+
+  it("get_movie exposes sharp stills and summaries carry maxSeeds", async () => {
+    installBackend();
+    const { result } = renderHook(() => useMovie(1632), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const m = result.current.data!;
+    expect(m.screenshotUrls[0]).toMatch(/interstellar/);
+    expect(m.maxSeeds).toBe(Math.max(...m.torrents.map((t) => t.seeds)));
+  });
 });

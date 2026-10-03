@@ -6,6 +6,11 @@ describe("/movie/$movieId", () => {
   it("shows details, preselects the best x264 version and keeps actions disabled", async () => {
     await renderApp("/movie/1632");
     expect(await screen.findByRole("heading", { level: 1, name: "Interstellar" })).toBeInTheDocument();
+    // Sharp still (screenshotUrls[0]) as backdrop, not the blurred backgroundUrl.
+    expect(document.querySelector("article img")).toHaveAttribute(
+      "src",
+      "/design/prototype/bg/interstellar-endurance.jpg",
+    );
     const radios = await screen.findAllByRole("radio");
     const checked = radios.filter((r) => r.getAttribute("aria-checked") === "true");
     expect(checked).toHaveLength(1);

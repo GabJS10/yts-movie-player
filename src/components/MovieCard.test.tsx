@@ -17,6 +17,7 @@ const movie: MovieSummary = {
   backgroundUrl: null,
   qualities: ["3D", "2160p", "720p", "1080p"],
   hasX264: true,
+  maxSeeds: 7,
 };
 
 describe("MovieCard", () => {
@@ -40,5 +41,19 @@ describe("MovieCard", () => {
   it("marks qualities dashed when the movie only has x265", async () => {
     const { container } = await renderWithProviders(<MovieCard movie={{ ...movie, hasX264: false }} />);
     expect(container.querySelectorAll(".qchip-hevc")).toHaveLength(4);
+  });
+
+  it("shows the swarm signal from maxSeeds", async () => {
+    const { container } = await renderWithProviders(<MovieCard movie={movie} />);
+    expect(container.querySelectorAll(".signal-bars i.on")).toHaveLength(2);
+    expect(container.textContent).toContain("7 seeds · pocos seeds");
+  });
+
+  it("falls back to a titled placeholder when there is no cover", async () => {
+    const { container } = await renderWithProviders(
+      <MovieCard movie={{ ...movie, coverUrl: null, coverLargeUrl: null }} />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("[data-placeholder]")).toHaveTextContent("Interstellar");
   });
 });

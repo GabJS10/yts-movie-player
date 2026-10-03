@@ -13,13 +13,19 @@ const scrim =
 const bodyPos =
   "absolute bottom-[clamp(84px,10vh,110px)] left-gutter z-[1] w-[min(620px,calc(100%-2*var(--spacing-gutter)))] max-[520px]:bottom-16";
 
-/** Home banner: most-downloaded movie with artwork; release facts of its default version. */
+/** Home banner: most-downloaded movie with artwork; sharp still and release facts come from get_movie. */
 export function HeroBanner() {
   const hero = useHeroMovie();
   const movie = hero.data;
-  // The summary has no torrents/synopsis: the detail query fills them in (and warms the movie page).
+  // The summary has no stills, torrents or synopsis: the detail query fills them in (and warms the movie page).
   const detail = useMovie(movie?.id ?? 0, { enabled: !!movie });
   const best = detail.data ? pickDefaultTorrent(detail.data.torrents) : null;
+  // Sharp still from the detail; the summary's backgroundUrl (small, blurred) only if the detail has none or fails.
+  const art = detail.data
+    ? (detail.data.screenshotUrls[0] ?? detail.data.backgroundUrl)
+    : detail.isError
+      ? (movie?.backgroundUrl ?? null)
+      : null;
 
   if (hero.isError) {
     return (
@@ -32,9 +38,9 @@ export function HeroBanner() {
 
   return (
     <section className={heroFrame} aria-label="Destacada" aria-busy={hero.isPending || undefined}>
-      {movie?.backgroundUrl ? (
+      {art ? (
         <img
-          src={movie.backgroundUrl}
+          src={art}
           alt=""
           className="absolute inset-0 size-full object-cover object-[60%_30%]"
           decoding="async"

@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.2); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.4); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -50,11 +50,14 @@ export type MovieSummary = {
   rating: number;
   runtimeMin: number;
   genres: string[];
-  coverUrl: string;
-  coverLargeUrl: string;
+  /** null when YTS has no cover: the UI shows a placeholder. */
+  coverUrl: string | null;
+  coverLargeUrl: string | null;
   backgroundUrl: string | null;
   qualities: Quality[];
   hasX264: boolean;
+  /** Highest seed count among its torrents (card swarm signal); 0 without torrents. */
+  maxSeeds: number;
 };
 
 export type CastMember = {
@@ -77,6 +80,8 @@ export type MovieDetail = MovieSummary & {
   mpaRating: string | null;
   ytTrailerCode: string | null;
   cast: CastMember[];
+  /** Sharp 1280 px stills; [] if none. Hero and movie page use [0] ?? backgroundUrl (which is small and blurred). */
+  screenshotUrls: string[];
   torrents: Torrent[];
   isFavorite: boolean;
   progress: Progress | null;

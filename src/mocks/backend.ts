@@ -18,7 +18,8 @@ import type {
 } from "../api/types";
 import catalog from "./catalog.json";
 
-type CatalogMovie = Omit<MovieDetail, "isFavorite" | "progress" | "download"> & {
+// maxSeeds is derived from the torrents, not stored.
+type CatalogMovie = Omit<MovieDetail, "isFavorite" | "progress" | "download" | "maxSeeds"> & {
   /** Position in the API's download_count order (mock-only sort key). */
   downloadRank: number;
   /** date_uploaded_unix (mock-only sort key). */
@@ -48,6 +49,7 @@ export function toSummary(m: CatalogMovie): MovieSummary {
     backgroundUrl: m.backgroundUrl,
     qualities: m.qualities,
     hasX264: m.hasX264,
+    maxSeeds: Math.max(0, ...m.torrents.map((t) => t.seeds)),
   };
 }
 
@@ -143,6 +145,7 @@ export function createMockBackend(): MockBackend {
 
   const detail = ({ downloadRank: _r, addedAt: _a, ...m }: CatalogMovie): MovieDetail => ({
     ...m,
+    maxSeeds: Math.max(0, ...m.torrents.map((t) => t.seeds)),
     isFavorite: favorites.some((f) => f.id === m.id),
     progress: progress.get(m.id) ?? null,
     download: [...downloads.values()].find((d) => d.movie.id === m.id) ?? null,

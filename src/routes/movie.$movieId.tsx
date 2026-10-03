@@ -5,6 +5,7 @@ import type { MovieDetail } from "../api/types";
 import { ErrorState } from "../components/ErrorState";
 import { Icon } from "../components/Icon";
 import { MovieMeta } from "../components/MovieMeta";
+import { Poster } from "../components/Poster";
 import { StaticMovieRow } from "../components/MovieRow";
 import { VersionsTable } from "../components/VersionsTable";
 import { genreLabel } from "../lib/genres";
@@ -50,29 +51,29 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
   const torrents = useMemo(() => sortForDisplay(movie.torrents), [movie.torrents]);
   const [selected, setSelected] = useState(() => pickDefaultTorrent(movie.torrents)?.infohash ?? null);
   const chosen = torrents.find((t) => t.infohash === selected);
-  const art = movie.backgroundUrl ?? movie.coverLargeUrl;
+  // Sharp still first; the blurred background next; the poster (blurred further) as a last resort.
+  const still = movie.screenshotUrls[0] ?? movie.backgroundUrl;
+  const art = still ?? movie.coverLargeUrl ?? movie.coverUrl;
 
   return (
     <article>
       <div className="relative h-[54vh] min-h-[380px] overflow-hidden">
-        <img
-          src={art}
-          alt=""
-          decoding="async"
-          className={`size-full object-cover object-[center_35%] ${movie.backgroundUrl ? "" : "scale-125 opacity-70 blur-[28px]"}`}
-        />
+        {art && (
+          <img
+            src={art}
+            alt=""
+            decoding="async"
+            className={`size-full object-cover object-[center_35%] ${still ? "" : "scale-125 opacity-70 blur-[28px]"}`}
+          />
+        )}
         <div className="absolute inset-0 bg-[linear-gradient(0deg,var(--color-ground)_0%,rgba(23,23,23,.6)_45%,rgba(23,23,23,.15)_100%),linear-gradient(90deg,rgba(23,23,23,.75),rgba(23,23,23,0)_60%)]" />
       </div>
 
       <div className="relative z-[2] -mt-[38vh] grid grid-cols-[clamp(180px,18vw,260px)_minmax(0,1fr)] gap-x-[clamp(24px,3.2vw,48px)] overflow-x-clip px-gutter max-[900px]:-mt-[22vh] max-[900px]:grid-cols-[minmax(0,1fr)]">
         <div className="self-start overflow-hidden rounded-lg shadow-[0_24px_48px_rgba(0,0,0,.6)] max-[900px]:mb-5 max-[900px]:w-[140px]">
-          <img
-            src={movie.coverLargeUrl}
-            alt={`Póster de ${movie.title}`}
-            width={230}
-            height={345}
-            className="h-auto w-full"
-          />
+          <div className="aspect-[2/3]" role="img" aria-label={`Póster de ${movie.title}`}>
+            <Poster src={movie.coverLargeUrl ?? movie.coverUrl} title={movie.title} eager />
+          </div>
         </div>
 
         <div>

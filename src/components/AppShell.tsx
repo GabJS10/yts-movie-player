@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { listDownloads } from "../api/tauri";
+import { DOWNLOADS_READY } from "../lib/features";
 import { formatSpeed } from "../lib/format";
 import { useSwarmStore } from "../store/swarm";
 import { Icon, type IconName } from "./Icon";
@@ -42,7 +43,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const overArtwork = pathname === "/" || pathname.startsWith("/movie/");
   const solid = scrolled || !overArtwork;
 
-  const downloads = useQuery({ queryKey: ["downloads"], queryFn: listDownloads });
+  // list_downloads arrives with phase 6; until then only the mock backend (browser) answers it.
+  const downloads = useQuery({ queryKey: ["downloads"], queryFn: listDownloads, enabled: DOWNLOADS_READY });
   const activeCount = downloads.data?.filter((d) => d.state === "active" || d.state === "queued").length ?? 0;
   const speed = useSwarmStore((s) => s.totalBps);
 
