@@ -1,4 +1,5 @@
-// IPC contract types. Mirror of docs/IPC.md (v0); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.2); keep both in sync in the same change.
+// Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
 
@@ -191,6 +192,15 @@ export type Settings = {
   cacheLimitBytes: number;
 };
 
+/**
+ * Partial settings update. Absent key = leave unchanged. On nullable fields
+ * (openSubtitlesApiKey, downLimitKbps, upLimitKbps, listenPort) `null` = clear the value.
+ * `dataDir` is stored but only applied after restarting the app.
+ */
+export type SettingsPatch = Partial<Settings>;
+
+export type ClearCacheResult = { freedBytes: number };
+
 export type StorageUsage = {
   cacheBytes: number;
   cacheLimitBytes: number;
@@ -269,9 +279,9 @@ export type CommandMap = {
   open_download_folder: { args: { infohash: string }; result: void };
 
   get_settings: { args: undefined; result: Settings };
-  update_settings: { args: { patch: Partial<Settings> }; result: Settings };
+  update_settings: { args: { patch: SettingsPatch }; result: Settings };
   get_storage_usage: { args: undefined; result: StorageUsage };
-  clear_cache: { args: undefined; result: { freedBytes: number } };
+  clear_cache: { args: undefined; result: ClearCacheResult };
 
   open_trailer_window: { args: { ytTrailerCode: string; title: string }; result: void };
 };

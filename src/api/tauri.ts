@@ -13,7 +13,7 @@ import type {
   ErrorCode,
   ListMoviesParams,
   MovieSummary,
-  Settings,
+  SettingsPatch,
 } from "./types";
 
 const ERROR_CODES: readonly ErrorCode[] = [
@@ -108,7 +108,7 @@ export const openDownloadFolder = (infohash: string) => call("open_download_fold
 
 // ───────── Settings & storage ─────────
 export const getSettings = () => call("get_settings");
-export const updateSettings = (patch: Partial<Settings>) => call("update_settings", { patch });
+export const updateSettings = (patch: SettingsPatch) => call("update_settings", { patch });
 export const getStorageUsage = () => call("get_storage_usage");
 export const clearCache = () => call("clear_cache");
 

@@ -45,6 +45,14 @@ describe("tauri api (mock backend)", () => {
     expect(s.subtitleLang).toBe("es");
   });
 
+  it("update_settings: null clears a nullable field, absent keys stay", async () => {
+    const before = await updateSettings({});
+    expect(before.upLimitKbps).toBe(512);
+    const after = await updateSettings({ upLimitKbps: null });
+    expect(after.upLimitKbps).toBeNull();
+    expect(after.subtitleLang).toBe(before.subtitleLang);
+  });
+
   it("delivers typed events", async () => {
     const handler = vi.fn<(s: TorrentStats) => void>();
     const unlisten = await onTorrentStats(handler);
