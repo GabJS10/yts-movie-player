@@ -47,12 +47,27 @@ pub enum VideoCodec {
     X265,
 }
 
-/// `type` field of a YTS torrent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// `type` field of a YTS torrent. Unknown values deserialize as `Web` (with a warning)
+/// so a new label from YTS never breaks parsing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TorrentSource {
     Bluray,
     Web,
+}
+
+impl<'de> Deserialize<'de> for TorrentSource {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        Ok(match raw.trim().to_ascii_lowercase().as_str() {
+            "bluray" => Self::Bluray,
+            "web" => Self::Web,
+            _ => {
+                tracing::warn!(value = %raw, "unknown torrent source, falling back to web");
+                Self::Web
+            }
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -589,6 +604,23 @@ mod tests {
                 "done"
             ])
         );
+    }
+
+    #[test]
+    fn torrent_source_deserializes_unknown_as_web() {
+        let parsed: Vec<TorrentSource> =
+            serde_json::from_value(json!(["bluray", "web", "BluRay", "webrip", ""])).unwrap();
+        assert_eq!(
+            parsed,
+            [
+                TorrentSource::Bluray,
+                TorrentSource::Web,
+                TorrentSource::Bluray,
+                TorrentSource::Web,
+                TorrentSource::Web
+            ]
+        );
+        assert!(serde_json::from_value::<TorrentSource>(json!(1)).is_err());
     }
 
     #[test]
