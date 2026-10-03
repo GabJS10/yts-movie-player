@@ -1,0 +1,487 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-03T13:30:00Z",
+  "title": "Design System: YTS Player",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Night Ground",
+        "tonalRamp": [
+          "#0a0a0a",
+          "#111111",
+          "#171717",
+          "#1d1d1d",
+          "#2f2f2f",
+          "#4a4a4a",
+          "#919191",
+          "#e6e6e6"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Panel Grey",
+        "tonalRamp": [
+          "#0a0a0a",
+          "#111111",
+          "#171717",
+          "#1d1d1d",
+          "#262626",
+          "#2f2f2f",
+          "#4a4a4a",
+          "#919191"
+        ]
+      },
+      "raised-hi": {
+        "role": "neutral",
+        "displayName": "Lifted Grey",
+        "tonalRamp": [
+          "#171717",
+          "#1d1d1d",
+          "#262626",
+          "#2f2f2f",
+          "#3a3a3a",
+          "#4a4a4a",
+          "#6b6b6b",
+          "#919191"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "tonalRamp": [
+          "#171717",
+          "#1d1d1d",
+          "#262626",
+          "#333333",
+          "#3a3a3a",
+          "#4a4a4a",
+          "#6b6b6b",
+          "#919191"
+        ]
+      },
+      "line-hi": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "tonalRamp": [
+          "#1d1d1d",
+          "#262626",
+          "#333333",
+          "#4a4a4a",
+          "#5c5c5c",
+          "#6b6b6b",
+          "#919191",
+          "#c9c9c9"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "White",
+        "tonalRamp": [
+          "#262626",
+          "#4a4a4a",
+          "#6b6b6b",
+          "#919191",
+          "#c9c9c9",
+          "#e6e6e6",
+          "#f5f5f5",
+          "#ffffff"
+        ]
+      },
+      "text-2": {
+        "role": "neutral",
+        "displayName": "Silver",
+        "tonalRamp": [
+          "#262626",
+          "#4a4a4a",
+          "#6b6b6b",
+          "#919191",
+          "#b0b0b0",
+          "#c9c9c9",
+          "#e0e0e0",
+          "#f5f5f5"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Ash",
+        "tonalRamp": [
+          "#262626",
+          "#3a3a3a",
+          "#5c5c5c",
+          "#6b6b6b",
+          "#919191",
+          "#b0b0b0",
+          "#c9c9c9",
+          "#e6e6e6"
+        ]
+      },
+      "faint": {
+        "role": "neutral",
+        "displayName": "Smoke",
+        "tonalRamp": [
+          "#171717",
+          "#262626",
+          "#3a3a3a",
+          "#4a4a4a",
+          "#6b6b6b",
+          "#919191",
+          "#c9c9c9",
+          "#e6e6e6"
+        ]
+      },
+      "green": {
+        "role": "primary",
+        "displayName": "YTS Green",
+        "tonalRamp": [
+          "#152a0c",
+          "#22421a",
+          "#346d22",
+          "#4b9924",
+          "#6ac045",
+          "#8fd070",
+          "#b5e09d",
+          "#dcf0cf"
+        ]
+      },
+      "green-hi": {
+        "role": "primary",
+        "displayName": "Lit Green",
+        "tonalRamp": [
+          "#152a0c",
+          "#22421a",
+          "#346d22",
+          "#4b9924",
+          "#75c74e",
+          "#8fd070",
+          "#b5e09d",
+          "#dcf0cf"
+        ]
+      },
+      "on-green": {
+        "role": "primary",
+        "displayName": "Green Ink",
+        "tonalRamp": [
+          "#0b1606",
+          "#152a0c",
+          "#22421a",
+          "#346d22",
+          "#4b9924",
+          "#6ac045",
+          "#b5e09d",
+          "#dcf0cf"
+        ]
+      },
+      "green-wash": {
+        "role": "primary",
+        "displayName": "Green Wash",
+        "tonalRamp": [
+          "rgba(106,192,69,0.04)",
+          "rgba(106,192,69,0.08)",
+          "rgba(106,192,69,0.12)",
+          "rgba(106,192,69,0.2)",
+          "rgba(106,192,69,0.3)",
+          "rgba(106,192,69,0.45)",
+          "rgba(106,192,69,0.6)",
+          "rgba(106,192,69,0.8)"
+        ]
+      },
+      "warn": {
+        "role": "tertiary",
+        "displayName": "Codec Amber",
+        "tonalRamp": [
+          "#3d2e0c",
+          "#5e4713",
+          "#80611a",
+          "#a37c21",
+          "#e3b341",
+          "#ebc670",
+          "#f2d89e",
+          "#f9ebcd"
+        ],
+        "note": "Approved extension: warning text only (PRODUCT principle 4)."
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Stall Red",
+        "tonalRamp": [
+          "#3d1412",
+          "#5e1e1b",
+          "#802925",
+          "#a3352f",
+          "#e5534b",
+          "#ec7f79",
+          "#f2aaa6",
+          "#f9d4d2"
+        ],
+        "note": "Approved extension: stalled status text and stalled bar hairline only."
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero title only; condensed 72%, uppercase, balanced wrap."
+      },
+      "display-detail": {
+        "displayName": "Display Detail",
+        "purpose": "Movie page title; buffering title in the same voice."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles, condensed 75%, uppercase."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Row and section titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default UI text."
+      },
+      "body-lead": {
+        "displayName": "Body Lead",
+        "purpose": "Synopsis in text-2, 54ch hero / 68ch detail."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase muted column, field and stat labels."
+      },
+      "tag": {
+        "displayName": "Tag",
+        "purpose": "Release plates and swarm signal labels, tabular."
+      },
+      "numeral": {
+        "displayName": "Numeral",
+        "purpose": "Buffer stats and large figures, condensed 85%, tabular."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-lift",
+        "value": "0 14px 30px rgba(0,0,0,.6)",
+        "purpose": "Poster and continue cards on hover/focus, with scale 1.07 / 1.04."
+      },
+      {
+        "name": "poster-float",
+        "value": "0 24px 48px rgba(0,0,0,.6)",
+        "purpose": "Detail page poster over its backdrop."
+      },
+      {
+        "name": "menu",
+        "value": "0 18px 40px rgba(0,0,0,.6)",
+        "purpose": "Player audio/subtitle menu."
+      },
+      {
+        "name": "toast",
+        "value": "0 12px 32px rgba(0,0,0,.5)",
+        "purpose": "Toast confirmations."
+      },
+      {
+        "name": "dialog",
+        "value": "0 30px 80px rgba(0,0,0,.7)",
+        "purpose": "Trailer modal."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 3px rgba(106,192,69,.12)",
+        "purpose": "Focused text input, with green stroke."
+      },
+      {
+        "name": "focus-ring",
+        "value": "outline: 2px solid #6ac045; outline-offset: 3px",
+        "purpose": "Global :focus-visible on every interactive element."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Expo ease-out for lifts, presses, reveals and the buffer dissolve."
+      },
+      {
+        "name": "state",
+        "value": "150ms",
+        "purpose": "Colour and border changes on hover/focus."
+      },
+      {
+        "name": "lift",
+        "value": "350ms",
+        "purpose": "Card scale and shadow lift."
+      },
+      {
+        "name": "buffer-dissolve",
+        "value": "opacity 1.1s ease, filter 1.4s, transform 1.6s",
+        "purpose": "Frame un-blurs into the first frame when buffering completes."
+      },
+      {
+        "name": "pulse",
+        "value": "1.4s ease-in-out infinite",
+        "purpose": "Live phase dot on the buffering screen."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition/animation 0.01ms",
+        "purpose": "All motion collapses under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tabbar",
+        "value": "900px"
+      },
+      {
+        "name": "compact",
+        "value": "520px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Play Button",
+      "kind": "button",
+      "refersTo": "button-play",
+      "description": "The one green action per view: Reproducir.",
+      "html": "<button class=\"ds-btn ds-btn-play\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z\"/></svg>Reproducir</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:48px;padding:0 26px 0 22px;border:0;border-radius:4px;font:700 16px/1 Archivo,Arimo,system-ui,sans-serif;letter-spacing:.005em;cursor:pointer;transition:background-color .15s,transform .15s cubic-bezier(0.16,1,0.3,1),box-shadow .15s}.ds-btn:active{transform:scale(.97)}.ds-btn:focus-visible{outline:2px solid #6ac045;outline-offset:3px}.ds-btn-play{background:#6ac045;color:#0b1606}.ds-btn-play:hover{background:#75c74e}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary action over artwork: Más info.",
+      "html": "<div class=\"ds-stage\"><button class=\"ds-btn ds-btn-ghost\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 11v5M12 8h.01\"/></svg>Más info</button></div>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:48px;padding:0 26px 0 22px;border:0;border-radius:4px;font:700 16px/1 Archivo,Arimo,system-ui,sans-serif;letter-spacing:.005em;cursor:pointer;transition:background-color .15s,transform .15s cubic-bezier(0.16,1,0.3,1),box-shadow .15s}.ds-btn:active{transform:scale(.97)}.ds-btn:focus-visible{outline:2px solid #6ac045;outline-offset:3px}.ds-stage{padding:20px;background:linear-gradient(120deg,#3a4a5a,#171717)}.ds-btn-ghost{background:rgba(110,110,110,.38);color:#fff;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}.ds-btn-ghost:hover{background:rgba(110,110,110,.55)}"
+    },
+    {
+      "name": "Line Button",
+      "kind": "button",
+      "refersTo": "button-line",
+      "description": "Tertiary action on flat ground (e.g. Abrir carpeta, Ver tráiler).",
+      "html": "<div style=\"background:#171717;padding:16px\"><button class=\"ds-btn ds-btn-line\">Abrir carpeta</button></div>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:48px;padding:0 26px 0 22px;border:0;border-radius:4px;font:700 16px/1 Archivo,Arimo,system-ui,sans-serif;letter-spacing:.005em;cursor:pointer;transition:background-color .15s,transform .15s cubic-bezier(0.16,1,0.3,1),box-shadow .15s}.ds-btn:active{transform:scale(.97)}.ds-btn:focus-visible{outline:2px solid #6ac045;outline-offset:3px}.ds-btn-line{background:transparent;color:#fff;box-shadow:inset 0 0 0 1px #4a4a4a}.ds-btn-line:hover{box-shadow:inset 0 0 0 1px #c9c9c9;background:rgba(255,255,255,.04)}"
+    },
+    {
+      "name": "Release Plate",
+      "kind": "custom",
+      "refersTo": "release-tag",
+      "description": "Segmented hairline plate of release facts; green when chosen, dashed with amber codec for HEVC.",
+      "html": "<div class=\"ds-plates\"><span class=\"ds-tag ds-tag--on\"><b>1080p</b><span>BluRay</span><span>x264</span><span>2,4 GB</span></span><span class=\"ds-tag\"><b>720p</b><span>WEB</span><span>x264</span><span>1,3 GB</span></span><span class=\"ds-tag ds-tag--hevc\"><b>2160p</b><span>BluRay</span><span class=\"ds-codec\">x265 · HEVC</span><span>7,3 GB</span></span></div>",
+      "css": ".ds-plates{display:flex;flex-wrap:wrap;gap:10px;background:#171717;padding:16px}.ds-tag{display:inline-flex;align-items:stretch;height:24px;border:1px solid #4a4a4a;border-radius:3px;font:600 12px/22px Archivo,Arimo,system-ui,sans-serif;letter-spacing:.02em;font-variant-numeric:tabular-nums;white-space:nowrap;color:#c9c9c9;background:rgba(23,23,23,.55)}.ds-tag>*{padding:0 7px}.ds-tag>*+*{border-left:1px solid #4a4a4a}.ds-tag b{color:#fff;font-weight:800}.ds-tag--on{border-color:#6ac045}.ds-tag--on>*+*{border-left-color:rgba(106,192,69,.5)}.ds-tag--on b{color:#6ac045}.ds-tag--hevc{border-style:dashed}.ds-tag--hevc>*+*{border-left-style:dashed}.ds-tag--hevc .ds-codec{color:#e3b341}"
+    },
+    {
+      "name": "Swarm Signal",
+      "kind": "custom",
+      "description": "Five always-green bars; state by form: solid held, hollow missing, struck dead.",
+      "html": "<div class=\"ds-signal-wrap\"><span class=\"ds-signal\"><span class=\"ds-bars\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i></span><span><b>100+ seeds</b></span></span><span class=\"ds-signal\"><span class=\"ds-bars\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"\"></i><i class=\"\"></i><i class=\"\"></i></span><span><b>8 seeds</b> · pocos seeds</span></span><span class=\"ds-signal ds-signal--dead\"><span class=\"ds-bars\"><i class=\"\"></i><i class=\"\"></i><i class=\"\"></i><i class=\"\"></i><i class=\"\"></i></span><span><b>Sin seeds</b></span></span></div>",
+      "css": ".ds-signal-wrap{display:flex;flex-direction:column;gap:10px;background:#171717;padding:16px}.ds-signal{display:inline-flex;align-items:center;gap:8px;font:12px/1.4 Archivo,Arimo,system-ui,sans-serif;color:#c9c9c9;font-variant-numeric:tabular-nums}.ds-signal b{font-weight:700;color:#fff}.ds-bars{position:relative;display:inline-flex;align-items:flex-end;gap:2px;height:14px}.ds-bars i{width:4px;border-radius:1px;box-shadow:inset 0 0 0 1px #6b6b6b}.ds-bars i:nth-child(1){height:30%}.ds-bars i:nth-child(2){height:47%}.ds-bars i:nth-child(3){height:64%}.ds-bars i:nth-child(4){height:82%}.ds-bars i:nth-child(5){height:100%}.ds-bars i.on{background:#6ac045;box-shadow:none}.ds-signal--dead .ds-bars::after{content:'';position:absolute;left:-2px;right:-2px;top:50%;height:1.5px;background:#c9c9c9;transform:rotate(-30deg)}.ds-signal--dead b{color:#c9c9c9;text-decoration:line-through;text-decoration-thickness:1px}"
+    },
+    {
+      "name": "Poster Card",
+      "kind": "card",
+      "refersTo": "poster-card",
+      "description": "2:3 cover that lifts on hover and reveals title, rating and quality chips.",
+      "html": "<div style=\"background:#171717;padding:28px\"><a class=\"ds-card\" href=\"#\" tabindex=\"0\"><div class=\"ds-card-art\"></div><div class=\"ds-card-info\"><h3>Interstellar</h3><div class=\"ds-card-meta\"><span class=\"ds-r\">8,7</span><span>2014</span><span>2 h 49 min</span></div><div class=\"ds-q\"><span>720p</span><span>1080p</span><span class=\"ds-q--hevc\">2160p</span></div></div></a></div>",
+      "css": ".ds-card{position:relative;display:block;width:180px;aspect-ratio:2/3;border-radius:4px;overflow:hidden;background:#1d1d1d;color:#fff;text-decoration:none;font-family:Archivo,Arimo,system-ui,sans-serif;transition:transform .35s cubic-bezier(0.16,1,0.3,1),box-shadow .35s cubic-bezier(0.16,1,0.3,1)}.ds-card-art{position:absolute;inset:0;background:linear-gradient(160deg,#4a5a6a,#1d1d1d 70%)}.ds-card-info{position:absolute;inset:auto 0 0 0;padding:40px 10px 10px;background:linear-gradient(to top,rgba(12,12,12,.97) 30%,rgba(12,12,12,0));opacity:0;transform:translateY(8px);transition:opacity .25s ease,transform .35s cubic-bezier(0.16,1,0.3,1)}.ds-card h3{margin:0 0 4px;font-size:14px;font-weight:750;line-height:1.2}.ds-card-meta{display:flex;gap:8px;font-size:12px;color:#c9c9c9;margin-bottom:8px;font-variant-numeric:tabular-nums}.ds-r{color:#fff;font-weight:700}.ds-r::before{content:'';display:inline-block;width:8px;height:8px;margin-right:4px;border-radius:50%;background:#6ac045}.ds-q{display:flex;gap:4px}.ds-q span{font-size:10.5px;font-weight:750;letter-spacing:.03em;padding:0 5px;line-height:17px;border:1px solid #4a4a4a;border-radius:2px;color:#c9c9c9}.ds-q .ds-q--hevc{border-style:dashed}.ds-card:hover,.ds-card:focus-visible{transform:scale(1.07);box-shadow:0 14px 30px rgba(0,0,0,.6)}.ds-card:hover .ds-card-info,.ds-card:focus-visible .ds-card-info{opacity:1;transform:none}.ds-card:focus-visible{outline:2px solid #6ac045;outline-offset:2px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Settings field; green stroke and wash halo on focus.",
+      "html": "<div style=\"background:#171717;padding:16px\"><input class=\"ds-input\" placeholder=\"Clave de API de OpenSubtitles\"></div>",
+      "css": ".ds-input{height:38px;width:280px;padding:0 12px;border-radius:4px;border:1px solid #4a4a4a;background:#1d1d1d;color:#fff;font:14px Archivo,Arimo,system-ui,sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}.ds-input:hover{border-color:#919191}.ds-input:focus{border-color:#6ac045;box-shadow:0 0 0 3px rgba(106,192,69,.12)}.ds-input::placeholder{color:#6b6b6b}"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segmented-pressed",
+      "description": "Hairline-divided filter segments; pressed fills green.",
+      "html": "<div style=\"background:#171717;padding:16px\"><div class=\"ds-seg\"><button>Todas</button><button aria-pressed=\"true\">1080p</button><button>2160p</button><button>3D</button></div></div>",
+      "css": ".ds-seg{display:inline-flex;height:36px;border:1px solid #4a4a4a;border-radius:4px;overflow:hidden}.ds-seg button{border:0;background:transparent;padding:0 13px;font:600 13.5px Archivo,Arimo,system-ui,sans-serif;color:#c9c9c9;font-variant-numeric:tabular-nums;cursor:pointer}.ds-seg button+button{border-left:1px solid #4a4a4a}.ds-seg button:hover{background:rgba(255,255,255,.05);color:#fff}.ds-seg button[aria-pressed=true]{background:#6ac045;color:#0b1606}.ds-seg button:focus-visible{outline:2px solid #6ac045;outline-offset:-3px}"
+    },
+    {
+      "name": "Top Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Wordmark, Spanish section links with a green underline on the active one.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-brand\" href=\"#\"><b>YTS</b><span>Player</span></a><a class=\"ds-link\" aria-current=\"page\" href=\"#\">Inicio</a><a class=\"ds-link\" href=\"#\">Buscar</a><a class=\"ds-link\" href=\"#\">Mi lista</a><a class=\"ds-link\" href=\"#\">Descargas</a></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:6px;height:64px;padding:0 24px;background:#171717;box-shadow:0 1px 0 #333;font-family:Archivo,Arimo,system-ui,sans-serif}.ds-brand{display:flex;align-items:baseline;gap:6px;margin-right:34px;font-stretch:75%;text-decoration:none}.ds-brand b{font-weight:900;font-size:26px;color:#6ac045;line-height:1}.ds-brand span{font-weight:500;font-size:15px;color:#fff;text-transform:uppercase;letter-spacing:.14em}.ds-link{position:relative;padding:8px 12px;border-radius:4px;color:#c9c9c9;font-size:14px;font-weight:500;text-decoration:none;transition:color .15s}.ds-link:hover{color:#fff}.ds-link[aria-current=page]{color:#fff;font-weight:700}.ds-link[aria-current=page]::after{content:'';position:absolute;left:12px;right:12px;bottom:0;height:2px;background:#6ac045;border-radius:1px}.ds-link:focus-visible{outline:2px solid #6ac045;outline-offset:3px}"
+    },
+    {
+      "name": "Release Timetable Row",
+      "kind": "custom",
+      "description": "Ruled quality selector; chosen row in green wash, warnings as amber text.",
+      "html": "<table class=\"ds-tt\"><tbody><tr class=\"ds-opt\" aria-checked=\"true\" tabindex=\"0\"><td><span class=\"ds-radio\"></span></td><td class=\"ds-qq\">1080p</td><td>BluRay</td><td>x264</td><td class=\"ds-num\">2,4 GB</td><td class=\"ds-num\">100+ / 100</td><td></td></tr><tr class=\"ds-opt\" tabindex=\"0\"><td><span class=\"ds-radio\"></span></td><td class=\"ds-qq\">2160p</td><td>BluRay</td><td>x265</td><td class=\"ds-num\">7,3 GB</td><td class=\"ds-num\">100+ / 100</td><td><span class=\"ds-note\">HEVC: puede necesitar VLC</span></td></tr></tbody></table>",
+      "css": ".ds-tt{width:100%;border-collapse:collapse;background:#171717;font:14px Archivo,Arimo,system-ui,sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid #333}.ds-tt td{padding:0 14px;height:54px;border-bottom:1px solid #333;white-space:nowrap;color:#c9c9c9}.ds-num{text-align:right}.ds-opt{cursor:pointer;transition:background-color .12s}.ds-opt:hover{background:rgba(255,255,255,.035)}.ds-opt[aria-checked=true]{background:rgba(106,192,69,.12)}.ds-opt:focus-visible{outline:2px solid #6ac045;outline-offset:-2px}.ds-qq{font-size:16px;font-weight:850;color:#fff}.ds-note{font-size:12.5px;color:#e3b341}.ds-radio{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 1.5px #4a4a4a;vertical-align:middle}[aria-checked=true] .ds-radio{box-shadow:inset 0 0 0 1.5px #6ac045}[aria-checked=true] .ds-radio::after{content:'';width:8px;height:8px;border-radius:50%;background:#6ac045}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Release Sheet After Dark",
+    "overview": "YTS Player wears Netflix's lean-back grammar (full-bleed hero, horizontal poster rows, hover-expanding cards, a player that owns the whole window) but refuses to hide the torrent. Quality, codec, size, seeds and peers are set as first-class typography: a segmented release plate and a five-bar swarm signal travel with every title, from the hero to the poster hover to the download list. The viewer should know whether a film will stream before they press play.\n\nThe room is dim and the use is evening, so the ground is the near-black grey ladder of yts.gg, the artwork does the talking, and the chrome stays quiet. One colour signals: YTS green means play, live, healthy, selected and progress. Everything else is greys and white. Titles are Archivo pulled condensed and heavy in uppercase; the UI is the same family at normal width; every number is tabular so columns of seeds and sizes align.\n\nThe signature moment is the buffering screen: a live piece map whose cells fill green ahead of the playhead while peers, speed and MB count up, then dissolves into the first frame.",
+    "keyCharacteristics": [
+      "Dark yts.gg greys with YTS green as the single signal colour.",
+      "Archivo variable: condensed heavy uppercase titles, normal-width UI, tabular numerals everywhere.",
+      "Release facts as segmented hairline plates (`1080p | BluRay | x264 | 2,4 GB`).",
+      "Swarm health as a five-bar signal whose state is form, never hue.",
+      "Flat surfaces at rest; scrims over artwork; lift only on hover and for floating layers.",
+      "Spanish UI copy (\"Reproducir\", \"Más info\", \"Continuar viendo\", \"Abrir en VLC\")."
+    ],
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "Green is the only accent. If something is positive, live, selected or \"go\", it is green; if it is not, it is grey. No second brand hue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Form-Not-Hue Rule",
+        "body": "Swarm signal bars are always green. Health is carried by form: solid bar = held, hollow bar (1px `faint` outline) = missing, all hollow plus a diagonal strike and a struck-through label = dead (\"Sin seeds\"). Never turn bars amber or red for weak or dead swarms.",
+        "section": "colors"
+      },
+      {
+        "name": "The Warning Ink Rule",
+        "body": "Amber and red are an approved extension, justified by the product promise that every failure has a next action. They appear as warning text (and the stalled bar's hairline) beside that next action, never as fills, buttons, badges, backgrounds or signal bars.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Widths Rule",
+        "body": "Condensed (72–85%) is for titles and big figures; UI text is always normal width. Never condense body copy or controls.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every number (seeds, peers, sizes, speeds, ratings, times, percentages) is set with tabular numerals so figures align in plates, tables and counters.",
+        "section": "typography"
+      },
+      {
+        "name": "The Lift-On-Intent Rule",
+        "body": "Nothing casts a shadow at rest except things that genuinely float. A card earns its shadow by being hovered or focused.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Hairline Plate Rule",
+        "body": "Release facts are a single segmented plate: 24px tall, 1px `line-hi` border, 1px dividers between cells, quality in bold white first. Selected or recommended releases switch the border and quality to green; HEVC releases switch every stroke to dashed and the codec cell to amber.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "**Do** keep green the only accent and use it for every positive state: play, live, held, selected, progress.",
+      "**Do** show swarm health with the five-bar signal in green, changing only form: solid held, hollow missing, struck when dead.",
+      "**Do** confine amber (`warn`) and red (`danger`) to warning text next to a recovery action (timetable notes, the HEVC codec cell, stalled download status and its bar outline).",
+      "**Do** set every figure with tabular numerals and right-align numeric columns.",
+      "**Do** carry release facts in the segmented hairline plate; dashed strokes and an amber codec cell for HEVC.",
+      "**Do** set titles in Archivo condensed (72–85%) heavy uppercase and keep UI text at normal width.",
+      "**Do** use YTS large screenshots for hero and backdrop imagery, with left and bottom scrims into `ground`.",
+      "**Do** keep a visible 2px green focus outline (3px offset) on every interactive element and collapse transitions under reduced motion."
+    ],
+    "donts": [
+      "**Don't** colour signal bars amber or red, or use any colour as the sole carrier of swarm state.",
+      "**Don't** use amber or red as fills, buttons, badges or backgrounds.",
+      "**Don't** use `background_image` from the YTS API as a hero; it arrives pre-blurred.",
+      "**Don't** generate or stock-source artwork; every raster comes from YTS.",
+      "**Don't** add shadows to resting surfaces; lift is for hover and floating layers.",
+      "**Don't** condense body copy, controls or labels.",
+      "**Don't** set readable text in `faint`; it is for separators, hollow strokes and placeholders.",
+      "**Don't** bury quality, size or seeds behind a click; they travel with the title."
+    ]
+  }
+}
