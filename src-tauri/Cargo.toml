@@ -26,7 +26,7 @@ thiserror = "2"
 tracing = "0.1"
 dirs = "7"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "net", "time", "fs", "sync"] }
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "net", "time", "fs", "sync", "process", "io-util"] }
 axum = "0.8.9"
 moka = { version = "0.12.16", features = ["future"] }
 tower-http = { version = "0.7.1", features = ["cors"] }
@@ -36,6 +36,8 @@ url = "2.5.8"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "charset", "gzip"] }
 bytes = "1.12.1"
 futures-util = "0.3.34"
+librqbit = { version = "=9.0.1", default-features = false, features = ["rust-tls"] }
+tokio-util = { version = "0.7.19", features = ["io"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

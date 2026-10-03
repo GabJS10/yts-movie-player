@@ -52,6 +52,16 @@ impl Default for YtsConfig {
     }
 }
 
+/// What the torrent engine needs to know about a YTS torrent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TorrentRef {
+    pub title: String,
+    pub torrent_url: Option<String>,
+    pub video_codec: VideoCodec,
+    /// Swarm seeds reported by YTS (static); used as `TorrentStats.seeds`.
+    pub seeds: u32,
+}
+
 struct EndpointState {
     active: usize,
     last_primary_check: Instant,
@@ -137,16 +147,41 @@ impl YtsClient {
     }
 
     pub async fn get_movie(&self, movie_id: u64) -> AppResult<MovieDetail> {
-        let data: RawDetailsData = self
-            .fetch(&format!(
-                "movie_details.json?movie_id={movie_id}&with_images=true&with_cast=true"
-            ))
-            .await?;
+        let data: RawDetailsData = self.fetch(&details_path(movie_id)).await?;
         // An unknown id comes back as status "ok" with an empty movie whose id is 0.
         match data.movie {
             Some(movie) if movie.id.unwrap_or(0) != 0 => Ok(self.detail(movie)),
             _ => Err(AppError::NotFound(format!("movie {movie_id}"))),
         }
+    }
+
+    /// Internal data needed to stream one torrent of a movie (not part of the IPC).
+    pub async fn torrent_ref(&self, movie_id: u64, infohash: &str) -> AppResult<TorrentRef> {
+        let data: RawDetailsData = self.fetch(&details_path(movie_id)).await?;
+        let movie = data
+            .movie
+            .filter(|m| m.id.unwrap_or(0) != 0)
+            .ok_or_else(|| AppError::NotFound(format!("movie {movie_id}")))?;
+        let raw = movie
+            .torrents
+            .iter()
+            .flatten()
+            .find(|t| {
+                t.hash
+                    .as_deref()
+                    .is_some_and(|h| h.trim().eq_ignore_ascii_case(infohash))
+            })
+            .ok_or_else(|| AppError::NotFound(format!("torrent {infohash} of movie {movie_id}")))?;
+        let torrent = convert_torrent(raw)
+            .ok_or_else(|| AppError::NotFound(format!("torrent {infohash} is not usable")))?;
+        Ok(TorrentRef {
+            title: non_empty(&movie.title)
+                .or_else(|| non_empty(&movie.title_english))
+                .unwrap_or_default(),
+            torrent_url: non_empty(&raw.url),
+            video_codec: torrent.video_codec,
+            seeds: torrent.seeds,
+        })
     }
 
     pub async fn suggestions(&self, movie_id: u64) -> AppResult<Vec<MovieSummary>> {
@@ -367,6 +402,10 @@ impl YtsClient {
             download: None,
         }
     }
+}
+
+fn details_path(movie_id: u64) -> String {
+    format!("movie_details.json?movie_id={movie_id}&with_images=true&with_cast=true")
 }
 
 fn classify(e: reqwest::Error) -> AttemptError {
@@ -603,6 +642,8 @@ struct RawCast {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawTorrent {
+    /// `.torrent` download URL (e.g. `https://yts.gg/torrent/download/<HASH>`).
+    url: Option<String>,
     hash: Option<String>,
     quality: Option<String>,
     #[serde(rename = "type")]

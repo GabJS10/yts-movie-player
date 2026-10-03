@@ -56,24 +56,11 @@ impl ImageStore {
                 .map(|h| h.to_ascii_lowercase())
                 .collect(),
         );
-        let hosts = Arc::clone(&allowed_hosts);
-        // Follow redirects (yts.gg → img.yts.gg) only towards allowed hosts.
-        let policy = redirect::Policy::custom(move |attempt| {
-            if attempt.previous().len() >= MAX_REDIRECTS {
-                attempt.error("too many redirects")
-            } else if host_allowed(&hosts, attempt.url()) {
-                attempt.follow()
-            } else {
-                let host = attempt.url().host_str().unwrap_or_default().to_owned();
-                attempt.error(format!("redirect to disallowed host {host}"))
-            }
-        });
-        let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(20))
-            .redirect(policy)
-            .build()
-            .map_err(|e| AppError::Internal(format!("image http client: {e}")))?;
+        let http = restricted_client(
+            Arc::clone(&allowed_hosts),
+            Duration::from_secs(5),
+            Duration::from_secs(20),
+        )?;
         Ok(Self {
             local_base: local_base.into().trim_end_matches('/').to_owned(),
             dir,
@@ -178,7 +165,32 @@ impl ImageStore {
     }
 }
 
-fn host_allowed(hosts: &HashSet<String>, url: &Url) -> bool {
+/// HTTP client that only follows redirects towards `hosts` (yts.gg → img.yts.gg).
+/// Callers must still check the host of the initial URL with [`host_allowed`].
+pub fn restricted_client(
+    hosts: Arc<HashSet<String>>,
+    connect_timeout: Duration,
+    timeout: Duration,
+) -> AppResult<reqwest::Client> {
+    let policy = redirect::Policy::custom(move |attempt| {
+        if attempt.previous().len() >= MAX_REDIRECTS {
+            attempt.error("too many redirects")
+        } else if host_allowed(&hosts, attempt.url()) {
+            attempt.follow()
+        } else {
+            let host = attempt.url().host_str().unwrap_or_default().to_owned();
+            attempt.error(format!("redirect to disallowed host {host}"))
+        }
+    });
+    reqwest::Client::builder()
+        .connect_timeout(connect_timeout)
+        .timeout(timeout)
+        .redirect(policy)
+        .build()
+        .map_err(|e| AppError::Internal(format!("http client: {e}")))
+}
+
+pub fn host_allowed(hosts: &HashSet<String>, url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https")
         && url
             .host_str()

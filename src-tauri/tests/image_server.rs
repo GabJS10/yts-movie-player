@@ -31,6 +31,7 @@ async fn start() -> Harness {
     );
     let router = stream::router(stream::ServerState {
         images: Arc::clone(&images),
+        torrents: None,
     });
     tokio::spawn(stream::serve(listener, router));
     Harness { tmp, images }
