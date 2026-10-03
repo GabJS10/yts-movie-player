@@ -78,6 +78,12 @@ curl --location 'https://yts.gg/api/v2/list_movies.json?query_term=matrix&limit=
 | `size_bytes` | Usar este campo para los cálculos (`size` es texto, por ejemplo "2.73 GB") |
 
 ## Peculiaridades que hay que manejar
+- `movie_details` **no** trae `summary`/`synopsis`: la sinopsis viene en `description_full` (y `description_intro`). `list_movies` sí trae `summary`. Usar `description_full` y, si falta, `summary`.
+- El reparto (`with_cast=true`) viene como `cast[]` con `name`, `character_name`, `url_small_image` e `imdb_code`.
+- `movie_details` con `with_images=true` agrega `medium/large_screenshot_image1..3`.
+- `movie_suggestions` devuelve `movie_count: 0` aunque traiga películas (normalmente 4): ignorar ese contador y usar `movies.length`.
+- Las imágenes `https://yts.gg/assets/...` responden **301 → `https://img.yts.gg/assets/...`**. El cliente debe seguir redirecciones; la lista de dominios permitidos para el caché de imágenes incluye `img.yts.gg`.
+- Con la URL base nueva (`movies-api.accel.li`) el `status_message` ya no trae el aviso de mudanza, pero las imágenes siguen en dominios `yts.gg`.
 - `is_repack` llega como `"0"` o `""` (string inconsistente), así que el modelo serde debe ser tolerante.
 - Si una búsqueda no encuentra nada, `data` **no trae** la clave `movies` (usar `#[serde(default)]`).
 - Los campos `url` e imágenes traen el dominio dentro (`https://yts.gg/...`).
