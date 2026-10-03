@@ -1,0 +1,364 @@
+# Contrato IPC (frontend ⇄ backend)
+
+**Versión:** v0 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+
+Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
+
+## Convenciones
+
+- **Comandos:** `snake_case` en Rust (`#[tauri::command]`). Desde el front se llaman con ese mismo nombre: `invoke("list_movies", { params })`.
+- **Argumentos:** se pasan en `camelCase` (Tauri convierte `movie_id` en `movieId`). Cuando hay más de 2 parámetros se agrupan en un solo objeto.
+- **Payloads:** usan `#[serde(rename_all = "camelCase")]`. Los enums van como strings en `snake_case`.
+- **Unidades:** bytes como `number` (entero), velocidades en **bytes/s**, tiempos de reproducción en **segundos** (`number`, con decimales) y fechas en **ISO 8601 UTC** (`string`).
+- **`infohash`:** hex de 40 caracteres en **minúsculas**. Identifica cada torrent, sea de streaming o de descarga.
+- **URLs que recibe el front:** siempre listas para usar en `<img>`, `<video>` o `<track>`. Las imágenes, los streams y los subtítulos se sirven desde el servidor local `http://127.0.0.1:<port>/…`, así que **el front nunca construye URLs ni habla con dominios de YTS**.
+- **Campos opcionales:** `T | null`, nunca `undefined`. En Rust son `Option<T>` sin `skip_serializing_if`.
+
+## Errores
+
+Todo comando devuelve `Result<T, AppError>`. Si hay error, `invoke` rechaza la promesa con este objeto:
+
+```ts
+type AppError = {
+  code: ErrorCode;
+  message: string;  // detalle técnico (en inglés, para logs). La UI NO lo muestra tal cual
+};
+
+type ErrorCode =
+  | "network"                  // sin conexión o timeout
+  | "api_unavailable"          // fallaron todas las URLs base de YTS
+  | "not_found"                // la película, el torrent o el recurso no existe
+  | "invalid_input"
+  | "torrent"                  // error del motor torrent
+  | "no_peers"                 // no hubo peers tras el timeout
+  | "subtitles_auth"           // falta la API key de OpenSubtitles o es inválida
+  | "subtitles_quota"          // se agotó la cuota diaria de OpenSubtitles
+  | "external_player_missing"  // VLC no está instalado
+  | "io"                       // disco lleno, permisos, etc.
+  | "db"
+  | "internal";
+```
+
+El frontend convierte `code` en un texto en español y en una acción siguiente (principio de producto: "nunca dejar al usuario sin salida").
+
+## Tipos compartidos
+
+```ts
+type Quality = "480p" | "720p" | "1080p" | "2160p" | "3D";
+type VideoCodec = "x264" | "x265";
+
+type Torrent = {
+  infohash: string;
+  quality: Quality;
+  source: "bluray" | "web";        // `type` en la API de YTS
+  videoCodec: VideoCodec;
+  bitDepth: number | null;         // 8 | 10
+  audioChannels: string | null;    // "2.0", "5.1"
+  sizeBytes: number;
+  seeds: number;
+  peers: number;
+  uploadedAt: string | null;
+};
+
+type MovieSummary = {
+  id: number;                      // id de YTS
+  imdbCode: string;
+  title: string;
+  year: number;
+  rating: number;                  // IMDb 0–10
+  runtimeMin: number;
+  genres: string[];
+  coverUrl: string;                // portada mediana, servida desde caché local
+  coverLargeUrl: string;
+  backgroundUrl: string | null;
+  qualities: Quality[];            // calidades disponibles, sin duplicados
+  hasX264: boolean;
+};
+
+type CastMember = { name: string; character: string | null; imageUrl: string | null };
+
+type MovieDetail = MovieSummary & {
+  summary: string;
+  language: string;
+  mpaRating: string | null;
+  ytTrailerCode: string | null;
+  cast: CastMember[];
+  torrents: Torrent[];             // en el orden de la API; el front decide cómo mostrarlos
+  isFavorite: boolean;
+  progress: Progress | null;
+  download: Download | null;       // si ya hay una descarga de cualquier versión
+};
+
+type MoviePage = {
+  movies: MovieSummary[];          // [] si no hay resultados, nunca null
+  total: number;                   // movie_count
+  page: number;
+  limit: number;
+  hasMore: boolean;
+};
+
+type Progress = {
+  movieId: number;
+  positionS: number;
+  durationS: number;
+  finished: boolean;               // true a partir del 92 %
+  updatedAt: string;
+};
+```
+
+## Comandos
+
+### Catálogo
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `list_movies` | `{ params: ListMoviesParams }` | `MoviePage` |
+| `get_movie` | `{ movieId: number }` | `MovieDetail` |
+| `get_suggestions` | `{ movieId: number }` | `MovieSummary[]` |
+| `get_api_status` | — | `ApiEndpointStatus[]` |
+
+```ts
+type ListMoviesParams = {
+  page?: number;                   // por defecto 1
+  limit?: number;                  // 1–50, por defecto 20
+  query?: string;                  // query_term
+  genre?: string;                  // en minúsculas como en la API: "action", "sci-fi"…
+  quality?: Quality | "1080p.x265";
+  minimumRating?: number;          // 0–9
+  sortBy?: "title" | "year" | "rating" | "peers" | "seeds" | "download_count" | "like_count" | "date_added";
+  orderBy?: "desc" | "asc";
+};
+
+type ApiEndpointStatus = {
+  baseUrl: string;
+  role: "active" | "fallback";
+  latencyMs: number | null;        // null si falló
+  ok: boolean;
+};
+```
+
+El caché (TTL de unos 30 minutos) y el failover entre URLs base son internos del backend y no cambian el contrato. `get_api_status` alimenta la sección "Catálogo" de Ajustes.
+
+### Reproducción (streaming)
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `start_stream` | `{ movieId: number, infohash: string }` | `StreamSession` |
+| `stop_stream` | `{ infohash: string }` | `void` |
+| `open_external_player` | `{ infohash: string }` | `void` |
+
+```ts
+type StreamSession = {
+  infohash: string;
+  movieId: number;
+  streamUrl: string;               // http://127.0.0.1:<port>/stream/<infohash>/<fileIdx> (soporta Range → 206)
+  fileName: string;
+  fileSizeBytes: number;
+  videoCodec: VideoCodec;
+  likelyPlayable: boolean;         // false para x265: el front ofrece VLC desde el principio
+  bufferTargetBytes: number;       // umbral para empezar (≈ 8 MB, configurable)
+  resumeAtS: number | null;        // progreso guardado, si existe
+  source: "network" | "library";   // "library" si la película ya está descargada; arranque inmediato
+};
+```
+
+- `start_stream` es idempotente: si el torrent ya está activo (por ejemplo, porque se está descargando), devuelve la misma sesión.
+- `stop_stream` pausa el torrent cuando es solo de streaming. Si además es una descarga, la descarga sigue. La caché se limpia más tarde, por LRU.
+- `open_external_player` lanza el reproductor de Ajustes (VLC por defecto) con `streamUrl`. Si no está instalado, devuelve el error `external_player_missing`.
+- El progreso **no** lo guarda el backend por su cuenta: el front llama a `save_progress`.
+
+### Subtítulos
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `search_subtitles` | `{ movieId: number, lang: string, infohash?: string }` | `SubtitleOption[]` |
+| `load_subtitle` | `{ subtitleId: string }` | `SubtitleTrack` |
+| `load_subtitle_file` | `{ path: string }` | `SubtitleTrack` |
+
+```ts
+type SubtitleOption = {
+  id: string;                      // id de OpenSubtitles (file_id)
+  lang: string;                    // ISO 639-1: "es", "en"
+  label: string;                   // nombre del release
+  downloads: number;
+  hearingImpaired: boolean;
+  matchesRelease: boolean;         // coincide con el release de YTS del infohash dado
+};
+
+type SubtitleTrack = {
+  trackUrl: string;                // .vtt servido por el servidor local (ya convertido de SRT y en UTF-8)
+  lang: string | null;
+  label: string;
+};
+```
+
+- Los resultados se ordenan primero por `matchesRelease` y después por `downloads`, de mayor a menor.
+- La búsqueda usa el `imdbCode` de la película: el backend lo obtiene a partir de `movieId`.
+- El retraso de los subtítulos lo aplica el front, desplazando los `cue`. No pasa por IPC.
+
+### Mi lista
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `list_favorites` | — | `MovieSummary[]` (las más recientes primero) |
+| `add_favorite` | `{ movie: MovieSummary }` | `void` |
+| `remove_favorite` | `{ movieId: number }` | `void` |
+
+`add_favorite` recibe el `MovieSummary` completo para que "Mi lista" se pueda mostrar sin conexión.
+
+### Continuar viendo
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `save_progress` | `{ movie: MovieSummary, positionS: number, durationS: number }` | `Progress` |
+| `get_progress` | `{ movieId: number }` | `Progress \| null` |
+| `list_continue_watching` | — | `ContinueItem[]` |
+| `remove_progress` | `{ movieId: number }` | `void` |
+
+```ts
+type ContinueItem = { movie: MovieSummary; progress: Progress };
+```
+
+- El front llama a `save_progress` cada 10 s, al pausar y al salir del reproductor.
+- `list_continue_watching` excluye las películas con `finished: true` y ordena por `updatedAt`, de más reciente a más antigua.
+
+### Descargas
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `start_download` | `{ movie: MovieSummary, infohash: string }` | `Download` |
+| `list_downloads` | — | `Download[]` |
+| `pause_download` | `{ infohash: string }` | `Download` |
+| `resume_download` | `{ infohash: string }` | `Download` |
+| `remove_download` | `{ infohash: string, deleteFiles: boolean }` | `void` |
+| `open_download_folder` | `{ infohash: string }` | `void` |
+
+```ts
+type DownloadState = "queued" | "active" | "paused" | "stalled" | "done" | "error";
+
+type Download = {
+  infohash: string;
+  movie: MovieSummary;
+  quality: Quality;
+  videoCodec: VideoCodec;
+  state: DownloadState;
+  progress: number;                // 0–1
+  sizeBytes: number;
+  downloadedBytes: number;
+  downSpeedBps: number;
+  peers: number;
+  etaS: number | null;
+  path: string | null;             // carpeta en library/, cuando existe
+  error: string | null;
+  addedAt: string;
+};
+```
+
+Si se llama a `start_download` sobre un torrent que ya se está reproduciendo, se **promueve**: deja de ser caché y pasa a `library/`, sin volver a descargar lo que ya se bajó.
+
+### Ajustes y almacenamiento
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `get_settings` | — | `Settings` |
+| `update_settings` | `{ patch: Partial<Settings> }` | `Settings` |
+| `get_storage_usage` | — | `StorageUsage` |
+| `clear_cache` | — | `{ freedBytes: number }` |
+
+```ts
+type Settings = {
+  // Catálogo
+  apiBaseUrls: string[];           // en orden de preferencia
+  // Subtítulos
+  openSubtitlesApiKey: string | null;
+  subtitleLang: string;            // "es"
+  autoSubtitles: boolean;
+  // Reproducción
+  preferredQuality: Quality;       // "1080p"
+  preferX264: boolean;
+  externalPlayer: string;          // comando, por defecto "vlc"
+  bufferTargetBytes: number;
+  // Torrent
+  downLimitKbps: number | null;    // null = sin límite
+  upLimitKbps: number | null;
+  seedAfterDownload: boolean;
+  listenPort: number | null;       // null = automático
+  // Almacenamiento
+  dataDir: string;
+  cacheLimitBytes: number;
+};
+
+type StorageUsage = { cacheBytes: number; cacheLimitBytes: number; libraryBytes: number; freeDiskBytes: number };
+```
+
+- `update_settings` valida los datos y devuelve los ajustes completos ya aplicados. Los límites de velocidad y el puerto se aplican en caliente, sin reiniciar la app.
+- `openSubtitlesApiKey` solo se guarda en local (SQLite) y no se escribe nunca en los logs.
+
+### Tráiler
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `open_trailer_window` | `{ ytTrailerCode: string, title: string }` | `void` |
+
+Es el plan B por si el embed `youtube-nocookie` falla dentro de la WebView: abre una `WebviewWindow` aparte que carga la URL del embed directamente. Lo normal es que el front intente primero el modal con el iframe.
+
+## Eventos (backend → frontend)
+
+Se escuchan con `listen(evento, handler)` de `@tauri-apps/api/event`.
+
+### `torrent://stats`
+Se emite **cada segundo** por cada torrent activo, sea de streaming o de descarga.
+
+```ts
+type TorrentStats = {
+  infohash: string;
+  phase: StreamPhase;
+  peers: number;
+  seeds: number;
+  downSpeedBps: number;
+  upSpeedBps: number;
+  progress: number;                // 0–1, todo el archivo
+  downloadedBytes: number;
+  bufferedAheadBytes: number;      // contiguos desde la posición de lectura actual
+  availableRanges: [number, number][]; // fracciones 0–1 ya en disco (barra de progreso: "saltar ahí es inmediato")
+  pieceMap: string | null;         // solo mientras hay un stream abierto. Muestreado a 200 celdas: "0" falta, "1" lista, "2" prioritaria, "3" llegando
+};
+
+type StreamPhase =
+  | "connecting"   // "Conectando al enjambre…"
+  | "metadata"     // descargando los metadatos del magnet
+  | "buffering"    // por debajo de bufferTargetBytes
+  | "ready"        // se puede reproducir
+  | "stalled"      // sin peers o velocidad 0 durante más de 30 s
+  | "seeding"
+  | "done";
+```
+
+### `download://changed`
+Se emite **solo cuando cambia el estado** de una descarga (agregada, pausada, terminada, error o eliminada). El progreso continuo llega por `torrent://stats`.
+
+```ts
+type DownloadChanged = { infohash: string; download: Download | null }; // null = eliminada
+```
+
+### `app://error`
+Errores en segundo plano que no responden a ningún comando, como que se caiga el servidor local o que el disco se llene durante una descarga.
+
+```ts
+type BackgroundError = AppError & { infohash: string | null };
+```
+
+## Servidor HTTP local
+
+Lo usa el front de forma indirecta, a través de las URLs que recibe. Se documenta aquí para depurar:
+
+| Ruta | Contenido |
+|---|---|
+| `GET /stream/<infohash>/<fileIdx>` | Video con soporte de `Range` (`206 Partial Content`) |
+| `GET /img/<hash-de-url>` | Imagen de YTS cacheada en disco (se descarga la primera vez que se pide) |
+| `GET /subs/<id>.vtt` | Subtítulo convertido a VTT |
+
+Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Responde con `Access-Control-Allow-Origin` para el origen de la WebView.
+
+## Cambios
+- **v0** (2026-10-03): borrador inicial del MVP.

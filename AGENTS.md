@@ -77,7 +77,7 @@ Dependencias del sistema (Ubuntu): `libwebkit2gtk-4.1-dev build-essential libssl
 - **El streaming se sirve por HTTP en `127.0.0.1`** con soporte de `Range` (respuesta `206`); el `<video>` apunta a esa URL.
 - **Preferir torrents x264.** x265/HEVC (habitual en 2160p) probablemente no se reproduce en WebKitGTK; ofrecer el botón "Abrir en VLC".
 - Datos de usuario en `~/.local/share/yts-player/` (`cache/` para el streaming con límite LRU y `library/` para las descargas guardadas).
-- Errores en Rust con `thiserror`; los comandos devuelven `Result<T, String>` serializable. Nada de `unwrap()` en caminos de producción.
+- Errores en Rust con `thiserror`; los comandos devuelven `Result<T, AppError>` (`{ code, message }`, ver `docs/IPC.md`). Nada de `unwrap()` en caminos de producción.
 - TypeScript en modo `strict`. Componentes funcionales y hooks.
 - La UI de la app está en **español**. Identificadores y comentarios de código en inglés.
 - Tests: fixtures JSON reales de la API para el parseo, más tests de SRT→VTT, del armado de magnets y de las migraciones de la DB.
