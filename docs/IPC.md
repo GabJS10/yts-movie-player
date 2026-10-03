@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.3 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.4 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -75,6 +75,7 @@ type MovieSummary = {
   backgroundUrl: string | null;
   qualities: Quality[];            // calidades disponibles, sin duplicados
   hasX264: boolean;
+  maxSeeds: number;                // el máximo de seeds entre sus torrents (señal del enjambre en las tarjetas); 0 si no hay torrents
 };
 
 type CastMember = { name: string; character: string | null; imageUrl: string | null };
@@ -84,6 +85,7 @@ type MovieDetail = MovieSummary & {
   language: string;
   mpaRating: string | null;
   ytTrailerCode: string | null;
+  screenshotUrls: string[];        // capturas grandes nítidas (1280 px, large_screenshot_image1..3); [] si no hay. El hero y la ficha usan [0] ?? backgroundUrl (background_image viene pequeño y desenfocado)
   cast: CastMember[];
   torrents: Torrent[];             // en el orden de la API; el front decide cómo mostrarlos
   isFavorite: boolean;
@@ -378,3 +380,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.1** (2026-10-03): reglas de opcionales separadas para entradas y salidas, `SettingsPatch` (null = borrar, ausente = no tocar), tipo `ClearCacheResult` con nombre, `dataDir` se aplica al reiniciar, `Torrent.source` desconocido → `"web"`.
 - **v0.2** (2026-10-03): `genres` mantiene las mayúsculas de la API y el filtro va en minúsculas; lista fija de géneros en el front. `Download` no lleva seeds: la salud del enjambre sale de `TorrentStats.seeds`.
 - **v0.3** (2026-10-03): `coverUrl`/`coverLargeUrl` pasan a `string | null`. Las URLs locales valen solo para la sesión y se reescriben al leer de la DB.
+- **v0.4** (2026-10-03): `MovieSummary.maxSeeds` y `MovieDetail.screenshotUrls`.
