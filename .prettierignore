@@ -1,0 +1,12 @@
+dist
+src-tauri
+design
+docs
+.impeccable
+src/routeTree.gen.ts
+src/mocks/catalog.json
+package-lock.json
+*.md
+.agents
+.claude
+.github

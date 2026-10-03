@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/* Archivo variable (wdth 62–125, wght 300–900), self-hosted: the app works offline. OFL, Google Fonts v25. */
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 300 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("./fonts/archivo-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 300 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("./fonts/archivo-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Tokens from DESIGN.md. Utilities: bg-ground, text-muted, border-line, text-green, rounded-md… */
+@theme {
+  --color-*: initial;
+  --color-ground: #171717;
+  --color-surface: #1d1d1d;
+  --color-raised-hi: #2f2f2f;
+  --color-line: #333333;
+  --color-line-hi: #4a4a4a;
+  --color-text: #ffffff;
+  --color-text-2: #c9c9c9;
+  --color-muted: #919191;
+  --color-faint: #6b6b6b;
+  --color-green: #6ac045;
+  --color-green-hi: #75c74e;
+  --color-on-green: #0b1606;
+  --color-green-wash: rgba(106, 192, 69, 0.12);
+  --color-warn: #e3b341;
+  --color-danger: #e5534b;
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-transparent: transparent;
+
+  --font-sans: "Archivo", "Arimo", system-ui, sans-serif;
+
+  --text-label: 11.5px;
+  --text-label--letter-spacing: 0.08em;
+  --text-tag: 12px;
+  --text-body: 15px;
+  --text-body--line-height: 1.5;
+  --text-lead: 16.5px;
+  --text-lead--line-height: 1.6;
+  --text-title: 20px;
+  --text-title--line-height: 1.25;
+  --text-headline: clamp(2rem, 3.4vw, 3rem);
+  --text-headline--line-height: 1;
+  --text-display: clamp(3rem, 6.4vw, 6rem);
+  --text-display--line-height: 0.9;
+  --text-display-detail: clamp(2.5rem, 5vw, 4.75rem);
+  --text-display-detail--line-height: 0.92;
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+
+  --spacing-gutter: clamp(16px, 4vw, 56px);
+  --spacing-nav: 64px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Condensed display voice: Archivo at 72–85% width. */
+@utility stretch-condensed {
+  font-stretch: 72%;
+}
+@utility stretch-semi {
+  font-stretch: 85%;
+}
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html {
+    background: var(--color-ground);
+    scrollbar-color: var(--color-line-hi) var(--color-ground);
+  }
+  body {
+    margin: 0;
+    background: var(--color-ground);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: var(--color-green);
+    color: var(--color-on-green);
+  }
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-ground);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-hi);
+    border-radius: 6px;
+    border: 3px solid var(--color-ground);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-green);
+    outline-offset: 3px;
+    border-radius: var(--radius-md);
+  }
+  ::placeholder {
+    color: var(--color-muted);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
