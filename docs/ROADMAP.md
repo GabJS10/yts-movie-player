@@ -13,8 +13,8 @@
 | Fase | Nombre | Resultado visible | Estado |
 |---|---|---|---|
 | 0 | Planificación y diseño | Plan, contrato IPC y prototipo navegable | ✅ Terminada |
-| 1 | Base del proyecto y tooling | La app abre una ventana con la estructura de navegación; CI en verde | ⏳ Siguiente |
-| 2 | Catálogo | Home, Búsqueda y Ficha con datos reales de YTS | — |
+| 1 | Base del proyecto y tooling | La app abre una ventana con la estructura de navegación; CI en verde | ✅ Terminada (`fase-1`) |
+| 2 | Catálogo | Home, Búsqueda y Ficha con datos reales de YTS | ⏳ Siguiente |
 | 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | — |
 | 4 | Persistencia: Mi lista, Continuar viendo y Ajustes base | Favoritos y progreso que sobreviven a un reinicio | — |
 | 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | — |
@@ -62,7 +62,7 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **frontend:** `DESIGN.md`, `PRODUCT.md` y el prototipo navegable en `design/prototype/`.
 - **backend:** aún sin tareas.
 
-## Fase 1: Base del proyecto y tooling
+## Fase 1: Base del proyecto y tooling ✅
 
 **Objetivo:** un proyecto Tauri que compila, abre una ventana con la estructura de navegación de la app y tiene lint, tests y CI funcionando en las dos capas. Todavía sin funcionalidades.
 
