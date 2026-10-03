@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.4 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.5 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -168,6 +168,7 @@ type StreamSession = {
 };
 ```
 
+- `start_stream` obtiene el torrent bajando el archivo `.torrent` de YTS (`torrents[].url`, p. ej. `https://yts.gg/torrent/download/<HASH>`, que ya trae los trackers): así se salta la espera de metadatos, que es lo más lento al arrancar. Si la descarga falla, usa el magnet (infohash + trackers) y emite la fase `metadata` mientras resuelve.
 - `start_stream` es idempotente: si el torrent ya está activo (por ejemplo, porque se está descargando), devuelve la misma sesión.
 - `stop_stream` pausa el torrent cuando es solo de streaming. Si además es una descarga, la descarga sigue. La caché se limpia más tarde, por LRU.
 - `open_external_player` lanza el reproductor de Ajustes (VLC por defecto) con `streamUrl`. Si no está instalado, devuelve el error `external_player_missing`.
@@ -329,19 +330,19 @@ type TorrentStats = {
   infohash: string;
   phase: StreamPhase;
   peers: number;
-  seeds: number;
+  seeds: number;                   // seeds según YTS/tracker para ese torrent (estático, el mismo de get_movie): librqbit no expone qué peers conectados son seeds
   downSpeedBps: number;
   upSpeedBps: number;
   progress: number;                // 0–1, todo el archivo
   downloadedBytes: number;
   bufferedAheadBytes: number;      // contiguos desde la posición de lectura actual
   availableRanges: [number, number][]; // fracciones 0–1 ya en disco (barra de progreso: "saltar ahí es inmediato")
-  pieceMap: string | null;         // solo mientras hay un stream abierto. Muestreado a 200 celdas: "0" falta, "1" lista, "2" prioritaria, "3" llegando
+  pieceMap: string | null;         // solo mientras hay un stream abierto. Muestreado a 200 celdas: "0" falta, "1" lista, "2" prioritaria (falta y está dentro de la ventana de ~32 MB que librqbit prioriza desde cada posición de lectura), "3" llegando (reservado: hoy no se emite porque librqbit no expone las piezas en vuelo)
 };
 
 type StreamPhase =
-  | "connecting"   // "Conectando al enjambre…"
-  | "metadata"     // descargando los metadatos del magnet
+  | "connecting"   // "Conectando al enjambre…" (todavía sin peers conectados)
+  | "metadata"     // solo si hubo que caer al magnet: resolviendo metadatos (sin peers visibles mientras tanto)
   | "buffering"    // por debajo de bufferTargetBytes
   | "ready"        // se puede reproducir
   | "stalled"      // sin peers o velocidad 0 durante más de 30 s
@@ -381,3 +382,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.2** (2026-10-03): `genres` mantiene las mayúsculas de la API y el filtro va en minúsculas; lista fija de géneros en el front. `Download` no lleva seeds: la salud del enjambre sale de `TorrentStats.seeds`.
 - **v0.3** (2026-10-03): `coverUrl`/`coverLargeUrl` pasan a `string | null`. Las URLs locales valen solo para la sesión y se reescriben al leer de la DB.
 - **v0.4** (2026-10-03): `MovieSummary.maxSeeds` y `MovieDetail.screenshotUrls`.
+- **v0.5** (2026-10-03): `TorrentStats.seeds` = seeds de YTS (estático); pieceMap "3" reservado y sin emitir; `start_stream` usa el `.torrent` de YTS y cae al magnet si falla (la fase `metadata` solo aparece en ese caso).
