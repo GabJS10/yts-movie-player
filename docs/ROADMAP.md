@@ -68,7 +68,7 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 
 - **plan:** instalar las dependencias del sistema, crear el scaffold con `create-tauri-app` (es compartido: crea `src/` y `src-tauri/` a la vez), los scripts de `package.json` y el CI de GitHub Actions (lint, typecheck, tests y cargo en Ubuntu).
 - **backend:** reorganizar `src-tauri/` en módulos según `PLAN.md`, implementar `AppError` y los tipos del IPC con serde, la ruta del directorio de datos, el logging con `tracing`, `AppState` y los tests de serialización.
-- **frontend:** Tailwind con los tokens de `DESIGN.md`, la fuente Archivo en local, el Router con todas las rutas, el shell (barra de navegación) tal como en el prototipo, `src/api/types.ts` y `src/api/tauri.ts`, la capa de mocks, TanStack Query + Zustand, ESLint/Prettier y Vitest + Testing Library.
+- **frontend:** Tailwind con los tokens de `DESIGN.md`, la fuente Archivo en local, TanStack Router (rutas basadas en archivos, con búsqueda y filtros tipados en los search params), el shell (barra de navegación) tal como en el prototipo, `src/api/types.ts` y `src/api/tauri.ts`, la capa de mocks, TanStack Query + Zustand, ESLint/Prettier y Vitest + Testing Library.
 - **Tests:** la infraestructura en las dos capas, con al menos un test real por capa y el CI corriéndolos.
 - **Cierre:** `npm run tauri dev` abre la ventana con el shell y se puede navegar entre las rutas (vacías). El CI está en verde. Tag `fase-1`.
 

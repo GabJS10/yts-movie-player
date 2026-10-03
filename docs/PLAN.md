@@ -31,7 +31,7 @@ Clave del streaming: librqbit ya expone el contenido de un torrent como un strea
 yts-movie-player/
 ├─ src/                        # React + TS (Vite)
 │  ├─ api/tauri.ts             # wrappers tipados de invoke()
-│  ├─ pages/ Home.tsx, Search.tsx, MovieDetail.tsx, Player.tsx, MyList.tsx, Downloads.tsx, Settings.tsx
+│  ├─ routes/ (TanStack Router, basado en archivos) __root, index, search, movie.$movieId, play.$movieId, my-list, downloads, settings
 │  ├─ components/ MovieRow.tsx, MovieCard.tsx, HeroBanner.tsx, Filters.tsx, TrailerModal.tsx, PlayerControls.tsx
 │  └─ store/                   # TanStack Query (datos remotos) + Zustand (estado UI)
 └─ src-tauri/src/

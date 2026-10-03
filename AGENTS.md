@@ -39,7 +39,7 @@ El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia t
 
 ## Stack
 - **Escritorio:** Tauri 2
-- **Frontend:** React + TypeScript + Vite, Tailwind, TanStack Query (datos remotos), Zustand (estado de UI), React Router
+- **Frontend:** React + TypeScript + Vite, Tailwind, TanStack Query (datos remotos), Zustand (estado de UI), TanStack Router (rutas basadas en archivos, `src/routes/`)
 - **Backend (Rust):** `reqwest` + `serde` (API YTS), `librqbit` (motor torrent y streaming), `axum` o el servidor HTTP de librqbit (stream local con `Range`), `rusqlite` (persistencia), `tokio`
 - **Subtítulos:** API REST de OpenSubtitles (requiere API key del usuario en Ajustes)
 - **Plataforma objetivo:** Linux primero (WebKitGTK); Windows y macOS después
@@ -48,7 +48,8 @@ El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia t
 ```
 src/                 # Frontend React
   api/tauri.ts       # wrappers tipados de invoke(); único punto de contacto con Rust
-  pages/             # Home, Search, MovieDetail, Player, MyList, Downloads, Settings
+  routes/            # TanStack Router file-based: __root, index, search, movie.$movieId, play.$movieId, my-list, downloads, settings
+  routeTree.gen.ts   # generado por @tanstack/router-plugin (no editar)
   components/        # MovieRow, MovieCard, HeroBanner, Filters, TrailerModal, PlayerControls
   store/
 src-tauri/src/

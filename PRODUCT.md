@@ -10,7 +10,7 @@ web
 
 ## Stack
 
-Decided in docs/PLAN.md: Tauri 2 + React + TypeScript + Vite, Tailwind, TanStack Query, Zustand, React Router. Rust core for network, torrent, streaming and disk.
+Decided in docs/PLAN.md: Tauri 2 + React + TypeScript + Vite, Tailwind, TanStack Query, TanStack Router, Zustand. Rust core for network, torrent, streaming and disk.
 
 ## Users
 
