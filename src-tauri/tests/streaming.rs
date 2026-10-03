@@ -173,20 +173,27 @@ async fn get(url: &str, range: Option<&str>) -> (u16, reqwest::header::HeaderMap
     (status, headers, body)
 }
 
-/// Collects stats until `done` or timeout.
-async fn collect_until_done(rx: &mut broadcast::Receiver<TorrentStats>) -> Vec<TorrentStats> {
+/// Collects stats until `phase` shows up (or timeout).
+async fn collect_until(
+    rx: &mut broadcast::Receiver<TorrentStats>,
+    phase: StreamPhase,
+) -> Vec<TorrentStats> {
     let mut all = Vec::new();
     let _ = tokio::time::timeout(Duration::from_secs(40), async {
         while let Ok(s) = rx.recv().await {
-            let done = s.phase == StreamPhase::Done;
+            let reached = s.phase == phase;
             all.push(s);
-            if done {
+            if reached {
                 break;
             }
         }
     })
     .await;
     all
+}
+
+async fn collect_until_done(rx: &mut broadcast::Receiver<TorrentStats>) -> Vec<TorrentStats> {
+    collect_until(rx, StreamPhase::Done).await
 }
 
 fn dedup_phases(stats: &[TorrentStats]) -> Vec<StreamPhase> {
@@ -295,6 +302,15 @@ async fn streams_video_from_torrent_file_with_ranges_and_phases() {
         .unwrap();
     assert_eq!(again, session);
 
+    // Before any read the position is 0: the 1 MB target fills while rate limited.
+    let mut stats = collect_until(&mut rx, StreamPhase::Ready).await;
+    assert_eq!(
+        stats.last().map(|s| s.phase),
+        Some(StreamPhase::Ready),
+        "never ready: {:?}",
+        dedup_phases(&stats)
+    );
+
     // Range in the middle and at the end (MP4 moov atom) → 206 with the exact bytes.
     let (status, headers, body) = get(&session.stream_url, Some("bytes=3000000-3099999")).await;
     assert_eq!(status, 206);
@@ -330,7 +346,7 @@ async fn streams_video_from_torrent_file_with_ranges_and_phases() {
         .replace(&format!("/{file_idx}"), &format!("/{}", file_idx + 1));
     assert_eq!(get(&wrong_idx, None).await.0, 404);
 
-    let stats = collect_until_done(&mut rx).await;
+    stats.extend(collect_until_done(&mut rx).await);
     let phases = dedup_phases(&stats);
     assert!(
         is_ordered_subsequence(&phases),
@@ -341,12 +357,20 @@ async fn streams_video_from_torrent_file_with_ranges_and_phases() {
     assert!(stats
         .iter()
         .all(|s| s.seeds == 12 && s.infohash == seeder.infohash));
+    // The file is smaller than the 64 MB window: pieceMap covers the whole file.
+    let with_map: Vec<&TorrentStats> = stats.iter().filter(|s| s.piece_map.is_some()).collect();
     assert!(
-        stats
-            .iter()
-            .any(|s| s.piece_map.as_deref().is_some_and(|m| m.len() == 200)),
+        !with_map.is_empty(),
         "pieceMap never reported while streaming"
     );
+    for s in &with_map {
+        assert_eq!(s.piece_map.as_deref().map(str::len), Some(200));
+        let w = s.piece_map_window.expect("pieceMapWindow with pieceMap");
+        assert_eq!((w.start_byte, w.end_byte), (0, VIDEO_LEN as u64));
+    }
+    assert!(stats
+        .iter()
+        .all(|s| s.piece_map.is_some() == s.piece_map_window.is_some()));
     assert!(stats.iter().any(|s| s.peers > 0 && s.down_speed_bps > 0));
     let last = stats.last().unwrap();
     assert_eq!(last.progress, 1.0);
@@ -468,4 +492,42 @@ async fn invalid_infohash_is_invalid_input() {
         .await
         .unwrap_err();
     assert!(matches!(err, AppError::InvalidInput(_)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn strict_mode_start_stop_start_resumes_the_same_session() {
+    let seeder = start_seeder().await;
+    let dl = start_downloader(vec![seeder.addr], |_| {}).await;
+    let req = request(&seeder, None);
+
+    // React StrictMode: start → stop → start fired back to back while the first start is
+    // still resolving the magnet. They apply in call order, so the stream ends up running.
+    let (first, stop, second) = tokio::join!(
+        dl.engine.start_stream(req.clone()),
+        dl.engine.stop_stream(&seeder.infohash),
+        dl.engine.start_stream(req.clone()),
+    );
+    let first = first.unwrap();
+    stop.unwrap();
+    assert_eq!(second.unwrap(), first);
+    assert_eq!(dl.engine.is_paused(&seeder.infohash), Some(false));
+
+    // Same sequence once the stream is live.
+    dl.engine.stop_stream(&seeder.infohash).await.unwrap();
+    assert_eq!(dl.engine.is_paused(&seeder.infohash), Some(true));
+    let resumed = dl.engine.start_stream(req.clone()).await.unwrap();
+    assert_eq!(resumed, first);
+    assert_eq!(dl.engine.is_paused(&seeder.infohash), Some(false));
+    let (status, _, body) = get(&resumed.stream_url, Some("bytes=5000000-5000999")).await;
+    assert_eq!(status, 206);
+    assert_eq!(body, seeder.video[5_000_000..5_001_000]);
+
+    // When the last call is a stop, the stream ends up paused.
+    let (again, stop) = tokio::join!(
+        dl.engine.start_stream(req.clone()),
+        dl.engine.stop_stream(&seeder.infohash),
+    );
+    assert_eq!(again.unwrap(), first);
+    stop.unwrap();
+    assert_eq!(dl.engine.is_paused(&seeder.infohash), Some(true));
 }

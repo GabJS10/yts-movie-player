@@ -404,6 +404,16 @@ pub struct TorrentStats {
     pub buffered_ahead_bytes: u64,
     pub available_ranges: Vec<(f64, f64)>,
     pub piece_map: Option<String>,
+    /// Byte window `pieceMap` is sampled over; `None` when `piece_map` is `None`.
+    pub piece_map_window: Option<PieceMapWindow>,
+}
+
+/// `[startByte, endByte)` of the file covered by `pieceMap`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PieceMapWindow {
+    pub start_byte: u64,
+    pub end_byte: u64,
 }
 
 /// Payload of `download://changed`. `download: None` means it was removed.
@@ -976,7 +986,22 @@ mod tests {
             buffered_ahead_bytes: 10,
             available_ranges: vec![(0.0, 0.25), (0.5, 0.75)],
             piece_map: None,
+            piece_map_window: None,
         };
+        let with_map = TorrentStats {
+            piece_map: Some("012".into()),
+            piece_map_window: Some(PieceMapWindow {
+                start_byte: 1024,
+                end_byte: 4096,
+            }),
+            ..stats.clone()
+        };
+        let value = to_json(&with_map);
+        assert_eq!(value["pieceMap"], "012");
+        assert_eq!(
+            value["pieceMapWindow"],
+            json!({ "startByte": 1024, "endByte": 4096 })
+        );
         assert_eq!(
             to_json(&stats),
             json!({
@@ -990,7 +1015,8 @@ mod tests {
                 "downloadedBytes": 50,
                 "bufferedAheadBytes": 10,
                 "availableRanges": [[0.0, 0.25], [0.5, 0.75]],
-                "pieceMap": null
+                "pieceMap": null,
+                "pieceMapWindow": null
             })
         );
     }

@@ -31,7 +31,9 @@ use url::Url;
 
 use crate::error::{AppError, AppResult};
 use crate::images::{host_allowed, restricted_client};
-use crate::types::{StreamPhase, StreamSession, StreamSource, TorrentStats, VideoCodec};
+use crate::types::{
+    PieceMapWindow, StreamPhase, StreamSession, StreamSource, TorrentStats, VideoCodec,
+};
 
 /// Public trackers added to every torrent and magnet.
 ///
@@ -55,6 +57,9 @@ pub const TRACKERS: [&str; 7] = [
 pub const STREAM_PRIORITY_WINDOW: u64 = 32 * 1024 * 1024;
 
 pub const PIECE_MAP_CELLS: usize = 200;
+
+/// Bytes covered by `pieceMap`, starting at the read position.
+pub const PIECE_MAP_WINDOW: u64 = 64 * 1024 * 1024;
 
 const VIDEO_EXTENSIONS: [&str; 7] = ["mp4", "mkv", "m4v", "webm", "avi", "mov", "ts"];
 
@@ -206,23 +211,37 @@ pub fn priority_pieces(geo: &FileGeometry, positions: &[u64]) -> HashSet<usize> 
     set
 }
 
-/// File sampled into `cells` cells: "1" all pieces downloaded, "2" a missing piece is in a
-/// stream's priority window, "0" missing. ("3", in flight, is not exposed by librqbit.)
+/// `[start, end)` of the file shown in `pieceMap`: `window` bytes from `position`, or the
+/// whole file when it is smaller than the window.
+pub fn piece_map_window(file_len: u64, position: u64, window: u64) -> (u64, u64) {
+    if file_len <= window {
+        return (0, file_len);
+    }
+    let start = position.min(file_len - 1);
+    (start, (start + window).min(file_len))
+}
+
+/// File bytes `[start, end)` sampled into `cells` cells: "1" all pieces downloaded, "2" a
+/// missing piece is in a stream's priority window, "0" missing. ("3", in flight, is not
+/// exposed by librqbit.)
 pub fn piece_map(
     geo: &FileGeometry,
     have: &[bool],
     priority: &HashSet<usize>,
+    (start, end): (u64, u64),
     cells: usize,
 ) -> String {
+    let end = end.min(geo.len);
+    let span = end.saturating_sub(start);
     (0..cells)
         .map(|i| {
-            if geo.len == 0 {
+            if span == 0 {
                 return '0';
             }
-            let b0 = geo.len * i as u64 / cells as u64;
-            let b1 = (geo.len * (i as u64 + 1) / cells as u64)
+            let b0 = start + span * i as u64 / cells as u64;
+            let b1 = (start + span * (i as u64 + 1) / cells as u64)
                 .max(b0 + 1)
-                .min(geo.len);
+                .min(end);
             let first = geo.piece_of(geo.offset + b0);
             let last = geo.piece_of(geo.offset + b1 - 1);
             let missing: Vec<usize> = (first..=last).filter(|&p| !has(have, p)).collect();
@@ -273,11 +292,9 @@ pub fn compute_phase(i: &PhaseInput) -> StreamPhase {
     if i.peers == 0 && i.downloaded == 0 {
         return StreamPhase::Connecting;
     }
-    // Near the end of the file the target can't be reached: whatever is left suffices.
-    let target = i
-        .buffer_target
-        .min(i.file_len.saturating_sub(i.position))
-        .max(1);
+    // Near the end of the file the target can't be reached: whatever is left suffices
+    // (nothing left to read at all also counts as ready).
+    let target = i.buffer_target.min(i.file_len.saturating_sub(i.position));
     if i.buffered_ahead >= target {
         StreamPhase::Ready
     } else {
@@ -401,20 +418,23 @@ struct Readers {
     next_id: AtomicU64,
     /// reader id → (position, last activity)
     map: Mutex<HashMap<u64, (u64, Instant)>>,
+    /// Position of the last read, kept after the reader closes.
+    last: Mutex<Option<u64>>,
 }
 
 impl Readers {
     fn open(&self, position: u64) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        if let Ok(mut map) = self.map.lock() {
-            map.insert(id, (position, Instant::now()));
-        }
+        self.update(id, position);
         id
     }
 
     fn update(&self, id: u64, position: u64) {
         if let Ok(mut map) = self.map.lock() {
             map.insert(id, (position, Instant::now()));
+        }
+        if let Ok(mut last) = self.last.lock() {
+            *last = Some(position);
         }
     }
 
@@ -424,13 +444,18 @@ impl Readers {
         }
     }
 
-    /// (all positions, position of the most recently active reader)
+    /// (positions of the open readers, current read position: the most recently active
+    /// reader, else the last position read, else `None` before the first read)
     fn snapshot(&self) -> (Vec<u64>, Option<u64>) {
         let Ok(map) = self.map.lock() else {
             return (Vec::new(), None);
         };
         let positions = map.values().map(|(p, _)| *p).collect();
-        let current = map.values().max_by_key(|(_, t)| *t).map(|(p, _)| *p);
+        let current = map
+            .values()
+            .max_by_key(|(_, t)| *t)
+            .map(|(p, _)| *p)
+            .or_else(|| self.last.lock().ok().and_then(|l| *l));
         (positions, current)
     }
 }
@@ -443,6 +468,9 @@ struct Entry {
     readers: Arc<Readers>,
     stopped: AtomicBool,
     last_alive: Mutex<Instant>,
+    /// Serializes start/stop for this torrent: they apply in call order (React StrictMode
+    /// fires start → stop → start back to back).
+    control: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Entry {
@@ -455,6 +483,7 @@ impl Entry {
             readers: Arc::new(Readers::default()),
             stopped: AtomicBool::new(false),
             last_alive: Mutex::new(Instant::now()),
+            control: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -566,17 +595,27 @@ impl TorrentEngine {
                 "invalid infohash {infohash:?}"
             )));
         }
-        let entry = {
-            let mut entries = self
-                .entries
-                .lock()
-                .map_err(|_| AppError::Internal("torrent entries lock poisoned".into()))?;
-            Arc::clone(entries.entry(infohash.clone()).or_insert_with(|| {
-                Arc::new(Entry::new(StreamRequest {
-                    infohash: infohash.clone(),
-                    ..req.clone()
+        let (entry, _control) = loop {
+            let entry = {
+                let mut entries = self
+                    .entries
+                    .lock()
+                    .map_err(|_| AppError::Internal("torrent entries lock poisoned".into()))?;
+                Arc::clone(entries.entry(infohash.clone()).or_insert_with(|| {
+                    Arc::new(Entry::new(StreamRequest {
+                        infohash: infohash.clone(),
+                        ..req.clone()
+                    }))
                 }))
-            }))
+            };
+            let guard = Arc::clone(&entry.control).lock_owned().await;
+            // A previous start may have failed and dropped this entry while we waited.
+            if self
+                .entry(&infohash)
+                .is_some_and(|current| Arc::ptr_eq(&current, &entry))
+            {
+                break (entry, guard);
+            }
         };
 
         let active = match entry.active.get_or_try_init(|| self.resolve(&entry)).await {
@@ -622,6 +661,7 @@ impl TorrentEngine {
         let Some(entry) = self.entry(&infohash.to_ascii_lowercase()) else {
             return Ok(());
         };
+        let _control = Arc::clone(&entry.control).lock_owned().await;
         entry.stopped.store(true, Ordering::Relaxed);
         // Phase 6: torrents that are also downloads must keep running.
         if let Some(active) = entry.active.get() {
@@ -895,6 +935,7 @@ impl TorrentEngine {
                 buffered_ahead_bytes: 0,
                 available_ranges: Vec::new(),
                 piece_map: None,
+                piece_map_window: None,
             };
         };
 
@@ -924,6 +965,7 @@ impl TorrentEngine {
             .unwrap_or_default();
 
         let (positions, current) = entry.readers.snapshot();
+        // Before the first read: resumeAtS (null until phase 4) → byte 0.
         let position = current.unwrap_or(0);
         let buffered = buffered_ahead(&geo, &have, position);
         let complete = geo.len > 0 && downloaded >= geo.len;
@@ -944,14 +986,15 @@ impl TorrentEngine {
             idle_for: entry.idle_for(),
             stall_after: self.cfg.stall_after,
         });
-        let piece_map = (!positions.is_empty()).then(|| {
-            piece_map(
-                &geo,
-                &have,
-                &priority_pieces(&geo, &positions),
-                PIECE_MAP_CELLS,
-            )
-        });
+        // Reported for every active (not stopped) stream session.
+        let window = piece_map_window(geo.len, position, PIECE_MAP_WINDOW);
+        let piece_map = piece_map(
+            &geo,
+            &have,
+            &priority_pieces(&geo, &positions),
+            window,
+            PIECE_MAP_CELLS,
+        );
         TorrentStats {
             infohash: req.infohash.clone(),
             phase,
@@ -967,7 +1010,11 @@ impl TorrentEngine {
             downloaded_bytes: downloaded,
             buffered_ahead_bytes: buffered,
             available_ranges: available_ranges(&geo, &have),
-            piece_map,
+            piece_map: Some(piece_map),
+            piece_map_window: Some(PieceMapWindow {
+                start_byte: window.0,
+                end_byte: window.1,
+            }),
         }
     }
 
@@ -1180,20 +1227,51 @@ mod tests {
             true, true, false, false, false, false, false, false, false, true,
         ];
         let priority: HashSet<usize> = [2, 3].into_iter().collect();
-        assert_eq!(piece_map(&geo, &h, &priority, 10), "1122000001");
+        let whole = (0, 1000);
+        assert_eq!(piece_map(&geo, &h, &priority, whole, 10), "1122000001");
         // Coarser map: a cell is "1" only if all its pieces are downloaded.
-        assert_eq!(piece_map(&geo, &h, &priority, 5), "12000");
+        assert_eq!(piece_map(&geo, &h, &priority, whole, 5), "12000");
         assert_eq!(
-            piece_map(&geo, &h, &priority, PIECE_MAP_CELLS).len(),
+            piece_map(&geo, &h, &priority, whole, PIECE_MAP_CELLS).len(),
             PIECE_MAP_CELLS
         );
+        // Window [100, 500): pieces 1..=4.
+        assert_eq!(piece_map(&geo, &h, &priority, (100, 500), 4), "1220");
+        // Window past the end of the file is clipped.
+        assert_eq!(piece_map(&geo, &h, &priority, (800, 5000), 2), "01");
         // Tiny file, more cells than bytes.
         let tiny = FileGeometry {
             offset: 0,
             len: 3,
             piece_len: 100,
         };
-        assert_eq!(piece_map(&tiny, &[true], &HashSet::new(), 6), "111111");
+        assert_eq!(
+            piece_map(&tiny, &[true], &HashSet::new(), (0, 3), 6),
+            "111111"
+        );
+    }
+
+    #[test]
+    fn piece_map_window_starts_at_read_position() {
+        const MB: u64 = 1024 * 1024;
+        let len = 2000 * MB;
+        assert_eq!(piece_map_window(len, 0, PIECE_MAP_WINDOW), (0, 64 * MB));
+        assert_eq!(
+            piece_map_window(len, 500 * MB, PIECE_MAP_WINDOW),
+            (500 * MB, 564 * MB)
+        );
+        // Near the end the window is clipped to the file.
+        assert_eq!(
+            piece_map_window(len, 1990 * MB, PIECE_MAP_WINDOW),
+            (1990 * MB, len)
+        );
+        assert_eq!(piece_map_window(len, len, PIECE_MAP_WINDOW), (len - 1, len));
+        // Files smaller than the window: the whole file.
+        assert_eq!(
+            piece_map_window(10 * MB, 5 * MB, PIECE_MAP_WINDOW),
+            (0, 10 * MB)
+        );
+        assert_eq!(piece_map_window(0, 0, PIECE_MAP_WINDOW), (0, 0));
     }
 
     #[test]
@@ -1264,6 +1342,14 @@ mod tests {
             compute_phase(&PhaseInput {
                 position: 9_900,
                 buffered_ahead: 100,
+                ..i
+            }),
+            StreamPhase::Ready
+        );
+        assert_eq!(
+            compute_phase(&PhaseInput {
+                position: 10_000,
+                buffered_ahead: 0,
                 ..i
             }),
             StreamPhase::Ready
