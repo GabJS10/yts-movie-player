@@ -1,6 +1,46 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PageStub } from "../components/PageStub";
+import { HeroBanner } from "../components/HeroBanner";
+import { MovieRow } from "../components/MovieRow";
+import type { ListMoviesParams } from "../api/types";
 
-export const Route = createFileRoute("/")({
-  component: () => <PageStub title="Inicio">Hero destacado y filas del catálogo (Fase 2).</PageStub>,
-});
+type RowDef = { title: string; params: Omit<ListMoviesParams, "page">; note?: string };
+
+const ROWS: RowDef[] = [
+  { title: "Tendencias en YTS", note: "Más descargadas", params: { sortBy: "download_count" } },
+  { title: "Recién llegadas", params: { sortBy: "date_added" } },
+  { title: "Mejor valoradas", note: "IMDb 7 o más", params: { sortBy: "rating", minimumRating: 7 } },
+  { title: "Acción", params: { genre: "action", sortBy: "download_count" } },
+  { title: "Comedia", params: { genre: "comedy", sortBy: "download_count" } },
+  { title: "Ciencia ficción", params: { genre: "sci-fi", sortBy: "download_count" } },
+  { title: "Terror", params: { genre: "horror", sortBy: "download_count" } },
+  { title: "Animación", params: { genre: "animation", sortBy: "download_count" } },
+  { title: "Drama", params: { genre: "drama", sortBy: "download_count" } },
+];
+
+export const Route = createFileRoute("/")({ component: HomePage });
+
+function HomePage() {
+  return (
+    <>
+      <HeroBanner />
+      <div className="relative z-[2] -mt-10 pb-20 max-[520px]:-mt-6">
+        {ROWS.map((r) => (
+          <MovieRow
+            key={r.title}
+            title={r.title}
+            note={r.note}
+            params={r.params}
+            more={{
+              to: "/search",
+              search: {
+                sortBy: r.params.sortBy,
+                genre: r.params.genre,
+                minimumRating: r.params.minimumRating,
+              },
+            }}
+          />
+        ))}
+      </div>
+    </>
+  );
+}

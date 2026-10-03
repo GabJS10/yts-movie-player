@@ -10,7 +10,15 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig({
   // The router plugin must run before the React plugin.
-  plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tailwindcss()],
+  plugins: [
+    tanstackRouter({
+      target: "react",
+      autoCodeSplitting: true,
+      routeFileIgnorePattern: String.raw`\.test\.tsx?$`,
+    }),
+    react(),
+    tailwindcss(),
+  ],
 
   // Tauri: keep Rust errors visible and use a fixed port.
   clearScreen: false,

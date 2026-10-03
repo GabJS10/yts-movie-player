@@ -18,8 +18,13 @@ import type {
 } from "../api/types";
 import catalog from "./catalog.json";
 
-type CatalogMovie = Omit<MovieDetail, "isFavorite" | "progress" | "download">;
-type Catalog = { movies: CatalogMovie[]; order: Record<string, number[]> };
+type CatalogMovie = Omit<MovieDetail, "isFavorite" | "progress" | "download"> & {
+  /** Position in the API's download_count order (mock-only sort key). */
+  downloadRank: number;
+  /** date_uploaded_unix (mock-only sort key). */
+  addedAt: number;
+};
+type Catalog = { movies: CatalogMovie[] };
 
 const CATALOG = catalog as unknown as Catalog;
 const STREAM_PORT = 47213;
@@ -136,7 +141,7 @@ export function createMockBackend(): MockBackend {
     cacheLimitBytes: 10 * 1024 ** 3,
   };
 
-  const detail = (m: CatalogMovie): MovieDetail => ({
+  const detail = ({ downloadRank: _r, addedAt: _a, ...m }: CatalogMovie): MovieDetail => ({
     ...m,
     isFavorite: favorites.some((f) => f.id === m.id),
     progress: progress.get(m.id) ?? null,
@@ -148,6 +153,9 @@ export function createMockBackend(): MockBackend {
       const page = params.page ?? 1;
       const limit = Math.min(50, Math.max(1, params.limit ?? 20));
       const q = params.query?.trim().toLowerCase();
+      // Magic queries to exercise error states in the browser: "!api", "!net".
+      if (q === "!api") fail("api_unavailable", "mock: every base URL failed");
+      if (q === "!net") fail("network", "mock: offline");
       let list = CATALOG.movies.filter(
         (m) =>
           (!q || m.title.toLowerCase().includes(q) || String(m.year) === q || m.imdbCode === q) &&
@@ -160,11 +168,6 @@ export function createMockBackend(): MockBackend {
       );
       const sortBy = params.sortBy ?? "date_added";
       const dir = params.orderBy === "asc" ? -1 : 1;
-      const rank = (id: number) => {
-        const order = CATALOG.order[sortBy] ?? [];
-        const i = order.indexOf(id);
-        return i < 0 ? Number.MAX_SAFE_INTEGER : i;
-      };
       const seeds = (m: CatalogMovie) => Math.max(0, ...m.torrents.map((t) => t.seeds));
       list = [...list].sort((a, b) => {
         switch (sortBy) {
@@ -177,8 +180,10 @@ export function createMockBackend(): MockBackend {
           case "seeds":
           case "peers":
             return (seeds(b) - seeds(a)) * dir;
+          case "date_added":
+            return (b.addedAt - a.addedAt) * dir;
           default:
-            return (rank(a.id) - rank(b.id)) * dir;
+            return (a.downloadRank - b.downloadRank) * dir;
         }
       });
       const start = (page - 1) * limit;

@@ -19,3 +19,9 @@ export function formatRuntime(minutes: number): string {
   if (!minutes) return "";
   return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
 }
+
+const nfRating = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+export const formatRating = (r: number) => nfRating.format(r);
+
+/** Seeds/peers as YTS reports them: the API caps at 100. */
+export const formatCount = (n: number) => (n >= 100 ? "100+" : String(n));

@@ -12,7 +12,7 @@ describe("AppShell", () => {
     }
     expect(within(nav).getByRole("link", { name: "Inicio" })).toHaveAttribute("aria-current", "page");
     expect(within(screen.getByRole("banner")).getByRole("link", { name: "Ajustes" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "Inicio" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Destacada" })).toBeInTheDocument();
   });
 
   it("navigates between routes", async () => {

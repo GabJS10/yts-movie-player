@@ -1,4 +1,12 @@
 import { QueryClient } from "@tanstack/react-query";
+import type { AppError } from "../api/types";
+
+// Every query/mutation error is a contract AppError (src/api/tauri.ts normalizes rejections).
+declare module "@tanstack/react-query" {
+  interface Register {
+    defaultError: AppError;
+  }
+}
 
 export function createQueryClient(): QueryClient {
   return new QueryClient({
