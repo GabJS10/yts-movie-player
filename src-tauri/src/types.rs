@@ -9,7 +9,7 @@ use crate::error::{AppError, ErrorCode};
 // Catalog
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Quality {
     #[serde(rename = "480p")]
     P480,

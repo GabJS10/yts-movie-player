@@ -1,15 +1,16 @@
 //! Shared application state, registered with `tauri::Builder::manage`.
 
-use crate::paths::AppPaths;
+use std::sync::Arc;
 
-/// Grows with each phase (YTS client, torrent session, stream server, DB).
-#[derive(Debug)]
+use crate::images::ImageStore;
+use crate::paths::AppPaths;
+use crate::yts::YtsClient;
+
+/// Grows with each phase (torrent session, DB…).
 pub struct AppState {
     pub paths: AppPaths,
-}
-
-impl AppState {
-    pub fn new(paths: AppPaths) -> Self {
-        Self { paths }
-    }
+    /// Port of the local HTTP server (`stream.rs`).
+    pub server_port: u16,
+    pub images: Arc<ImageStore>,
+    pub yts: YtsClient,
 }
