@@ -84,6 +84,10 @@ curl --location 'https://yts.gg/api/v2/list_movies.json?query_term=matrix&limit=
 - `movie_suggestions` devuelve `movie_count: 0` aunque traiga películas (normalmente 4): ignorar ese contador y usar `movies.length`.
 - Las imágenes `https://yts.gg/assets/...` responden **301 → `https://img.yts.gg/assets/...`**. El cliente debe seguir redirecciones; la lista de dominios permitidos para el caché de imágenes incluye `img.yts.gg`.
 - Con la URL base nueva (`movies-api.accel.li`) el `status_message` ya no trae el aviso de mudanza, pero las imágenes siguen en dominios `yts.gg`.
+- En `movie_suggestions` los torrents **no** traen `type` (→ `source: "web"`) y las películas no traen `large_cover_image` (→ se usa la mediana).
+- Un `movie_id` inexistente devuelve `status: "ok"` con `movie.id = 0` y campos `null` → el backend lo trata como `not_found` (y descarta los `id = 0` de las sugerencias).
+- `date_uploaded` está en la hora local del servidor (UTC+1): usar `date_uploaded_unix`.
+- Torrents con hash inválido o `quality` desconocida se descartan (con un warn en el log).
 - `is_repack` llega como `"0"` o `""` (string inconsistente), así que el modelo serde debe ser tolerante.
 - Si una búsqueda no encuentra nada, `data` **no trae** la clave `movies` (usar `#[serde(default)]`).
 - Los campos `url` e imágenes traen el dominio dentro (`https://yts.gg/...`).

@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.2 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.3 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -13,6 +13,7 @@ Este documento es la única fuente de verdad sobre los comandos Tauri, los event
 - **`infohash`:** hex de 40 caracteres en **minúsculas**. Identifica cada torrent, sea de streaming o de descarga.
 - **URLs que recibe el front:** siempre listas para usar en `<img>`, `<video>` o `<track>`. Las imágenes, los streams y los subtítulos se sirven desde el servidor local `http://127.0.0.1:<port>/…`, así que **el front nunca construye URLs ni habla con dominios de YTS**.
 - **Campos opcionales en las salidas** (lo que devuelve el backend y los payloads de eventos): `T | null`, nunca `undefined`. En Rust son `Option<T>` sin `skip_serializing_if`.
+- **URLs del servidor local = solo para la sesión actual:** llevan el puerto aleatorio del arranque. El front no las guarda en ningún sitio persistente. Lo que el backend guarda en SQLite (favoritos, progreso, descargas) se guarda sin el origen, y al leerlo se le pone el puerto actual (el path `/img/<sha256-de-la-url-remota>` es estable).
 - **Campos opcionales en las entradas** (argumentos de los comandos): `campo?: T`, que se pueden omitir. En Rust son `Option<T>` con `#[serde(default)]`. Una clave omitida significa "usar el valor por defecto". La única excepción es `SettingsPatch` (ver más abajo).
 
 ## Errores
@@ -69,8 +70,8 @@ type MovieSummary = {
   rating: number;                  // IMDb 0–10
   runtimeMin: number;
   genres: string[];                // con las mayúsculas de la API ("Sci-Fi"); para filtrar se usa el valor en minúsculas (ver Géneros)
-  coverUrl: string;                // portada mediana, servida desde caché local
-  coverLargeUrl: string;
+  coverUrl: string | null;         // portada mediana, servida desde caché local; null si YTS no trae portada (el front muestra un placeholder)
+  coverLargeUrl: string | null;    // si falta la grande se usa la mediana
   backgroundUrl: string | null;
   qualities: Quality[];            // calidades disponibles, sin duplicados
   hasX264: boolean;
@@ -376,3 +377,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0** (2026-10-03): borrador inicial del MVP.
 - **v0.1** (2026-10-03): reglas de opcionales separadas para entradas y salidas, `SettingsPatch` (null = borrar, ausente = no tocar), tipo `ClearCacheResult` con nombre, `dataDir` se aplica al reiniciar, `Torrent.source` desconocido → `"web"`.
 - **v0.2** (2026-10-03): `genres` mantiene las mayúsculas de la API y el filtro va en minúsculas; lista fija de géneros en el front. `Download` no lleva seeds: la salud del enjambre sale de `TorrentStats.seeds`.
+- **v0.3** (2026-10-03): `coverUrl`/`coverLargeUrl` pasan a `string | null`. Las URLs locales valen solo para la sesión y se reescriben al leer de la DB.
