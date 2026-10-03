@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.1 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -12,7 +12,8 @@ Este documento es la única fuente de verdad sobre los comandos Tauri, los event
 - **Unidades:** bytes como `number` (entero), velocidades en **bytes/s**, tiempos de reproducción en **segundos** (`number`, con decimales) y fechas en **ISO 8601 UTC** (`string`).
 - **`infohash`:** hex de 40 caracteres en **minúsculas**. Identifica cada torrent, sea de streaming o de descarga.
 - **URLs que recibe el front:** siempre listas para usar en `<img>`, `<video>` o `<track>`. Las imágenes, los streams y los subtítulos se sirven desde el servidor local `http://127.0.0.1:<port>/…`, así que **el front nunca construye URLs ni habla con dominios de YTS**.
-- **Campos opcionales:** `T | null`, nunca `undefined`. En Rust son `Option<T>` sin `skip_serializing_if`.
+- **Campos opcionales en las salidas** (lo que devuelve el backend y los payloads de eventos): `T | null`, nunca `undefined`. En Rust son `Option<T>` sin `skip_serializing_if`.
+- **Campos opcionales en las entradas** (argumentos de los comandos): `campo?: T`, que se pueden omitir. En Rust son `Option<T>` con `#[serde(default)]`. Una clave omitida significa "usar el valor por defecto". La única excepción es `SettingsPatch` (ver más abajo).
 
 ## Errores
 
@@ -50,7 +51,7 @@ type VideoCodec = "x264" | "x265";
 type Torrent = {
   infohash: string;
   quality: Quality;
-  source: "bluray" | "web";        // `type` en la API de YTS
+  source: "bluray" | "web";        // `type` en la API de YTS; un valor desconocido se convierte en "web" (con un warn en el log)
   videoCodec: VideoCodec;
   bitDepth: number | null;         // 8 | 10
   audioChannels: string | null;    // "2.0", "5.1"
@@ -261,9 +262,9 @@ Si se llama a `start_download` sobre un torrent que ya se está reproduciendo, s
 | Comando | Argumentos | Devuelve |
 |---|---|---|
 | `get_settings` | — | `Settings` |
-| `update_settings` | `{ patch: Partial<Settings> }` | `Settings` |
+| `update_settings` | `{ patch: SettingsPatch }` | `Settings` |
 | `get_storage_usage` | — | `StorageUsage` |
-| `clear_cache` | — | `{ freedBytes: number }` |
+| `clear_cache` | — | `ClearCacheResult` |
 
 ```ts
 type Settings = {
@@ -289,9 +290,18 @@ type Settings = {
 };
 
 type StorageUsage = { cacheBytes: number; cacheLimitBytes: number; libraryBytes: number; freeDiskBytes: number };
+
+type ClearCacheResult = { freedBytes: number };
+
+// Todas las claves son opcionales. Clave ausente = no tocar.
+// En los campos que admiten null (openSubtitlesApiKey, downLimitKbps, upLimitKbps, listenPort),
+// enviar null = borrar el valor (sin key, sin límite, puerto automático).
+// En Rust: Option<Option<T>> (p. ej. con serde_with::rust::double_option).
+type SettingsPatch = Partial<Settings>;
 ```
 
 - `update_settings` valida los datos y devuelve los ajustes completos ya aplicados. Los límites de velocidad y el puerto se aplican en caliente, sin reiniciar la app.
+- `dataDir` es la excepción: el cambio se guarda, pero **se aplica al reiniciar la app**, y lo que hay en `cache/` y `library/` no se mueve solo. La UI tiene que avisarlo ("Se aplicará al reiniciar; las descargas existentes se quedan en la carpeta anterior").
 - `openSubtitlesApiKey` solo se guarda en local (SQLite) y no se escribe nunca en los logs.
 
 ### Tráiler
@@ -362,3 +372,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 
 ## Cambios
 - **v0** (2026-10-03): borrador inicial del MVP.
+- **v0.1** (2026-10-03): reglas de opcionales separadas para entradas y salidas, `SettingsPatch` (null = borrar, ausente = no tocar), tipo `ClearCacheResult` con nombre, `dataDir` se aplica al reiniciar, `Torrent.source` desconocido → `"web"`.
