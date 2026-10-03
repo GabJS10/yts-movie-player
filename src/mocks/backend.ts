@@ -400,11 +400,12 @@ export function createMockBackend(): MockBackend {
     const speed =
       phase === "buffering" || phase === "ready" ? 1.6 * 1048576 + Math.random() * 2 * 1048576 : 0;
     const fraction = Math.min(1, sim.buffered / session.fileSizeBytes);
-    // 200 cells over the whole file: "1" ready, "2" missing inside the ~32 MB window librqbit prioritises
-    // from the read position (0 here). "3" (arriving) is reserved and never emitted.
-    const cell = session.fileSizeBytes / 200;
-    const readyCells = Math.floor(sim.buffered / cell);
-    const windowEnd = Math.ceil((32 * 1048576) / cell);
+    // 200 cells over a 64 MB window from the read position (byte 0 here): "1" ready, "2" missing inside
+    // the ~32 MB librqbit prioritises. "3" (arriving) is reserved and never emitted.
+    const windowBytes = Math.min(session.fileSizeBytes, 64 * 1048576);
+    const cell = windowBytes / 200;
+    const readyCells = Math.min(200, Math.floor(sim.buffered / cell));
+    const windowEnd = Math.ceil(Math.min(windowBytes, 32 * 1048576) / cell);
     const pieceMap =
       phase === "connecting"
         ? "0".repeat(200)
@@ -426,6 +427,7 @@ export function createMockBackend(): MockBackend {
         [0.63, 0.7],
       ],
       pieceMap,
+      pieceMapWindow: { startByte: 0, endByte: windowBytes },
     };
   };
 
@@ -456,6 +458,7 @@ export function createMockBackend(): MockBackend {
         bufferedAheadBytes: 0,
         availableRanges: [[0, next.progress]],
         pieceMap: null,
+        pieceMapWindow: null,
       });
     }
     for (const sim of streams.values()) out.push(streamTick(sim));

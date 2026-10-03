@@ -39,6 +39,7 @@ const stats = (over: Partial<TorrentStats>): TorrentStats => ({
   bufferedAheadBytes: 0,
   availableRanges: [],
   pieceMap: null,
+  pieceMapWindow: null,
   ...over,
 });
 const run = (events: PlayerEvent[], from: PlayerState = initialPlayerState) =>

@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.4); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.6); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -217,6 +217,8 @@ export type StorageUsage = {
 
 export type StreamPhase = "connecting" | "metadata" | "buffering" | "ready" | "stalled" | "seeding" | "done";
 
+export type PieceMapWindow = { startByte: number; endByte: number };
+
 export type TorrentStats = {
   infohash: string;
   phase: StreamPhase;
@@ -229,8 +231,13 @@ export type TorrentStats = {
   bufferedAheadBytes: number;
   /** Fractions 0–1 already on disk. */
   availableRanges: [number, number][];
-  /** 200 cells: "0" missing, "1" ready, "2" priority, "3" arriving. Only while a stream is open. */
+  /**
+   * 200 cells over `pieceMapWindow` (not the whole file): "0" missing, "1" ready, "2" priority,
+   * "3" arriving (reserved, not emitted yet). Only while a stream is open.
+   */
   pieceMap: string | null;
+  /** Byte range the pieceMap covers: 64 MB from the read position (the whole file if smaller). */
+  pieceMapWindow: PieceMapWindow | null;
 };
 
 export type DownloadChanged = { infohash: string; download: Download | null };

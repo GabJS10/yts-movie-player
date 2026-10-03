@@ -1,6 +1,6 @@
 // Pure player logic: state machine, progress-bar layers, piece map and shortcuts. No React, no IPC.
 
-import type { AppError, StreamPhase, StreamSession, TorrentStats } from "../api/types";
+import type { AppError, PieceMapWindow, StreamPhase, StreamSession, TorrentStats } from "../api/types";
 
 // ───────── State machine ─────────
 
@@ -206,4 +206,15 @@ export function formatClock(seconds: number): string {
   const m = Math.floor((s % 3600) / 60);
   const sec = String(s % 60).padStart(2, "0");
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+}
+
+const WINDOW_MB = 1024 * 1024;
+
+/** "Próximos 64 MB desde la posición de lectura": what the 200 cells span. */
+export function windowCaption(w: PieceMapWindow | null): string | null {
+  if (!w || w.endByte <= w.startByte) return null;
+  const mb = Math.round((w.endByte - w.startByte) / WINDOW_MB);
+  return w.startByte === 0 && mb < 64
+    ? `El archivo entero (${mb} MB)`
+    : `Próximos ${mb} MB desde la posición de lectura`;
 }

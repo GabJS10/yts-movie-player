@@ -62,7 +62,7 @@ export function BufferScreen({ movie, torrent, session, stats, alternative, resu
           )}
           <span data-testid="phase">{phase}</span>
         </p>
-        <PieceMap map={stats?.pieceMap ?? null} />
+        <PieceMap map={stats?.pieceMap ?? null} window={stats?.pieceMapWindow ?? null} />
 
         <dl className="mt-7 grid grid-cols-3 border-t border-line">
           <div className="pt-3.5">

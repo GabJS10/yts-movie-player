@@ -25,6 +25,7 @@ const stats = (t: Torrent, over: Partial<TorrentStats> = {}): TorrentStats => ({
   bufferedAheadBytes: 0,
   availableRanges: [[0, 0.01]],
   pieceMap: "1".repeat(10) + "2".repeat(30),
+  pieceMapWindow: { startByte: 0, endByte: 64 * MB },
   ...over,
 });
 const push = (s: TorrentStats) => act(() => useSwarmStore.getState().push(s));
@@ -55,6 +56,7 @@ describe("Player", () => {
     expect(await screen.findByText("Llenando el búfer…")).toBeInTheDocument();
     expect(document.querySelectorAll("[data-testid=piece-map] i.ready")).toHaveLength(10);
     expect(document.querySelectorAll("[data-testid=piece-map] i.priority")).toHaveLength(30);
+    expect(screen.getByText("Próximos 64 MB desde la posición de lectura")).toBeInTheDocument();
     expect(screen.getByText("24")).toBeInTheDocument(); // peers
     expect(screen.getByText("4,0")).toBeInTheDocument(); // MB buffered of 8
     expect(screen.queryByTestId("video")).not.toBeInTheDocument();
