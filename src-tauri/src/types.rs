@@ -95,8 +95,10 @@ pub struct MovieSummary {
     pub rating: f64,
     pub runtime_min: u32,
     pub genres: Vec<String>,
-    pub cover_url: String,
-    pub cover_large_url: String,
+    /// `null` when the API has no cover.
+    pub cover_url: Option<String>,
+    /// Falls back to the medium cover; `null` if neither exists.
+    pub cover_large_url: Option<String>,
     pub background_url: Option<String>,
     pub qualities: Vec<Quality>,
     #[serde(rename = "hasX264")]
@@ -453,8 +455,8 @@ mod tests {
             rating: 5.6,
             runtime_min: 148,
             genres: vec!["Action".into(), "Sci-Fi".into()],
-            cover_url: "http://127.0.0.1:1/img/a".into(),
-            cover_large_url: "http://127.0.0.1:1/img/b".into(),
+            cover_url: Some("http://127.0.0.1:1/img/a".into()),
+            cover_large_url: Some("http://127.0.0.1:1/img/b".into()),
             background_url: None,
             qualities: vec![Quality::P720, Quality::P1080, Quality::P2160],
             has_x264: true,
@@ -660,6 +662,19 @@ mod tests {
         // The frontend sends it back in add_favorite / save_progress / start_download.
         let back: MovieSummary = serde_json::from_value(summary_json()).unwrap();
         assert_eq!(back, summary());
+    }
+
+    #[test]
+    fn movie_summary_without_covers_serializes_null() {
+        let movie = MovieSummary {
+            cover_url: None,
+            cover_large_url: None,
+            ..summary()
+        };
+        let value = to_json(&movie);
+        assert_eq!(value["coverUrl"], Value::Null);
+        assert_eq!(value["coverLargeUrl"], Value::Null);
+        assert!(value.as_object().unwrap().contains_key("coverUrl"));
     }
 
     #[test]

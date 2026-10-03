@@ -95,8 +95,8 @@ async fn list_movies_fixture() {
     assert!(first.imdb_code.starts_with("tt"));
     assert_eq!(first.qualities, vec![Quality::P720, Quality::P1080]);
     assert!(first.has_x264);
-    assert!(is_local_img(&first.cover_url));
-    assert!(is_local_img(&first.cover_large_url));
+    assert!(is_local_img(first.cover_url.as_deref().unwrap()));
+    assert!(is_local_img(first.cover_large_url.as_deref().unwrap()));
     assert!(is_local_img(first.background_url.as_deref().unwrap()));
     assert_ne!(first.cover_url, first.cover_large_url);
 
@@ -213,6 +213,7 @@ async fn suggestions_fixture() {
     assert_eq!(movies.len(), 4);
     assert_eq!(movies[0].title, "Don't Look Up");
     // Suggestions have no large cover: falls back to the medium one.
+    assert!(movies[0].cover_url.is_some());
     assert_eq!(movies[0].cover_large_url, movies[0].cover_url);
     assert!(movies
         .iter()
@@ -223,6 +224,38 @@ async fn suggestions_fixture() {
         sorted.dedup();
         assert_eq!(m.qualities, sorted);
     }
+}
+
+#[tokio::test]
+async fn missing_covers_become_null_and_large_falls_back_to_medium() {
+    let server = MockServer::start().await;
+    let body = r#"{"status":"ok","data":{"movie_count":2,"movies":[
+        {"id":1,"title":"No covers","medium_cover_image":"","large_cover_image":null},
+        {"id":2,"title":"Medium only","medium_cover_image":"https://yts.gg/assets/m.jpg"}
+    ]}}"#;
+    Mock::given(path("/api/v2/list_movies.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+    let h = client(vec![base(&server)]);
+
+    let page = h
+        .client
+        .list_movies(&ListMoviesParams::default())
+        .await
+        .unwrap();
+    let (none, medium) = (&page.movies[0], &page.movies[1]);
+    assert_eq!(
+        (none.cover_url.as_deref(), none.cover_large_url.as_deref()),
+        (None, None)
+    );
+    assert_eq!(none.background_url, None);
+    assert!(is_local_img(medium.cover_url.as_deref().unwrap()));
+    assert_eq!(medium.cover_large_url, medium.cover_url);
+
+    let value = serde_json::to_value(none).unwrap();
+    assert_eq!(value["coverUrl"], serde_json::Value::Null);
+    assert_eq!(value["coverLargeUrl"], serde_json::Value::Null);
 }
 
 // ---------------------------------------------------------------------------
