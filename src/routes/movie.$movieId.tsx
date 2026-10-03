@@ -1,4 +1,4 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMovie, useSuggestions } from "../api/queries";
 import type { MovieDetail } from "../api/types";
@@ -88,10 +88,24 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
           </ul>
 
           <div className="my-7 flex flex-wrap gap-3">
-            <button type="button" className="btn btn-play" disabled title={soon}>
-              <Icon name="play" size={22} />
-              {chosen ? `Reproducir ${chosen.quality}` : "Reproducir"}
-            </button>
+            {chosen ? (
+              <Link
+                to="/play/$movieId"
+                params={{ movieId: movie.id }}
+                search={{ infohash: chosen.infohash }}
+                className="btn btn-play"
+              >
+                <Icon name="play" size={22} />
+                {movie.progress && !movie.progress.finished
+                  ? `Continuar · ${chosen.quality}`
+                  : `Reproducir ${chosen.quality}`}
+              </Link>
+            ) : (
+              <button type="button" className="btn btn-play" disabled>
+                <Icon name="play" size={22} />
+                Reproducir
+              </button>
+            )}
             <button type="button" className="btn btn-line" disabled title={soon}>
               <Icon name={movie.isFavorite ? "heart" : "plus"} size={22} />
               {movie.isFavorite ? "En Mi lista" : "Mi lista"}

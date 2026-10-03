@@ -68,10 +68,15 @@ export function HeroBanner() {
               )}
             </div>
             <div className="flex flex-wrap gap-3">
-              <button type="button" className="btn btn-play" disabled title="Llega con la fase de streaming">
+              <Link
+                to="/play/$movieId"
+                params={{ movieId: movie.id }}
+                search={best ? { infohash: best.infohash } : {}}
+                className="btn btn-play"
+              >
                 <Icon name="play" size={22} />
                 Reproducir
-              </button>
+              </Link>
               <Link to="/movie/$movieId" params={{ movieId: movie.id }} className="btn btn-ghost">
                 <Icon name="info" size={22} />
                 Más info

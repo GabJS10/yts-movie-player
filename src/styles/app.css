@@ -534,3 +534,138 @@
     background: var(--color-green);
   }
 }
+
+/* ───────── Player ───────── */
+@layer components {
+  .pieces {
+    display: grid;
+    grid-template-columns: repeat(40, 1fr);
+    gap: 3px;
+  }
+  .pieces i {
+    aspect-ratio: 1 / 1.6;
+    border-radius: 1px;
+    box-shadow: inset 0 0 0 1px #3a3a3a;
+    transition:
+      background-color 0.25s,
+      box-shadow 0.25s;
+  }
+  .pieces i.priority {
+    box-shadow: inset 0 0 0 1px rgba(106, 192, 69, 0.55);
+  }
+  .pieces i.ready {
+    background: var(--color-green);
+    box-shadow: none;
+  }
+  .pieces i.arriving {
+    background: #4d4d4d;
+    box-shadow: none;
+  }
+  @media (max-width: 900px) {
+    .pieces {
+      grid-template-columns: repeat(25, 1fr);
+    }
+  }
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-green);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(106, 192, 69, 0.55);
+    }
+    50% {
+      box-shadow: 0 0 0 7px rgba(106, 192, 69, 0);
+    }
+  }
+
+  /* Progress bar: watched (green), in the video buffer (solid white), already on disk (hollow) */
+  .scrub {
+    position: relative;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .scrub-rail {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    transition: height 0.15s;
+  }
+  .scrub:hover .scrub-rail,
+  .scrub:focus-visible .scrub-rail {
+    height: 7px;
+  }
+  .scrub-rail > i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 2px;
+  }
+  .scrub-rail > i.available {
+    top: -2px;
+    bottom: -2px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  }
+  .scrub-rail > i.buffered {
+    background: rgba(255, 255, 255, 0.55);
+  }
+  .scrub-rail > i.played {
+    left: 0;
+    background: var(--color-green);
+  }
+  .scrub-knob {
+    position: absolute;
+    top: 50%;
+    width: 15px;
+    height: 15px;
+    margin: -7.5px 0 0 -7.5px;
+    border-radius: 50%;
+    background: var(--color-green);
+    transform: scale(0);
+    transition: transform 0.15s var(--ease-out);
+  }
+  .scrub:hover .scrub-knob,
+  .scrub:focus-visible .scrub-knob {
+    transform: scale(1);
+  }
+  .scrub-tip {
+    position: absolute;
+    bottom: 24px;
+    transform: translateX(-50%);
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: var(--color-raised-hi);
+    font-size: 12.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .scrub:hover .scrub-tip {
+    opacity: 1;
+  }
+  .ctrl-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text);
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+  .ctrl-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}

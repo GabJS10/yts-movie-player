@@ -30,6 +30,14 @@ type Catalog = { movies: CatalogMovie[] };
 const CATALOG = catalog as unknown as Catalog;
 const STREAM_PORT = 47213;
 
+// Browser-playable stand-ins for the local stream (dev only): a short H.264 clip for x264, and a URL
+// that fails to decode for x265, so the codec-error path can be exercised.
+export const MOCK_H264_URL =
+  "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_1MB.mp4";
+export const MOCK_UNPLAYABLE_URL = "data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb20=";
+
+type StreamSim = { session: StreamSession; ticks: number; buffered: number; seeds: number; peers: number };
+
 function fail(code: AppError["code"], message: string): never {
   const err: AppError = { code, message };
   throw err;
@@ -124,7 +132,7 @@ export function createMockBackend(): MockBackend {
   seedDownload(10960, "2160p", "stalled", 0.041);
   seedDownload(3304, "1080p", "done", 1);
 
-  const streams = new Map<string, StreamSession>();
+  const streams = new Map<string, StreamSim>();
 
   let settings: Settings = {
     apiBaseUrls: ["https://movies-api.accel.li/api/v2/", "https://yts.gg/api/v2/"],
@@ -217,13 +225,13 @@ export function createMockBackend(): MockBackend {
 
     start_stream: ({ movieId, infohash }) => {
       const existing = streams.get(infohash);
-      if (existing) return existing;
+      if (existing) return existing.session;
       const { t } = torrentOf(infohash);
       const done = downloads.get(infohash)?.state === "done";
       const session: StreamSession = {
         infohash,
         movieId,
-        streamUrl: `http://127.0.0.1:${STREAM_PORT}/stream/${infohash}/0`,
+        streamUrl: t.videoCodec === "x264" ? MOCK_H264_URL : MOCK_UNPLAYABLE_URL,
         fileName: `${movie(movieId).title}.${t.quality}.${t.videoCodec}.mp4`,
         fileSizeBytes: t.sizeBytes,
         videoCodec: t.videoCodec,
@@ -232,7 +240,7 @@ export function createMockBackend(): MockBackend {
         resumeAtS: progress.get(movieId)?.positionS ?? null,
         source: done ? "library" : "network",
       };
-      streams.set(infohash, session);
+      streams.set(infohash, { session, ticks: 0, buffered: 0, seeds: t.seeds, peers: t.peers });
       return session;
     },
     stop_stream: ({ infohash }) => {
@@ -370,6 +378,59 @@ export function createMockBackend(): MockBackend {
     return h(args);
   };
 
+  /**
+   * One second of a simulated stream: connecting → metadata → buffering (~2 MB/s) → ready.
+   * Versions with fewer than 5 seeds stall after the metadata, to show that state.
+   */
+  const streamTick = (sim: StreamSim): TorrentStats => {
+    sim.ticks += 1;
+    const { session } = sim;
+    const target = session.bufferTargetBytes;
+    const starving = sim.seeds < 5;
+    let phase: TorrentStats["phase"];
+    if (session.source === "library") phase = "done";
+    else if (sim.ticks <= 1) phase = "connecting";
+    else if (sim.ticks <= 2) phase = "metadata";
+    else if (starving) phase = "stalled";
+    else {
+      sim.buffered = Math.min(session.fileSizeBytes, sim.buffered + 1.6 * 1048576 + Math.random() * 1048576);
+      phase = sim.buffered >= target ? "ready" : "buffering";
+    }
+    const peers = phase === "connecting" ? 3 : starving ? 0 : Math.min(sim.peers, 8 + sim.ticks * 4);
+    const speed =
+      phase === "buffering" || phase === "ready" ? 1.6 * 1048576 + Math.random() * 2 * 1048576 : 0;
+    const fraction = Math.min(1, sim.buffered / session.fileSizeBytes);
+    // 200 cells: a ready run from the start, a priority window ahead of it, scattered arrivals elsewhere.
+    const readyCells = Math.round((Math.min(sim.buffered, target) / target) * 16);
+    const pieceMap =
+      phase === "connecting" || phase === "metadata"
+        ? "0".repeat(200)
+        : Array.from({ length: 200 }, (_, i) => {
+            if (i < readyCells) return "1";
+            if (i < 40) return "2";
+            const h = (i * 2654435761 + sim.ticks * 97) % 1000;
+            return h < 25 ? "3" : h < 60 ? "1" : "0";
+          }).join("");
+    return {
+      infohash: session.infohash,
+      phase,
+      peers,
+      seeds: Math.round(peers * 0.7),
+      downSpeedBps: Math.round(speed),
+      upSpeedBps: Math.round(speed * 0.1),
+      progress: fraction,
+      downloadedBytes: Math.round(sim.buffered),
+      bufferedAheadBytes: Math.round(sim.buffered),
+      availableRanges: [
+        [0, Math.max(0.002, fraction)],
+        [0.22, 0.27],
+        [0.41, 0.445],
+        [0.63, 0.7],
+      ],
+      pieceMap,
+    };
+  };
+
   const tick = (): TorrentStats[] => {
     const out: TorrentStats[] = [];
     for (const d of downloads.values()) {
@@ -399,6 +460,7 @@ export function createMockBackend(): MockBackend {
         pieceMap: null,
       });
     }
+    for (const sim of streams.values()) out.push(streamTick(sim));
     return out;
   };
 

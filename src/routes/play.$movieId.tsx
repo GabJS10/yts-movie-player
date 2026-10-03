@@ -1,5 +1,9 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { Icon } from "../components/Icon";
+import { useMovie } from "../api/queries";
+import { ErrorState } from "../components/ErrorState";
+import { Player } from "../components/player/Player";
+import { validatePlaySearch } from "../lib/searchParams";
+import { pickDefaultTorrent } from "../lib/versions";
 
 export const Route = createFileRoute("/play/$movieId")({
   params: {
@@ -10,26 +14,41 @@ export const Route = createFileRoute("/play/$movieId")({
     },
     stringify: ({ movieId }) => ({ movieId: String(movieId) }),
   },
+  validateSearch: validatePlaySearch,
   component: PlayerPage,
 });
 
 // Full-screen surface: the shell hides its navigation on /play.
 function PlayerPage() {
   const { movieId } = Route.useParams();
-  return (
-    <div className="fixed inset-0 z-[100] grid place-items-center bg-black p-6">
-      <div className="w-full max-w-[640px]">
-        <h1 className="m-0 text-headline font-[850] uppercase stretch-condensed">Reproductor</h1>
-        <p className="mt-2 mb-8 text-muted">Streaming de la película {movieId} (Fase 3).</p>
-        <Link
-          to="/movie/$movieId"
-          params={{ movieId }}
-          className="inline-flex h-9 items-center gap-2 rounded-md px-3.5 text-sm font-bold shadow-[inset_0_0_0_1px_var(--color-line-hi)] hover:bg-white/4"
-        >
-          <Icon name="back" size={18} />
-          Volver
-        </Link>
+  const { infohash } = Route.useSearch();
+  const movie = useMovie(movieId);
+
+  if (movie.isError) {
+    return (
+      <div className="fixed inset-0 z-[100] grid place-items-center bg-black p-6">
+        <ErrorState error={movie.error} onRetry={() => void movie.refetch()} />
       </div>
-    </div>
-  );
+    );
+  }
+  if (!movie.data) {
+    return <div className="fixed inset-0 z-[100] bg-black" aria-busy="true" aria-label="Cargando" />;
+  }
+
+  const torrent =
+    movie.data.torrents.find((t) => t.infohash === infohash) ?? pickDefaultTorrent(movie.data.torrents);
+  if (!torrent) {
+    return (
+      <div className="fixed inset-0 z-[100] grid place-items-center bg-black p-6">
+        <div className="grid max-w-[520px] justify-items-start gap-3">
+          <h2 className="m-0 text-[22px] font-extrabold">Esta película no tiene versiones para reproducir</h2>
+          <Link to="/movie/$movieId" params={{ movieId }} className="btn btn-line btn-sm">
+            Volver a la ficha
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  // key: switching version (e.g. "Cambiar a 1080p x264") restarts the whole session.
+  return <Player key={torrent.infohash} movie={movie.data} torrent={torrent} />;
 }

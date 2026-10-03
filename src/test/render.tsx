@@ -59,6 +59,7 @@ export async function renderWithProviders(ui: ReactNode) {
   const router = createRouter({
     routeTree: rootRoute,
     history: createMemoryHistory({ initialEntries: ["/"] }),
+    defaultNotFoundComponent: () => null,
   });
   await router.load();
   const utils = render(

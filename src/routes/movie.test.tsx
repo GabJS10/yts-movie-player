@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderApp } from "../test/render";
 
 describe("/movie/$movieId", () => {
-  it("shows details, preselects the best x264 version and keeps actions disabled", async () => {
+  it("shows details, preselects the best x264 version and links Reproducir to it", async () => {
     await renderApp("/movie/1632");
     expect(await screen.findByRole("heading", { level: 1, name: "Interstellar" })).toBeInTheDocument();
     // Sharp still (screenshotUrls[0]) as backdrop, not the blurred backgroundUrl.
@@ -16,8 +16,9 @@ describe("/movie/$movieId", () => {
     expect(checked).toHaveLength(1);
     expect(checked[0]).toHaveTextContent("1080p");
     expect(screen.getByText("HEVC: puede necesitar VLC")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Reproducir 1080p/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Descargar/ })).toBeDisabled();
+    const play = screen.getByRole("link", { name: /Reproducir 1080p/ });
+    expect(play.getAttribute("href")).toMatch(/^\/play\/1632\?infohash=[0-9a-f]{40}$/);
+    expect(screen.getByRole("button", { name: /Descargar/ })).toBeDisabled(); // phase 6
     expect(screen.getByText(/Matthew McConaughey/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Similares" })).toBeInTheDocument());
   });

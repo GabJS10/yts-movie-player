@@ -59,6 +59,61 @@ const PATHS = {
     />
   ),
   x: <path d="M6 6l12 12M18 6 6 18" />,
+  pause: (
+    <>
+      <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none" />
+      <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  rew10: (
+    <>
+      <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
+      <path d="M4 3.5v4h4" />
+      <text
+        x="12"
+        y="15.2"
+        textAnchor="middle"
+        fontSize="7.5"
+        fontWeight="800"
+        fill="currentColor"
+        stroke="none"
+      >
+        10
+      </text>
+    </>
+  ),
+  fwd10: (
+    <>
+      <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
+      <path d="M20 3.5v4h-4" />
+      <text
+        x="12"
+        y="15.2"
+        textAnchor="middle"
+        fontSize="7.5"
+        fontWeight="800"
+        fill="currentColor"
+        stroke="none"
+      >
+        10
+      </text>
+    </>
+  ),
+  volume: (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4Z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </>
+  ),
+  mute: (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4Z" />
+      <path d="m16 9.5 5 5M21 9.5l-5 5" />
+    </>
+  ),
+  fullscreen: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  "fullscreen-exit": <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />,
+  external: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
 } as const;
 
 export type IconName = keyof typeof PATHS;

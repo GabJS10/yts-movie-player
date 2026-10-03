@@ -36,7 +36,7 @@ describe("AppShell", () => {
   it("hides the navigation on the player", async () => {
     await renderApp("/play/1632");
     expect(screen.queryByRole("navigation", { name: "Principal" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Reproductor" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Interstellar" })).toBeInTheDocument();
   });
 
   it("passes validated search params to /search", async () => {

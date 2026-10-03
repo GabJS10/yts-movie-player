@@ -44,3 +44,11 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
   if (orderBy) out.orderBy = orderBy;
   return out;
 }
+
+/** /play/$movieId search params: the chosen version. Without it, the player picks the default. */
+export type PlaySearch = { infohash?: string };
+
+export function validatePlaySearch(raw: Record<string, unknown>): PlaySearch {
+  const h = typeof raw.infohash === "string" ? raw.infohash.toLowerCase() : "";
+  return /^[0-9a-f]{40}$/.test(h) ? { infohash: h } : {};
+}
