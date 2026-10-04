@@ -6,10 +6,12 @@ use tauri::State;
 use crate::error::AppResult;
 use crate::images::ImageStore;
 use crate::state::AppState;
+use crate::subtitles::{Credentials, Release};
 use crate::torrent::{launch_external_player, StreamRequest};
 use crate::types::{
     ApiEndpointStatus, ClearCacheResult, ContinueItem, ListMoviesParams, MovieDetail, MoviePage,
-    MovieSummary, Progress, Settings, SettingsPatch, StorageUsage, StreamSession,
+    MovieSummary, Progress, Settings, SettingsPatch, StorageUsage, StreamSession, SubtitleOption,
+    SubtitleTrack, SubtitlesStatus,
 };
 
 // ---------------------------------------------------------------------------
@@ -199,10 +201,74 @@ pub async fn update_settings(
         state.cache.set_limit_bytes(after.cache_limit_bytes);
         state.cache.enforce_soon();
     }
+    let creds = subtitle_credentials(&after);
+    if subtitle_credentials(&before) != creds {
+        state.subtitles.set_credentials(creds).await;
+    }
     if before.data_dir != after.data_dir {
         tracing::info!(data_dir = %after.data_dir, "dataDir changed, applies on restart");
     }
     Ok(after)
+}
+
+// ---------------------------------------------------------------------------
+// Subtitles
+// ---------------------------------------------------------------------------
+
+pub fn subtitle_credentials(s: &Settings) -> Credentials {
+    Credentials {
+        api_key: s.open_subtitles_api_key.clone(),
+        username: s.open_subtitles_username.clone(),
+        password: s.open_subtitles_password.clone(),
+    }
+}
+
+#[tauri::command]
+pub async fn search_subtitles(
+    state: State<'_, AppState>,
+    movie_id: u64,
+    lang: String,
+    infohash: Option<String>,
+) -> AppResult<Vec<SubtitleOption>> {
+    tracing::debug!(movie_id, %lang, ?infohash, "search_subtitles");
+    // Cached by the YTS client (the movie page already asked for it).
+    let movie = state.yts.get_movie(movie_id).await?;
+    let release = infohash.and_then(|h| {
+        movie
+            .torrents
+            .iter()
+            .find(|t| t.infohash.eq_ignore_ascii_case(h.trim()))
+            .map(|t| Release {
+                quality: t.quality,
+                source: t.source,
+            })
+    });
+    state
+        .subtitles
+        .search(&movie.summary_fields.imdb_code, &lang, release)
+        .await
+}
+
+#[tauri::command]
+pub async fn load_subtitle(
+    state: State<'_, AppState>,
+    subtitle_id: String,
+) -> AppResult<SubtitleTrack> {
+    tracing::debug!(%subtitle_id, "load_subtitle");
+    state.subtitles.load(&subtitle_id).await
+}
+
+#[tauri::command]
+pub async fn load_subtitle_file(
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<SubtitleTrack> {
+    state.subtitles.load_file(std::path::Path::new(&path)).await
+}
+
+#[tauri::command]
+pub async fn get_subtitles_status(state: State<'_, AppState>) -> AppResult<SubtitlesStatus> {
+    state.subtitles.status().await
 }
 
 #[tauri::command]

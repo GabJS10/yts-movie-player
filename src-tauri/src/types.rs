@@ -233,6 +233,8 @@ pub struct SubtitleOption {
     pub downloads: u64,
     pub hearing_impaired: bool,
     pub matches_release: bool,
+    /// Translated by AI or by machine.
+    pub ai_translated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -241,6 +243,17 @@ pub struct SubtitleTrack {
     pub track_url: String,
     pub lang: Option<String>,
     pub label: String,
+}
+
+/// Result of `get_subtitles_status` (the "Probar" button in Settings).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitlesStatus {
+    pub configured: bool,
+    pub logged_in: bool,
+    pub remaining_downloads: Option<i64>,
+    /// ISO 8601, last known value.
+    pub reset_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -302,11 +315,14 @@ pub struct Download {
 // Settings and storage
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// `Debug` is written by hand (below) so the OpenSubtitles secrets never reach a log.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub api_base_urls: Vec<String>,
     pub open_subtitles_api_key: Option<String>,
+    pub open_subtitles_username: Option<String>,
+    pub open_subtitles_password: Option<String>,
     pub subtitle_lang: String,
     pub auto_subtitles: bool,
     pub preferred_quality: Quality,
@@ -324,12 +340,16 @@ pub struct Settings {
 
 /// `Partial<Settings>` for `update_settings`. For nullable settings, an absent key
 /// (`None`) leaves the value unchanged while an explicit `null` (`Some(None)`) clears it.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SettingsPatch {
     pub api_base_urls: Option<Vec<String>>,
     #[serde(deserialize_with = "present")]
     pub open_subtitles_api_key: Option<Option<String>>,
+    #[serde(deserialize_with = "present")]
+    pub open_subtitles_username: Option<Option<String>>,
+    #[serde(deserialize_with = "present")]
+    pub open_subtitles_password: Option<Option<String>>,
     pub subtitle_lang: Option<String>,
     pub auto_subtitles: Option<bool>,
     pub preferred_quality: Option<Quality>,
@@ -346,6 +366,76 @@ pub struct SettingsPatch {
     pub listen_port: Option<Option<u16>>,
     pub data_dir: Option<String>,
     pub cache_limit_bytes: Option<u64>,
+}
+
+/// `Some("***")` / `None`: shows whether a secret is set without showing it.
+fn redact<T>(secret: &Option<T>) -> Option<&'static str> {
+    secret.as_ref().map(|_| "***")
+}
+
+impl std::fmt::Debug for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Settings")
+            .field("api_base_urls", &self.api_base_urls)
+            .field(
+                "open_subtitles_api_key",
+                &redact(&self.open_subtitles_api_key),
+            )
+            .field(
+                "open_subtitles_username",
+                &redact(&self.open_subtitles_username),
+            )
+            .field(
+                "open_subtitles_password",
+                &redact(&self.open_subtitles_password),
+            )
+            .field("subtitle_lang", &self.subtitle_lang)
+            .field("auto_subtitles", &self.auto_subtitles)
+            .field("preferred_quality", &self.preferred_quality)
+            .field("prefer_x264", &self.prefer_x264)
+            .field("external_player", &self.external_player)
+            .field("buffer_target_bytes", &self.buffer_target_bytes)
+            .field("down_limit_kbps", &self.down_limit_kbps)
+            .field("up_limit_kbps", &self.up_limit_kbps)
+            .field("seed_after_download", &self.seed_after_download)
+            .field("listen_port", &self.listen_port)
+            .field("data_dir", &self.data_dir)
+            .field("cache_limit_bytes", &self.cache_limit_bytes)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for SettingsPatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let secret = |v: &Option<Option<String>>| v.as_ref().map(|inner| redact(inner));
+        f.debug_struct("SettingsPatch")
+            .field("api_base_urls", &self.api_base_urls)
+            .field(
+                "open_subtitles_api_key",
+                &secret(&self.open_subtitles_api_key),
+            )
+            .field(
+                "open_subtitles_username",
+                &secret(&self.open_subtitles_username),
+            )
+            .field(
+                "open_subtitles_password",
+                &secret(&self.open_subtitles_password),
+            )
+            .field("subtitle_lang", &self.subtitle_lang)
+            .field("auto_subtitles", &self.auto_subtitles)
+            .field("preferred_quality", &self.preferred_quality)
+            .field("prefer_x264", &self.prefer_x264)
+            .field("external_player", &self.external_player)
+            .field("buffer_target_bytes", &self.buffer_target_bytes)
+            .field("down_limit_kbps", &self.down_limit_kbps)
+            .field("up_limit_kbps", &self.up_limit_kbps)
+            .field("seed_after_download", &self.seed_after_download)
+            .field("listen_port", &self.listen_port)
+            .field("data_dir", &self.data_dir)
+            .field("cache_limit_bytes", &self.cache_limit_bytes)
+            .finish()
+    }
 }
 
 /// Only called when the key is present, so `null` becomes `Some(None)`.
@@ -837,6 +927,7 @@ mod tests {
             downloads: 5,
             hearing_impaired: false,
             matches_release: true,
+            ai_translated: false,
         };
         assert_eq!(
             to_json(&option),
@@ -846,7 +937,8 @@ mod tests {
                 "label": "Release.1080p",
                 "downloads": 5,
                 "hearingImpaired": false,
-                "matchesRelease": true
+                "matchesRelease": true,
+                "aiTranslated": false
             })
         );
         let track = SubtitleTrack {
@@ -857,6 +949,21 @@ mod tests {
         assert_eq!(
             to_json(&track),
             json!({ "trackUrl": "http://127.0.0.1:1/subs/123.vtt", "lang": null, "label": "manual.srt" })
+        );
+        let status = SubtitlesStatus {
+            configured: true,
+            logged_in: false,
+            remaining_downloads: None,
+            reset_at: Some("2026-10-04T13:03:16Z".into()),
+        };
+        assert_eq!(
+            to_json(&status),
+            json!({
+                "configured": true,
+                "loggedIn": false,
+                "remainingDownloads": null,
+                "resetAt": "2026-10-04T13:03:16Z"
+            })
         );
     }
 
@@ -899,6 +1006,8 @@ mod tests {
         let s = Settings {
             api_base_urls: vec!["https://movies-api.accel.li/api/v2/".into()],
             open_subtitles_api_key: None,
+            open_subtitles_username: Some("user".into()),
+            open_subtitles_password: Some("secret-pass".into()),
             subtitle_lang: "es".into(),
             auto_subtitles: true,
             preferred_quality: Quality::P1080,
@@ -917,6 +1026,8 @@ mod tests {
             json!({
                 "apiBaseUrls": ["https://movies-api.accel.li/api/v2/"],
                 "openSubtitlesApiKey": null,
+                "openSubtitlesUsername": "user",
+                "openSubtitlesPassword": "secret-pass",
                 "subtitleLang": "es",
                 "autoSubtitles": true,
                 "preferredQuality": "1080p",
@@ -930,6 +1041,27 @@ mod tests {
                 "dataDir": "/home/u/.local/share/yts-player",
                 "cacheLimitBytes": 10_000_000_000u64
             })
+        );
+        // Secrets never show up in Debug output (logs).
+        let debug = format!("{s:?}");
+        assert!(
+            !debug.contains("secret-pass") && !debug.contains("\"user\""),
+            "{debug}"
+        );
+        assert!(
+            debug.contains("open_subtitles_password: Some(\"***\")"),
+            "{debug}"
+        );
+        let patch: SettingsPatch = serde_json::from_value(json!({
+            "openSubtitlesApiKey": "k3y-value",
+            "openSubtitlesPassword": null
+        }))
+        .unwrap();
+        let debug = format!("{patch:?}");
+        assert!(!debug.contains("k3y-value"), "{debug}");
+        assert!(
+            debug.contains("open_subtitles_password: Some(None)"),
+            "{debug}"
         );
     }
 

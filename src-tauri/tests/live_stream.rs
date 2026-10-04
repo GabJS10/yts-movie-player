@@ -62,6 +62,7 @@ async fn live_1080p_x264_stream() {
         stream::router(stream::ServerState {
             images,
             torrents: Some(Arc::clone(&engine)),
+            subs_dir: None,
         }),
     ));
     let mut rx = engine.subscribe();

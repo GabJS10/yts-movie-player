@@ -1,0 +1,394 @@
+{
+ "total_pages": 1,
+ "total_count": 7,
+ "per_page": 60,
+ "page": 1,
+ "data": [
+  {
+   "id": "101",
+   "type": "subtitle",
+   "attributes": {
+    "subtitle_id": "101",
+    "language": "es",
+    "download_count": 50000,
+    "new_download_count": 5000,
+    "hearing_impaired": false,
+    "hd": true,
+    "fps": 23.976,
+    "votes": 0,
+    "ratings": 0.0,
+    "from_trusted": true,
+    "foreign_parts_only": false,
+    "upload_date": "2021-03-01T12:00:00Z",
+    "ai_translated": false,
+    "nb_cd": 1,
+    "slug": "x",
+    "machine_translated": false,
+    "release": "The.Matrix.1999.720p.BRrip.x264-YIFY",
+    "comments": "",
+    "legacy_subtitle_id": 101,
+    "legacy_uploader_id": 1,
+    "uploader": {
+     "uploader_id": 1,
+     "name": "someone",
+     "rank": "trusted"
+    },
+    "feature_details": {
+     "feature_id": 1,
+     "feature_type": "Movie",
+     "year": 1999,
+     "title": "The Matrix",
+     "movie_name": "1999 - The Matrix",
+     "imdb_id": 133093,
+     "tmdb_id": 603
+    },
+    "url": "https://www.opensubtitles.com/es/subtitles/101",
+    "related_links": [],
+    "files": [
+     {
+      "file_id": 9001,
+      "cd_number": 1,
+      "file_name": "The.Matrix.1999.720p.BRrip.x264-YIFY.srt"
+     }
+    ]
+   }
+  },
+  {
+   "id": "102",
+   "type": "subtitle",
+   "attributes": {
+    "subtitle_id": "102",
+    "language": "es",
+    "download_count": 800,
+    "new_download_count": 80,
+    "hearing_impaired": true,
+    "hd": true,
+    "fps": 23.976,
+    "votes": 0,
+    "ratings": 0.0,
+    "from_trusted": true,
+    "foreign_parts_only": false,
+    "upload_date": "2021-03-01T12:00:00Z",
+    "ai_translated": false,
+    "nb_cd": 1,
+    "slug": "x",
+    "machine_translated": false,
+    "release": "The.Matrix.1999.1080p.BluRay.x264-YTS",
+    "comments": "",
+    "legacy_subtitle_id": 102,
+    "legacy_uploader_id": 1,
+    "uploader": {
+     "uploader_id": 1,
+     "name": "someone",
+     "rank": "trusted"
+    },
+    "feature_details": {
+     "feature_id": 1,
+     "feature_type": "Movie",
+     "year": 1999,
+     "title": "The Matrix",
+     "movie_name": "1999 - The Matrix",
+     "imdb_id": 133093,
+     "tmdb_id": 603
+    },
+    "url": "https://www.opensubtitles.com/es/subtitles/102",
+    "related_links": [],
+    "files": [
+     {
+      "file_id": 9002,
+      "cd_number": 1,
+      "file_name": "The.Matrix.1999.1080p.BluRay.x264-YTS.srt"
+     }
+    ]
+   }
+  },
+  {
+   "id": "103",
+   "type": "subtitle",
+   "attributes": {
+    "subtitle_id": "103",
+    "language": "es",
+    "download_count": 300,
+    "new_download_count": 30,
+    "hearing_impaired": false,
+    "hd": true,
+    "fps": 23.976,
+    "votes": 0,
+    "ratings": 0.0,
+    "from_trusted": true,
+    "foreign_parts_only": false,
+    "upload_date": "2021-03-01T12:00:00Z",
+    "ai_translated": false,
+    "nb_cd": 1,
+    "slug": "x",
+    "machine_translated": false,
+    "release": "The.Matrix.1999.1080p.BrRip.x264.YIFY",
+    "comments": "",
+    "legacy_subtitle_id": 103,
+    "legacy_uploader_id": 1,
+    "uploader": {
+     "uploader_id": 1,
+     "name": "someone",
+     "rank": "trusted"
+    },
+    "feature_details": {
+     "feature_id": 1,
+     "feature_type": "Movie",
+     "year": 1999,
+     "title": "The Matrix",
+     "movie_name": "1999 - The Matrix",
+     "imdb_id": 133093,
+     "tmdb_id": 603
+    },
+    "url": "https://www.opensubtitles.com/es/subtitles/103",
+    "related_links": [],
+    "files": [
+     {
+      "file_id": 9003,
+      "cd_number": 1,
+      "file_name": "The.Matrix.1999.1080p.BrRip.x264.YIFY.srt"
+     }
+    ]
+   }
+  },
+  {
+   "id": "104",
+   "type": "subtitle",
+   "attributes": {
+    "subtitle_id": "104",
+    "language": "es",
+    "download_count": 90000,
+    "new_download_count": 9000,
+    "hearing_impaired": false,
+    "hd": true,
+    "fps": 23.976,
+    "votes": 0,
+    "ratings": 0.0,
+    "from_trusted": true,
+    "foreign_parts_only": false,
+    "upload_date": "2021-03-01T12:00:00Z",
+    "ai_translated": false,
+    "nb_cd": 1,
+    "slug": "x",
+    "machine_translated": true,
+    "release": "The.Matrix.1999.1080p.WEB-DL",
+    "comments": "",
+    "legacy_subtitle_id": 104,
+    "legacy_uploader_id": 1,
+    "uploader": {
+     "uploader_id": 1,
+     "name": "someone",
+     "rank": "trusted"
+    },
+    "feature_details": {
+     "feature_id": 1,
+     "feature_type": "Movie",
+     "year": 1999,
+     "title": "The Matrix",
+     "movie_name": "1999 - The Matrix",
+     "imdb_id": 133093,
+     "tmdb_id": 603
+    },
+    "url": "https://www.opensubtitles.com/es/subtitles/104",
+    "related_links": [],
+    "files": [
+     {
+      "file_id": 9004,
+      "cd_number": 1,
+      "file_name": "The.Matrix.1999.1080p.WEB-DL.srt"
+     }
+    ]
+   }
+  },
+  {
+   "id": "105",
+   "type": "subtitle",
+   "attributes": {
+    "subtitle_id": "105",
+    "language": "es",
+    "download_count": 70000,
+    "new_download_count": 7000,
+    "hearing_impaired": false,
+    "hd": true,
+    "fps": 23.976,
+    "votes": 0,
+    "ratings": 0.0,
+    "from_trusted": true,
+    "foreign_parts_only": true,
+    "upload_date": "2021-03-01T12:00:00Z",
+    "ai_translated": false,
+    "nb_cd": 1,
+    "slug": "x",
+    "machine_translated": false,
+    "release": "The Matrix forced",
+    "comments": "",
+    "legacy_subtitle_id": 105,
+    "legacy_uploader_id": 1,
+    "uploader": {
+     "uploader_id": 1,
+     "name": "someone",
+     "rank": "trusted"
+    },
+    "feature_details": {
+     "feature_id": 1,
+     "feature_type": "Movie",
+     "year": 1999,
+     "title": "The Matrix",
+     "movie_name": "1999 - The Matrix",
+     "imdb_id": 133093,
+     "tmdb_id": 603
+    },
+    "url": "https://www.opensubtitles.com/es/subtitles/105",
+    "related_links": [],
+    "files": [
+     {
+      "file_id": 9005,
+      "cd_number": 1,
+      "file_name": "The Matrix forced.srt"
+     }
+    ]
+   }
+  },
+  {
+   "id": "106",
+   "type": "subtitle",
+   "attributes": {
+    "subtitle_id": "106",
+    "language": "es",
+    "download_count": 10,
+    "new_download_count": 1,
+    "hearing_impaired": false,
+    "hd": true,
+    "fps": 23.976,
+    "votes": 0,
+    "ratings": 0.0,
+    "from_trusted": true,
+    "foreign_parts_only": false,
+    "upload_date": "2021-03-01T12:00:00Z",
+    "ai_translated": true,
+    "nb_cd": 1,
+    "slug": "x",
+    "machine_translated": false,
+    "release": "",
+    "comments": "",
+    "legacy_subtitle_id": 106,
+    "legacy_uploader_id": 1,
+    "uploader": {
+     "uploader_id": 1,
+     "name": "someone",
+     "rank": "trusted"
+    },
+    "feature_details": {
+     "feature_id": 1,
+     "feature_type": "Movie",
+     "year": 1999,
+     "title": "The Matrix",
+     "movie_name": "1999 - The Matrix",
+     "imdb_id": 133093,
+     "tmdb_id": 603
+    },
+    "url": "https://www.opensubtitles.com/es/subtitles/106",
+    "related_links": [],
+    "files": [
+     {
+      "file_id": 9006,
+      "cd_number": 1,
+      "file_name": ".srt"
+     }
+    ]
+   }
+  },
+  {
+   "id": "107",
+   "type": "subtitle",
+   "attributes": {
+    "subtitle_id": "107",
+    "language": "es",
+    "download_count": 5,
+    "new_download_count": 0,
+    "hearing_impaired": false,
+    "hd": true,
+    "fps": 23.976,
+    "votes": 0,
+    "ratings": 0.0,
+    "from_trusted": true,
+    "foreign_parts_only": false,
+    "upload_date": "2021-03-01T12:00:00Z",
+    "ai_translated": false,
+    "nb_cd": 1,
+    "slug": "x",
+    "machine_translated": false,
+    "release": "no files",
+    "comments": "",
+    "legacy_subtitle_id": 107,
+    "legacy_uploader_id": 1,
+    "uploader": {
+     "uploader_id": 1,
+     "name": "someone",
+     "rank": "trusted"
+    },
+    "feature_details": {
+     "feature_id": 1,
+     "feature_type": "Movie",
+     "year": 1999,
+     "title": "The Matrix",
+     "movie_name": "1999 - The Matrix",
+     "imdb_id": 133093,
+     "tmdb_id": 603
+    },
+    "url": "https://www.opensubtitles.com/es/subtitles/107",
+    "related_links": [],
+    "files": []
+   }
+  },
+  {
+   "id": "108",
+   "type": "subtitle",
+   "attributes": {
+    "subtitle_id": "108",
+    "language": "pt-BR",
+    "download_count": 20,
+    "new_download_count": 2,
+    "hearing_impaired": false,
+    "hd": true,
+    "fps": 23.976,
+    "votes": 0,
+    "ratings": 0.0,
+    "from_trusted": true,
+    "foreign_parts_only": false,
+    "upload_date": "2021-03-01T12:00:00Z",
+    "ai_translated": false,
+    "nb_cd": 1,
+    "slug": "x",
+    "machine_translated": false,
+    "release": "The.Matrix.1999.1080p.BluRay.x264",
+    "comments": "",
+    "legacy_subtitle_id": 108,
+    "legacy_uploader_id": 1,
+    "uploader": {
+     "uploader_id": 1,
+     "name": "someone",
+     "rank": "trusted"
+    },
+    "feature_details": {
+     "feature_id": 1,
+     "feature_type": "Movie",
+     "year": 1999,
+     "title": "The Matrix",
+     "movie_name": "1999 - The Matrix",
+     "imdb_id": 133093,
+     "tmdb_id": 603
+    },
+    "url": "https://www.opensubtitles.com/es/subtitles/108",
+    "related_links": [],
+    "files": [
+     {
+      "file_id": 9008,
+      "cd_number": 1,
+      "file_name": "The.Matrix.1999.1080p.BluRay.x264.srt"
+     }
+    ]
+   }
+  }
+ ]
+}

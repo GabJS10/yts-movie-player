@@ -32,6 +32,8 @@ pub fn defaults(data_dir: &Path) -> Settings {
     Settings {
         api_base_urls: DEFAULT_BASE_URLS.iter().map(|s| s.to_string()).collect(),
         open_subtitles_api_key: None,
+        open_subtitles_username: None,
+        open_subtitles_password: None,
         subtitle_lang: "es".into(),
         auto_subtitles: true,
         preferred_quality: Quality::P1080,
@@ -55,6 +57,12 @@ pub fn apply_patch(current: &Settings, patch: SettingsPatch) -> Settings {
         open_subtitles_api_key: patch
             .open_subtitles_api_key
             .unwrap_or(s.open_subtitles_api_key),
+        open_subtitles_username: patch
+            .open_subtitles_username
+            .unwrap_or(s.open_subtitles_username),
+        open_subtitles_password: patch
+            .open_subtitles_password
+            .unwrap_or(s.open_subtitles_password),
         subtitle_lang: patch.subtitle_lang.unwrap_or(s.subtitle_lang),
         auto_subtitles: patch.auto_subtitles.unwrap_or(s.auto_subtitles),
         preferred_quality: patch.preferred_quality.unwrap_or(s.preferred_quality),
@@ -102,9 +110,22 @@ pub fn validate(s: Settings) -> AppResult<Settings> {
         )));
     }
 
-    let api_key = match &s.open_subtitles_api_key {
-        Some(k) => Some(clean_text("openSubtitlesApiKey", k)?).filter(|k| !k.is_empty()),
-        None => None,
+    // Error messages name the field, never the value (these are secrets).
+    let secret = |field: &str, value: &Option<String>| -> AppResult<Option<String>> {
+        match value {
+            Some(v) => Ok(Some(clean_text(field, v)?).filter(|v| !v.is_empty())),
+            None => Ok(None),
+        }
+    };
+    let api_key = secret("openSubtitlesApiKey", &s.open_subtitles_api_key)?;
+    let username = secret("openSubtitlesUsername", &s.open_subtitles_username)?;
+    // Not trimmed: spaces may be part of a password.
+    let password = match &s.open_subtitles_password {
+        Some(p) if p.len() > MAX_TEXT_LEN || p.chars().any(char::is_control) => {
+            return Err(invalid("openSubtitlesPassword: invalid text"));
+        }
+        Some(p) if p.is_empty() => None,
+        other => other.clone(),
     };
 
     let lang = s.subtitle_lang.trim().to_ascii_lowercase();
@@ -153,6 +174,8 @@ pub fn validate(s: Settings) -> AppResult<Settings> {
     Ok(Settings {
         api_base_urls: urls,
         open_subtitles_api_key: api_key,
+        open_subtitles_username: username,
+        open_subtitles_password: password,
         subtitle_lang: lang,
         external_player: player,
         data_dir,
@@ -318,6 +341,8 @@ mod tests {
                 "http://other.example/api/v2/".into(),
             ],
             open_subtitles_api_key: Some("   ".into()),
+            open_subtitles_username: Some(" gabriel ".into()),
+            open_subtitles_password: Some(" pass word ".into()),
             subtitle_lang: " EN ".into(),
             external_player: " mpv ".into(),
             ..base()
@@ -331,6 +356,8 @@ mod tests {
             ]
         );
         assert_eq!(s.open_subtitles_api_key, None);
+        assert_eq!(s.open_subtitles_username.as_deref(), Some("gabriel"));
+        assert_eq!(s.open_subtitles_password.as_deref(), Some(" pass word "));
         assert_eq!(s.subtitle_lang, "en");
         assert_eq!(s.external_player, "mpv");
     }
@@ -399,6 +426,14 @@ mod tests {
             },
             Settings {
                 data_dir: "".into(),
+                ..base()
+            },
+            Settings {
+                open_subtitles_password: Some("a\nb".into()),
+                ..base()
+            },
+            Settings {
+                open_subtitles_username: Some("x".repeat(600)),
                 ..base()
             },
             Settings {

@@ -1,7 +1,9 @@
 //! Local HTTP server on 127.0.0.1 (random port). Serves cached images (`/img/<hash>`) and
-//! torrent files (`/stream/<infohash>/<fileIdx>`, with Range support).
+//! torrent files (`/stream/<infohash>/<fileIdx>`, with Range support) and converted
+//! subtitles (`/subs/<id>.vtt`).
 
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -17,6 +19,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::error::AppError;
 use crate::images::{ImageError, ImageStore};
+use crate::subtitles::{is_valid_sub_id, vtt_path};
 use crate::torrent::{parse_range, video_mime, TorrentEngine};
 
 /// WebView origins (Linux/macOS, Windows and the Vite dev server).
@@ -31,6 +34,8 @@ const ALLOWED_ORIGINS: [&str; 4] = [
 pub struct ServerState {
     pub images: Arc<ImageStore>,
     pub torrents: Option<Arc<TorrentEngine>>,
+    /// `.vtt` cache (`<data>/subs`), served at `/subs/<id>.vtt`.
+    pub subs_dir: Option<PathBuf>,
 }
 
 /// Binds to a random port on the loopback interface.
@@ -53,6 +58,7 @@ pub fn router(state: ServerState) -> Router {
     Router::new()
         .route("/img/{hash}", get(image))
         .route("/stream/{infohash}/{file_idx}", get(stream))
+        .route("/subs/{file}", get(subtitle))
         .layer(cors)
         .with_state(state)
 }
@@ -85,6 +91,30 @@ async fn image(State(state): State<ServerState>, Path(hash): Path<String>) -> Re
                 tracing::warn!(%hash, error = %e, "image request failed");
             }
             (status, e.to_string()).into_response()
+        }
+    }
+}
+
+async fn subtitle(State(state): State<ServerState>, Path(file): Path<String>) -> Response {
+    let (Some(dir), Some(id)) = (state.subs_dir.as_ref(), file.strip_suffix(".vtt")) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !is_valid_sub_id(id) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match tokio::fs::read(vtt_path(dir, id)).await {
+        Ok(data) => (
+            [
+                (header::CONTENT_TYPE, "text/vtt; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-cache"),
+            ],
+            data,
+        )
+            .into_response(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::warn!(%id, error = %e, "could not read subtitle");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }

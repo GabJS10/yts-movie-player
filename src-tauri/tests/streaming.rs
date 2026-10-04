@@ -142,6 +142,7 @@ async fn start_downloader(
     let router = stream::router(stream::ServerState {
         images,
         torrents: Some(Arc::clone(&engine)),
+        subs_dir: None,
     });
     tokio::spawn(stream::serve(listener, router));
     Downloader { tmp, engine }

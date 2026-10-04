@@ -10,6 +10,7 @@ pub mod stream;
 pub mod subtitles;
 pub mod torrent;
 pub mod types;
+pub mod vtt;
 pub mod yts;
 
 use std::sync::Arc;
@@ -23,6 +24,7 @@ use crate::images::ImageStore;
 use crate::paths::AppPaths;
 use crate::settings::SettingsStore;
 use crate::state::AppState;
+use crate::subtitles::{SubtitlesClient, SubtitlesConfig};
 use crate::torrent::{EngineConfig, TorrentEngine};
 use crate::types::events;
 use crate::yts::{YtsClient, YtsConfig};
@@ -84,9 +86,17 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     // Startup cleanup, then periodic (needs the runtime context for `tokio::spawn`).
     tauri::async_runtime::block_on(async { cache.spawn_periodic(cache::ENFORCE_INTERVAL) });
 
+    // In the default location, like the DB: not part of the cache LRU.
+    let subs_dir = app_paths.data_dir.join(subtitles::SUBS_DIR);
+    let subtitles = SubtitlesClient::new(
+        SubtitlesConfig::new(subs_dir.clone(), local_base.clone()),
+        commands::subtitle_credentials(&current),
+    )?;
+
     let router = stream::router(stream::ServerState {
         images: Arc::clone(&images),
         torrents: Some(Arc::clone(&torrents)),
+        subs_dir: Some(subs_dir),
     });
     tauri::async_runtime::spawn(stream::serve(listener, router));
     tracing::info!(%local_base, "local HTTP server listening");
@@ -100,6 +110,7 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         yts,
         torrents,
         cache,
+        subtitles,
     })
 }
 
@@ -127,6 +138,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(build_state(app.handle().clone())?);
             Ok(())
@@ -150,6 +162,10 @@ pub fn run() {
             commands::update_settings,
             commands::get_storage_usage,
             commands::clear_cache,
+            commands::search_subtitles,
+            commands::load_subtitle,
+            commands::load_subtitle_file,
+            commands::get_subtitles_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

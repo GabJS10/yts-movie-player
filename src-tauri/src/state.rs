@@ -7,6 +7,7 @@ use crate::db::Db;
 use crate::images::ImageStore;
 use crate::paths::AppPaths;
 use crate::settings::SettingsStore;
+use crate::subtitles::SubtitlesClient;
 use crate::torrent::TorrentEngine;
 use crate::yts::YtsClient;
 
@@ -21,4 +22,5 @@ pub struct AppState {
     pub yts: YtsClient,
     pub torrents: Arc<TorrentEngine>,
     pub cache: Arc<CacheManager>,
+    pub subtitles: SubtitlesClient,
 }
