@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.8 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.9 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -207,6 +207,8 @@ type SubtitleOption = {
   hearingImpaired: boolean;
   matchesRelease: boolean;         // coincide con el release de YTS del infohash dado
   aiTranslated: boolean;           // traducido por IA o por máquina
+  pageUrl: string | null;          // página del subtítulo en opensubtitles.com (attributes.url)
+  cached: boolean;                 // ya está en la caché de disco: cargarlo no gasta cupo
 };
 
 type SubtitleTrack = {
@@ -226,6 +228,7 @@ type SubtitlesStatus = {
 - Los resultados se ordenan primero por `matchesRelease`, después dejando al final los `hearingImpaired` y `aiTranslated` (salvo que no haya otros), y por último por `downloads`, de mayor a menor.
 - Si no hay API key, `search_subtitles` y `load_subtitle` fallan con `subtitles_auth`; `load_subtitle_file` funciona siempre.
 - `load_subtitle` primero busca el `.vtt` en la caché de disco (`<datos>/subs/<fileId>.vtt`): si ya está, no llama a la API ni gasta cupo.
+- **Cupo agotado:** si `load_subtitle` falla con `subtitles_quota` (o `get_subtitles_status.remainingDownloads === 0`), el menú pasa a "modo cupo agotado" durante la sesión: las opciones con `cached: true` se siguen cargando normal, y en las demás el clic abre `pageUrl` en el navegador del sistema (plugin opener) para que el usuario lo descargue a mano y luego lo suelte sobre el reproductor.
 - `subtitles_quota`: el `message` lleva la hora de renovación; el front la obtiene de forma estructurada con `get_subtitles_status` (`resetAt`).
 - `get_subtitles_status` valida la API key (y hace login si hay credenciales); con la key inválida falla con `subtitles_auth`. Es el botón "Probar" de Ajustes.
 - `load_subtitle_file` acepta `.srt` y `.vtt`; la ruta llega del diálogo de archivo o del drag & drop de Tauri (`onDragDropEvent`, que da rutas reales).
@@ -418,3 +421,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.6** (2026-10-03): `pieceMap` se muestrea sobre una ventana de 64 MB desde la posición de lectura; nuevo `TorrentStats.pieceMapWindow`.
 - **v0.7** (2026-10-04): subtítulos. `SubtitleOption.aiTranslated`, comando `get_subtitles_status` (tipo `SubtitlesStatus`), credenciales opcionales `openSubtitlesUsername`/`openSubtitlesPassword` en `Settings`, caché de `.vtt` en disco y reglas de orden. Sin cambios que rompan.
 - **v0.8** (2026-10-04): `open_external_player` pasa subtítulos al reproductor externo (`subtitleId?`, `subtitlePath?`, `subtitleDelayMs?`) y devuelve `ExternalPlayerResult` en vez de `void`. `subtitlesOff?` respeta "Desactivados".
+- **v0.9** (2026-10-04): `SubtitleOption.pageUrl` y `SubtitleOption.cached`; con el cupo agotado, el clic en una opción no cacheada abre su página de OpenSubtitles.
