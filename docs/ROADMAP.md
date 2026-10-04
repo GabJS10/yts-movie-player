@@ -193,7 +193,11 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Tests:**
   - Backend: transiciones de estado, promoción de stream a descarga sin rebajar (torrent local), recuperación al reiniciar, `get_movie` offline, falta de espacio, reproducción desde `library/` y que `remove_download` libera el espacio.
   - Frontend: página Descargas con polling y eventos, contador, estados del botón de la Ficha, modo sin conexión y formulario de Torrent.
-- **Cierre:** descargar una película, cortar la red, reiniciar la app y reproducirla desde Descargas; pausar/reanudar sobrevive a un reinicio; los límites de velocidad se notan; quitar con archivos libera el espacio. Tag `fase-6`.
+- **Añadido al cierre (IPC v0.11): carpetas elegibles.** `dataDir` se reemplaza por `downloadsDir` y `cacheDir`, elegidas con el selector de carpetas del sistema y aplicadas sin reiniciar.
+  - backend: migración de `dataDir`, validación, cambio en caliente (caché vieja borrada; descargas existentes se quedan con su ruta), `move_downloads` con progreso y cancelación (rename o copiar+borrar entre discos, comprobación de espacio), estado `unavailable` con reanudación automática y respaldo de la caché a la carpeta por defecto.
+  - frontend: Ajustes → Almacenamiento con las dos carpetas (selector, espacio libre y ocupado, Restablecer), oferta "Mover también las descargas existentes" con diálogo de progreso y Cancelar, y estados `unavailable`/`moving` en Descargas.
+  - tests: migración, validación, mover en el mismo disco y con copia (dos tmpdirs), cancelación a mitad, falta de espacio, carpeta que desaparece y vuelve; front: selector, diálogo de progreso y estados.
+- **Cierre:** descargar una película, cortar la red, reiniciar la app y reproducirla desde Descargas; las carpetas se pueden cambiar y las descargas existentes se mueven con progreso; pausar/reanudar sobrevive a un reinicio; los límites de velocidad se notan; quitar con archivos libera el espacio. Tag `fase-6`.
 
 ## Fase 7: Tráilers, pulido, robustez y E2E
 

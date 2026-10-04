@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.10 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.11 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -272,9 +272,12 @@ type ContinueItem = { movie: MovieSummary; progress: Progress };
 | `resume_download` | `{ infohash: string }` | `Download` |
 | `remove_download` | `{ infohash: string, deleteFiles: boolean }` | `void` |
 | `open_download_folder` | `{ infohash: string }` | `void` |
+| `move_downloads` | — | `void` |
+| `cancel_move_downloads` | — | `void` |
 
 ```ts
-type DownloadState = "queued" | "active" | "paused" | "stalled" | "done" | "error";
+type DownloadState = "queued" | "active" | "paused" | "stalled" | "done" | "error" | "unavailable" | "moving";
+// unavailable = su carpeta no está (disco desmontado); moving = se está moviendo con move_downloads
 
 type Download = {
   infohash: string;
@@ -305,6 +308,8 @@ Si se llama a `start_download` sobre un torrent que ya se está reproduciendo, s
 - **Progreso:** el front consulta `list_downloads` (≈1 s) mientras la página Descargas o la Ficha de una película en descarga están visibles. `torrent://stats` sigue siendo solo para el stream abierto.
 - `remove_download { deleteFiles: true }` saca el torrent de la sesión **antes** de borrar (si no, librqbit mantiene el archivo abierto y el espacio no se libera; ver `PLAN.md`).
 - `open_download_folder` abre la carpeta en el gestor de archivos del sistema.
+- **`move_downloads`** mueve a `downloadsDir` todas las descargas que estén en otra carpeta, de una en una y en segundo plano (el comando vuelve enseguida; si ya hay un movimiento en curso → `invalid_input`). Por cada una: pausar → evict → mover la carpeta (`rename` si es el mismo disco; si no, copiar y borrar el origen al terminar) → volver a agregarla con su estado anterior. Antes de cada copia se comprueba el espacio (si no alcanza, esa queda con su error y se sigue con la siguiente). Progreso con `downloads://move-progress`.
+- **`cancel_move_downloads`**: la descarga que se está copiando se queda en su carpeta original (se borra la copia parcial) y las que faltan no se mueven; las ya movidas se quedan en la nueva.
 
 ### Ajustes y almacenamiento
 
@@ -336,23 +341,39 @@ type Settings = {
   seedAfterDownload: boolean;
   listenPort: number | null;       // null = automático
   // Almacenamiento
-  dataDir: string;
+  downloadsDir: string;            // ruta absoluta; por defecto ~/.local/share/yts-player/library
+  cacheDir: string;                // ruta absoluta; por defecto ~/.local/share/yts-player/cache
   cacheLimitBytes: number;
 };
 
-type StorageUsage = { cacheBytes: number; cacheLimitBytes: number; libraryBytes: number; freeDiskBytes: number };
+type StorageUsage = {
+  cacheBytes: number;
+  cacheLimitBytes: number;
+  libraryBytes: number;            // suma de todas las descargas, estén donde estén
+  cacheFreeBytes: number;          // espacio libre en el disco de cacheDir
+  downloadsFreeBytes: number;      // espacio libre en el disco de downloadsDir
+  cacheDirAvailable: boolean;      // false = no existe o no se puede escribir (se usa la carpeta por defecto)
+  downloadsDirAvailable: boolean;
+  downloadsOutsideDir: number;     // descargas que siguen en otra carpeta (para ofrecer "Mover")
+};
 
 type ClearCacheResult = { freedBytes: number };
 
 // Todas las claves son opcionales. Clave ausente = no tocar.
-// En los campos que admiten null (openSubtitlesApiKey, openSubtitlesUsername, openSubtitlesPassword, downLimitKbps, upLimitKbps, listenPort),
-// enviar null = borrar el valor (sin key, sin límite, puerto automático).
+// En los campos que admiten null (openSubtitlesApiKey, openSubtitlesUsername, openSubtitlesPassword, downLimitKbps, upLimitKbps, listenPort, downloadsDir, cacheDir),
+// enviar null = borrar el valor (sin key, sin límite, puerto automático, carpeta por defecto).
 // En Rust: Option<Option<T>> (p. ej. con serde_with::rust::double_option).
 type SettingsPatch = Partial<Settings>;
 ```
 
 - `update_settings` valida los datos y devuelve los ajustes completos ya aplicados. Los límites de velocidad y `seedAfterDownload` se aplican en caliente (si librqbit no permite cambiar los límites en caliente, se aplican al reiniciar y la UI lo indica). `listenPort` se guarda y **se aplica al reiniciar la app** (cambiarlo en caliente obligaría a reiniciar la sesión torrent y cortar los streams).
-- `dataDir` es la excepción: el cambio se guarda, pero **se aplica al reiniciar la app**, y lo que hay en `cache/` y `library/` no se mueve solo. La UI tiene que avisarlo ("Se aplicará al reiniciar; las descargas existentes se quedan en la carpeta anterior").
+- **Carpetas (`downloadsDir`, `cacheDir`)**, se aplican **sin reiniciar**:
+  - Validación (`invalid_input`): ruta absoluta, existe (o se puede crear), se puede escribir, y ninguna de las dos está dentro de la otra.
+  - `cacheDir`: los streams nuevos van a la carpeta nueva; la caché anterior se borra (salvo un stream abierto, que termina en la vieja y se borra al cerrarse).
+  - `downloadsDir`: las descargas nuevas van a la carpeta nueva; las existentes **siguen donde están** (cada descarga guarda su ruta) hasta que se pida `move_downloads`.
+  - La DB, `dht.json`, los ajustes y `subs/` siguen siempre en `~/.local/share/yts-player/`.
+  - Migración: un `dataDir` guardado de versiones anteriores pasa a `cacheDir = <dataDir>/cache` y `downloadsDir = <dataDir>/library`.
+  - Carpeta no disponible (disco desmontado): las descargas que viven ahí pasan a `unavailable` y se reanudan solas cuando la carpeta vuelve (comprobación periódica y al arrancar). Si falta `cacheDir`, el streaming usa la carpeta por defecto y se emite `app://error` con un aviso.
 - `openSubtitlesApiKey`, `openSubtitlesUsername` y `openSubtitlesPassword` solo se guardan en local (SQLite) y no se escriben nunca en los logs. Cambiarlos invalida el token de sesión de OpenSubtitles.
 
 ### Tráiler
@@ -403,6 +424,22 @@ Se emite **solo cuando cambia el estado** de una descarga (agregada, pausada, te
 type DownloadChanged = { infohash: string; download: Download | null }; // null = eliminada
 ```
 
+### `downloads://move-progress`
+Durante `move_downloads`, ~4 veces por segundo y al terminar.
+
+```ts
+type MoveProgress = {
+  index: number;                   // 1-based: descarga que se está moviendo
+  total: number;
+  infohash: string | null;
+  bytesDone: number;               // de todo el movimiento
+  bytesTotal: number;
+  finished: boolean;
+  cancelled: boolean;
+  failed: { infohash: string; message: string }[]; // las que no se pudieron mover (siguen donde estaban)
+};
+```
+
 ### `app://error`
 Errores en segundo plano que no responden a ningún comando, como que se caiga el servidor local o que el disco se llene durante una descarga.
 
@@ -435,3 +472,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.9** (2026-10-04): `SubtitleOption.pageUrl` y `SubtitleOption.cached`; con el cupo agotado, el clic en una opción no cacheada abre su página de OpenSubtitles.
 - **v0.10** (2026-10-04): descargas. `MovieDetail.offline`; reglas de carpeta legible, comprobación de espacio, ficha sin conexión, reproducción directa desde `library/`, recuperación al reiniciar y seeding. Progreso por polling de `list_downloads`. `listenPort` se aplica al reiniciar.
 - **v0.10.1** (2026-10-04): aclaraciones: límites en KiB/s; `torrent://stats` solo para el stream abierto; una segunda versión con el mismo nombre de carpeta lleva el sufijo ` (2)`; al promover se mueve toda la carpeta del torrent cuando se cierra el stream (mientras se verifica: `queued`).
+- **v0.11** (2026-10-04): carpetas elegibles. `dataDir` → `downloadsDir` + `cacheDir` (en caliente, migración del valor viejo); `StorageUsage` por disco y disponibilidad; `DownloadState` `unavailable` y `moving`; comandos `move_downloads`/`cancel_move_downloads` y evento `downloads://move-progress`. Rompe `dataDir`/`freeDiskBytes`, que ninguna versión publicada usaba.
