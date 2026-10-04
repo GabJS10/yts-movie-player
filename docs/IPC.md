@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.7 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.8 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -151,7 +151,7 @@ El caché (TTL de unos 30 minutos) y el failover entre URLs base son internos de
 |---|---|---|
 | `start_stream` | `{ movieId: number, infohash: string }` | `StreamSession` |
 | `stop_stream` | `{ infohash: string }` | `void` |
-| `open_external_player` | `{ infohash: string }` | `void` |
+| `open_external_player` | `{ infohash: string, subtitleId?: string, subtitlePath?: string, subtitleDelayMs?: number }` | `ExternalPlayerResult` |
 
 ```ts
 type StreamSession = {
@@ -172,6 +172,20 @@ type StreamSession = {
 - `start_stream` es idempotente: si el torrent ya está activo (por ejemplo, porque se está descargando), devuelve la misma sesión.
 - `stop_stream` pausa el torrent cuando es solo de streaming. Si además es una descarga, la descarga sigue. La caché se limpia más tarde, por LRU.
 - `open_external_player` lanza el reproductor de Ajustes (VLC por defecto) con `streamUrl`. Si no está instalado, devuelve el error `external_player_missing`.
+- Subtítulos para el reproductor externo (se pasan como archivo local, p. ej. `--sub-file=<ruta>` en VLC, `--sub-file=` en mpv):
+  - `subtitleId`: subtítulo de OpenSubtitles ya elegido; se usa el `.vtt` de la caché en disco o se descarga.
+  - `subtitlePath`: archivo propio (`.srt`/`.vtt`) que cargó el usuario.
+  - Si no llega ninguno y `autoSubtitles` está activo con key configurada, el backend busca en `subtitleLang` y usa el primero del ranking (con el `infohash` para la coincidencia de release).
+  - `subtitleDelayMs` se traduce a la opción de retraso del reproductor si la tiene (convención del front: positivo = los subtítulos salen más tarde).
+  - Un fallo de subtítulos **nunca** impide abrir el reproductor: se abre sin ellos y se informa en el resultado.
+  - Reproductor no reconocido (ni VLC ni mpv): se abre sin subtítulos con `subtitle: "unsupported_player"`.
+
+```ts
+type ExternalPlayerResult = {
+  subtitle: "loaded" | "none" | "no_key" | "quota" | "not_found" | "unsupported_player" | "error";
+  // "none" = no se pidió y la carga automática está apagada
+};
+```
 - El progreso **no** lo guarda el backend por su cuenta: el front llama a `save_progress`.
 
 ### Subtítulos
@@ -402,3 +416,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.5** (2026-10-03): `TorrentStats.seeds` = seeds de YTS (estático); pieceMap "3" reservado y sin emitir; `start_stream` usa el `.torrent` de YTS y cae al magnet si falla (la fase `metadata` solo aparece en ese caso).
 - **v0.6** (2026-10-03): `pieceMap` se muestrea sobre una ventana de 64 MB desde la posición de lectura; nuevo `TorrentStats.pieceMapWindow`.
 - **v0.7** (2026-10-04): subtítulos. `SubtitleOption.aiTranslated`, comando `get_subtitles_status` (tipo `SubtitlesStatus`), credenciales opcionales `openSubtitlesUsername`/`openSubtitlesPassword` en `Settings`, caché de `.vtt` en disco y reglas de orden. Sin cambios que rompan.
+- **v0.8** (2026-10-04): `open_external_player` pasa subtítulos al reproductor externo (`subtitleId?`, `subtitlePath?`, `subtitleDelayMs?`) y devuelve `ExternalPlayerResult` en vez de `void`.

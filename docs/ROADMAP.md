@@ -164,7 +164,8 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Tests:**
   - Backend: SRT→VTT con los casos difíciles (fixtures reales), ranking, wiremock de OpenSubtitles (búsqueda, descarga, login, 401 → `subtitles_auth`, 406/429 → `subtitles_quota`) y que la caché en disco evita la segunda descarga.
   - Frontend: selección automática y caída a inglés, cue activo según el retraso, menú y atajos, estado sin key, error de cupo y carga por archivo.
-- **Cierre:** al reproducir aparecen solos los subtítulos en español y sincronizados, el retraso funciona, se puede cargar un `.srt` manual y sin key la app explica qué hacer. Tag `fase-5`.
+- **Añadido al cierre (IPC v0.8): subtítulos en VLC.** "Abrir en VLC" le pasa a VLC el subtítulo activo (de OpenSubtitles o propio) y su retraso; si no había ninguno (caso típico del error de códec), el backend busca el mejor según los ajustes. Un fallo de subtítulos nunca impide abrir VLC: se abre sin ellos y el front muestra un aviso.
+- **Cierre:** al reproducir aparecen solos los subtítulos en español y sincronizados, el retraso funciona, se puede cargar un `.srt` manual, sin key la app explica qué hacer y VLC se abre con los subtítulos. Tag `fase-5`.
 
 ## Fase 6: Descargas, caché y Ajustes completos
 
