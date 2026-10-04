@@ -85,6 +85,13 @@ describe("Abrir en VLC", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("subtitlesOff: forwarded as is; opens without subtitles and says nothing", async () => {
+    const { args } = await openVlc({ subtitles: { subtitlesOff: true } });
+    expect(args).toEqual({ infohash: infohashOf(1632), subtitlesOff: true });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("automatic subtitles off: opens without them, no note", async () => {
     await openVlc({}, { autoSubtitles: false });
     await new Promise((r) => setTimeout(r, 30));

@@ -86,6 +86,7 @@ export const openExternalPlayer = (infohash: string, subtitles: ExternalSubtitle
     ...(subtitles.subtitleId !== undefined ? { subtitleId: subtitles.subtitleId } : {}),
     ...(subtitles.subtitlePath !== undefined ? { subtitlePath: subtitles.subtitlePath } : {}),
     ...(subtitles.subtitleDelayMs !== undefined ? { subtitleDelayMs: subtitles.subtitleDelayMs } : {}),
+    ...(subtitles.subtitlesOff ? { subtitlesOff: true } : {}),
   });
 
 // ───────── Subtitles ─────────

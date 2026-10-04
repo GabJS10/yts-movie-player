@@ -144,10 +144,12 @@ export type ExternalSubtitleArgs = {
   subtitlePath?: string;
   /** Positive = subtitles show later. */
   subtitleDelayMs?: number;
+  /** The user chose "Desactivados": open without subtitles and don't search. */
+  subtitlesOff?: boolean;
 };
 
 export type ExternalPlayerResult = {
-  /** "none" = not requested and auto-load is off. The player opens either way. */
+  /** "none" = subtitlesOff, or not requested and auto-load is off. The player opens either way. */
   subtitle: "loaded" | "none" | "no_key" | "quota" | "not_found" | "unsupported_player" | "error";
 };
 

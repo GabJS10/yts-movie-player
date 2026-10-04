@@ -14,7 +14,8 @@ import { FALLBACK_LANG, parseVtt, stepDelay, type Cue } from "../../lib/subtitle
 import { useUiStore } from "../../store/ui";
 
 export type SubtitleSelection =
-  | { kind: "off" }
+  /** `byUser`: chosen in the menu ("Desactivados"), not just nothing loaded yet. */
+  | { kind: "off"; byUser?: boolean }
   | { kind: "option"; option: SubtitleOption }
   | { kind: "file"; label: string; path: string };
 
@@ -146,7 +147,7 @@ export function useSubtitles({ movieId, infohash, started, menuOpen }: Params) {
   const turnOff = useCallback(() => {
     generation.current++;
     setLoadingId(null);
-    setSelection({ kind: "off" });
+    setSelection({ kind: "off", byUser: true });
     setCues([]);
   }, []);
 
@@ -188,14 +189,17 @@ export function useSubtitles({ movieId, infohash, started, menuOpen }: Params) {
     queueMicrotask(() => void loadFirstIn(code));
   }, [started, settings, loadFirstIn]);
 
-  // What "Abrir en VLC" passes: the active subtitle and its delay; nothing when none is active.
+  // What "Abrir en VLC" passes: the active subtitle and its delay; subtitlesOff when the user turned
+  // them off (so the backend doesn't search); nothing when none was loaded (the backend picks one).
   const delayMs = Math.round(delay * 1000);
   const externalArgs: ExternalSubtitleArgs =
     selection.kind === "option"
       ? { subtitleId: selection.option.id, subtitleDelayMs: delayMs }
       : selection.kind === "file"
         ? { subtitlePath: selection.path, subtitleDelayMs: delayMs }
-        : {};
+        : selection.byUser
+          ? { subtitlesOff: true }
+          : {};
 
   return {
     externalArgs,

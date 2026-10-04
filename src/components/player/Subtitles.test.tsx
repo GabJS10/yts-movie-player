@@ -256,7 +256,22 @@ describe("Player subtitles", () => {
       );
     });
 
-    it("with subtitles off, sends only the infohash", async () => {
+    it("Desactivados chosen in the menu sends subtitlesOff (no search)", async () => {
+      const user = userEvent.setup();
+      const { calls, torrent } = await play(1632);
+      await waitFor(() => expect(cmds(calls, "load_subtitle")).toHaveLength(1));
+      await user.click(screen.getByRole("button", { name: "Subtítulos" }));
+      await user.click(screen.getByRole("menuitemradio", { name: "Desactivados" }));
+      await codecError();
+      await user.click(screen.getByRole("button", { name: /Abrir en VLC/ }));
+      await waitFor(() =>
+        expect(cmds(calls, "open_external_player")).toEqual([
+          { infohash: torrent.infohash, subtitlesOff: true },
+        ]),
+      );
+    });
+
+    it("with nothing loaded (auto-load off), sends only the infohash", async () => {
       const user = userEvent.setup();
       const { calls, torrent } = await play(1632, (b) =>
         b.handle("update_settings", { patch: { autoSubtitles: false } }),
