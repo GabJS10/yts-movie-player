@@ -16,8 +16,8 @@
 | 1 | Base del proyecto y tooling | La app abre una ventana con la estructura de navegación; CI en verde | ✅ Terminada (`fase-1`) |
 | 2 | Catálogo | Home, Búsqueda y Ficha con datos reales de YTS | ✅ Terminada (`fase-2`) |
 | 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | ✅ Terminada (`fase-3`) |
-| 4 | Persistencia: Mi lista, Continuar viendo, Ajustes base y límite de caché | Favoritos y progreso que sobreviven a un reinicio; la caché no llena el disco | ⏳ Siguiente |
-| 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | — |
+| 4 | Persistencia: Mi lista, Continuar viendo, Ajustes base y límite de caché | Favoritos y progreso que sobreviven a un reinicio; la caché no llena el disco | ✅ Terminada (`fase-4`) |
+| 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | ⏳ Siguiente |
 | 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | — |
 | 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | — |
 | 8 | Empaquetado y release v1.0 | `.deb` y AppImage publicados en GitHub Releases | — |
@@ -113,7 +113,9 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
   - Frontend: controles y atajos del reproductor, conversión de `availableRanges` a la barra de progreso, flujo del error de códec.
 - **Cierre:** una película 1080p x264 real empieza en menos de 30 s, se puede adelantar a cualquier punto y la 2160p x265 ofrece VLC. Esta fase **se valida antes de seguir**: si algo de la arquitectura falla (WebKitGTK, librqbit), se replantea aquí. Tag `fase-3`.
 
-## Fase 4: Persistencia (Mi lista, Continuar viendo, Ajustes base y límite de caché)
+## Fase 4: Persistencia (Mi lista, Continuar viendo, Ajustes base y límite de caché) ✅
+
+**Resultado real:** Mi lista y Continuar viendo sobreviven al reinicio, retomar y "Desde el principio" funcionan, los Ajustes se aplican en caliente y la caché respeta el límite (LRU de 10 GiB por defecto). La diferencia entre `df` y `du` venía de archivos borrados que librqbit seguía teniendo abiertos: ahora se saca el torrent de la sesión antes de borrar.
 
 **Objetivo:** que la app recuerde las cosas entre sesiones y que la caché de streaming no llene el disco.
 
