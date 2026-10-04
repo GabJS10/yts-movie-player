@@ -78,3 +78,6 @@ Tests: `npm test`, `cd src-tauri && cargo test`, y los E2E en [`e2e/`](e2e/) (`n
 YTS Player es solo un **cliente**: no aloja, sube ni distribuye contenido. Muestra el catálogo público de la API de YTS y usa BitTorrent para descargar lo que tú eliges; mientras descargas, también compartes partes del archivo con otros usuarios.
 
 Gran parte de ese catálogo está protegido por derechos de autor, y descargarlo o compartirlo puede ser ilegal en tu país. **El uso de la app es responsabilidad de quien la usa.** Este proyecto no tiene relación con YTS ni con OpenSubtitles.
+
+## Licencia
+[MIT](LICENSE). La licencia cubre el código de la app, no el contenido al que se accede con ella.
