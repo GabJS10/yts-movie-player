@@ -211,4 +211,61 @@ describe("Player subtitles", () => {
     expect(await screen.findByText("Solo se pueden cargar subtítulos .srt o .vtt")).toBeInTheDocument();
     expect(cmds(calls, "load_subtitle_file")).toHaveLength(1);
   });
+
+  describe("Abrir en VLC from the codec error", () => {
+    async function codecError() {
+      const v = video();
+      Object.defineProperty(v, "error", { value: { code: 4 }, configurable: true });
+      fireEvent.error(v);
+      await screen.findByText(/El reproductor integrado no puede abrir/);
+    }
+
+    it("passes the active OpenSubtitles choice and the current delay", async () => {
+      const user = userEvent.setup();
+      const { calls, torrent } = await play(1632);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Subtítulos" })).toHaveClass("text-green"),
+      );
+      await user.keyboard("hhh");
+      await codecError();
+      await user.click(screen.getByRole("button", { name: /Abrir en VLC/ }));
+      await waitFor(() =>
+        expect(cmds(calls, "open_external_player")).toEqual([
+          { infohash: torrent.infohash, subtitleId: "1632-es-1", subtitleDelayMs: 300 },
+        ]),
+      );
+    });
+
+    it("passes a dropped file by its path", async () => {
+      const user = userEvent.setup();
+      const { calls, torrent } = await play(1632, (b) =>
+        b.handle("update_settings", { patch: { autoSubtitles: false } }),
+      );
+      await waitFor(() => expect(dropHandler).not.toBeNull());
+      act(() => dropHandler!({ type: "drop", paths: ["/tmp/peli.srt"] }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Subtítulos" })).toHaveClass("text-green"),
+      );
+      await user.keyboard("g");
+      await codecError();
+      await user.click(screen.getByRole("button", { name: /Abrir en VLC/ }));
+      await waitFor(() =>
+        expect(cmds(calls, "open_external_player")).toEqual([
+          { infohash: torrent.infohash, subtitlePath: "/tmp/peli.srt", subtitleDelayMs: -100 },
+        ]),
+      );
+    });
+
+    it("with subtitles off, sends only the infohash", async () => {
+      const user = userEvent.setup();
+      const { calls, torrent } = await play(1632, (b) =>
+        b.handle("update_settings", { patch: { autoSubtitles: false } }),
+      );
+      await codecError();
+      await user.click(screen.getByRole("button", { name: /Abrir en VLC/ }));
+      await waitFor(() =>
+        expect(cmds(calls, "open_external_player")).toEqual([{ infohash: torrent.infohash }]),
+      );
+    });
+  });
 });

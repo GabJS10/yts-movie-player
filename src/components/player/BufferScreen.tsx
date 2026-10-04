@@ -1,4 +1,10 @@
-import type { MovieDetail, StreamSession, Torrent, TorrentStats } from "../../api/types";
+import type {
+  ExternalSubtitleArgs,
+  MovieDetail,
+  StreamSession,
+  Torrent,
+  TorrentStats,
+} from "../../api/types";
 import { formatSpeed } from "../../lib/format";
 import { PHASE_TEXT } from "../../lib/player";
 import { Icon } from "../Icon";
@@ -13,6 +19,8 @@ type Props = {
   session: StreamSession | null;
   stats: TorrentStats | null;
   alternative: Torrent | null;
+  /** Active subtitle for "Abrir en VLC". */
+  subtitles?: ExternalSubtitleArgs;
   resumeAtS: number | null;
   onBack: () => void;
 };
@@ -21,7 +29,16 @@ const nf1 = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFr
 const MB = 1024 * 1024;
 
 /** Pre-roll: the swarm fills the buffer ahead of the playhead before the first frame. */
-export function BufferScreen({ movie, torrent, session, stats, alternative, resumeAtS, onBack }: Props) {
+export function BufferScreen({
+  movie,
+  torrent,
+  session,
+  stats,
+  alternative,
+  subtitles,
+  resumeAtS,
+  onBack,
+}: Props) {
   const target = session?.bufferTargetBytes ?? 8 * MB;
   const buffered = Math.min(stats?.bufferedAheadBytes ?? 0, target);
   const phase = stats ? PHASE_TEXT[stats.phase] : "Conectando al enjambre…";
@@ -49,6 +66,7 @@ export function BufferScreen({ movie, torrent, session, stats, alternative, resu
               movieId={movie.id}
               infohash={torrent.infohash}
               alternative={alternative}
+              subtitles={subtitles}
               primary={false}
             />
           </div>

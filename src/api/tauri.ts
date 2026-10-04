@@ -13,6 +13,7 @@ import type {
   EventMap,
   EventName,
   ErrorCode,
+  ExternalSubtitleArgs,
   ListMoviesParams,
   MovieSummary,
   SettingsPatch,
@@ -78,7 +79,14 @@ export const getApiStatus = () => call("get_api_status");
 // ───────── Streaming ─────────
 export const startStream = (movieId: number, infohash: string) => call("start_stream", { movieId, infohash });
 export const stopStream = (infohash: string) => call("stop_stream", { infohash });
-export const openExternalPlayer = (infohash: string) => call("open_external_player", { infohash });
+/** Opens VLC (Ajustes › Reproducción) with the active subtitle, if any. Absent keys are not sent. */
+export const openExternalPlayer = (infohash: string, subtitles: ExternalSubtitleArgs = {}) =>
+  call("open_external_player", {
+    infohash,
+    ...(subtitles.subtitleId !== undefined ? { subtitleId: subtitles.subtitleId } : {}),
+    ...(subtitles.subtitlePath !== undefined ? { subtitlePath: subtitles.subtitlePath } : {}),
+    ...(subtitles.subtitleDelayMs !== undefined ? { subtitleDelayMs: subtitles.subtitleDelayMs } : {}),
+  });
 
 // ───────── Subtitles ─────────
 export const searchSubtitles = (movieId: number, lang: string, infohash?: string) =>

@@ -296,8 +296,19 @@ export function createMockBackend(): MockBackend {
     stop_stream: ({ infohash }) => {
       streams.delete(infohash);
     },
-    open_external_player: ({ infohash }) => {
-      torrentOf(infohash);
+    open_external_player: ({ infohash, subtitleId, subtitlePath }) => {
+      const { m } = torrentOf(infohash);
+      // Mirrors the backend: a subtitle problem never stops the player from opening.
+      const player = settings.externalPlayer.split("/").pop() ?? "";
+      if (player !== "vlc" && player !== "mpv") return { subtitle: "unsupported_player" };
+      if (subtitleId || subtitlePath) return { subtitle: "loaded" };
+      if (!settings.autoSubtitles) return { subtitle: "none" };
+      const key = settings.openSubtitlesApiKey;
+      if (!key) return { subtitle: "no_key" };
+      if (key === QUOTA_KEY) return { subtitle: "quota" };
+      if (key === INVALID_KEY) return { subtitle: "error" };
+      if (settings.subtitleLang === "es" && NO_SPANISH.has(m.id)) return { subtitle: "not_found" };
+      return { subtitle: "loaded" };
     },
 
     search_subtitles: ({ movieId, lang, infohash }) => {

@@ -385,6 +385,7 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
           session={state.session}
           stats={state.stats}
           alternative={alternative}
+          subtitles={subs.externalArgs}
           resumeAtS={
             fromStart
               ? null
@@ -408,7 +409,12 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
       )}
 
       {state.status === "codec-error" && (
-        <CodecError movieId={movie.id} torrent={torrent} alternative={alternative} />
+        <CodecError
+          movieId={movie.id}
+          torrent={torrent}
+          alternative={alternative}
+          subtitles={subs.externalArgs}
+        />
       )}
 
       {state.status === "waiting" && (

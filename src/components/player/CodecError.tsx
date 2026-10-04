@@ -1,12 +1,17 @@
 import { Link } from "@tanstack/react-router";
-import type { Torrent } from "../../api/types";
+import type { ExternalSubtitleArgs, Torrent } from "../../api/types";
 import { ReleaseTag } from "../ReleaseTag";
 import { ExternalPlayerActions } from "./ExternalPlayerActions";
 
-type Props = { movieId: number; torrent: Torrent; alternative: Torrent | null };
+type Props = {
+  movieId: number;
+  torrent: Torrent;
+  alternative: Torrent | null;
+  subtitles?: ExternalSubtitleArgs;
+};
 
 /** WebKitGTK can't decode this file (typically x265/HEVC): offer VLC and an x264 version. */
-export function CodecError({ movieId, torrent, alternative }: Props) {
+export function CodecError({ movieId, torrent, alternative, subtitles }: Props) {
   return (
     <div role="alert" className="absolute inset-0 grid place-items-center p-6">
       <div className="w-full max-w-[560px]">
@@ -21,7 +26,12 @@ export function CodecError({ movieId, torrent, alternative }: Props) {
           La descarga sigue en curso. Ábrela en VLC desde el mismo stream local
           {alternative ? ` o cambia a la versión ${alternative.quality} x264, que sí se reproduce aquí` : ""}.
         </p>
-        <ExternalPlayerActions movieId={movieId} infohash={torrent.infohash} alternative={alternative} />
+        <ExternalPlayerActions
+          movieId={movieId}
+          infohash={torrent.infohash}
+          alternative={alternative}
+          subtitles={subtitles}
+        />
         <Link
           to="/movie/$movieId"
           params={{ movieId }}

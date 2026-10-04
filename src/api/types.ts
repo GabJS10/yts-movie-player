@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.7); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.8); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -134,6 +134,21 @@ export type StreamSession = {
   bufferTargetBytes: number;
   resumeAtS: number | null;
   source: "network" | "library";
+};
+
+/** Subtitles for the external player; none of them = the backend picks per Ajustes. */
+export type ExternalSubtitleArgs = {
+  /** OpenSubtitles file chosen in the player. */
+  subtitleId?: string;
+  /** The user's own .srt/.vtt. */
+  subtitlePath?: string;
+  /** Positive = subtitles show later. */
+  subtitleDelayMs?: number;
+};
+
+export type ExternalPlayerResult = {
+  /** "none" = not requested and auto-load is off. The player opens either way. */
+  subtitle: "loaded" | "none" | "no_key" | "quota" | "not_found" | "unsupported_player" | "error";
 };
 
 // ───────── Subtitles ─────────
@@ -277,7 +292,7 @@ export type CommandMap = {
 
   start_stream: { args: { movieId: number; infohash: string }; result: StreamSession };
   stop_stream: { args: { infohash: string }; result: void };
-  open_external_player: { args: { infohash: string }; result: void };
+  open_external_player: { args: { infohash: string } & ExternalSubtitleArgs; result: ExternalPlayerResult };
 
   search_subtitles: {
     args: { movieId: number; lang: string; infohash?: string };

@@ -9,12 +9,14 @@ import {
   searchSubtitles,
   toAppError,
 } from "../../api/tauri";
-import type { AppError, SubtitleOption, SubtitleTrack } from "../../api/types";
+import type { AppError, ExternalSubtitleArgs, SubtitleOption, SubtitleTrack } from "../../api/types";
 import { FALLBACK_LANG, parseVtt, stepDelay, type Cue } from "../../lib/subtitles";
 import { useUiStore } from "../../store/ui";
 
 export type SubtitleSelection =
-  { kind: "off" } | { kind: "option"; option: SubtitleOption } | { kind: "file"; label: string };
+  | { kind: "off" }
+  | { kind: "option"; option: SubtitleOption }
+  | { kind: "file"; label: string; path: string };
 
 export type SubtitleNotice =
   /** autoSubtitles is on but there's no API key. */
@@ -108,7 +110,7 @@ export function useSubtitles({ movieId, infohash, started, menuOpen }: Params) {
         }
         if (gen !== generation.current) return;
         setCues(loaded);
-        setSelection(next.kind === "file" && label ? { kind: "file", label } : next);
+        setSelection(next.kind === "file" && label ? { ...next, label } : next);
         setNotice(null);
       } catch (err) {
         if (gen === generation.current) await fail(err);
@@ -126,7 +128,7 @@ export function useSubtitles({ movieId, infohash, started, menuOpen }: Params) {
 
   const loadFile = useCallback(
     (path: string) =>
-      apply(`file:${path}`, { kind: "file", label: path.split(/[\\/]/).pop() ?? path }, () =>
+      apply(`file:${path}`, { kind: "file", label: path.split(/[\\/]/).pop() ?? path, path }, () =>
         loadSubtitleFile(path),
       ),
     [apply],
@@ -186,7 +188,17 @@ export function useSubtitles({ movieId, infohash, started, menuOpen }: Params) {
     queueMicrotask(() => void loadFirstIn(code));
   }, [started, settings, loadFirstIn]);
 
+  // What "Abrir en VLC" passes: the active subtitle and its delay; nothing when none is active.
+  const delayMs = Math.round(delay * 1000);
+  const externalArgs: ExternalSubtitleArgs =
+    selection.kind === "option"
+      ? { subtitleId: selection.option.id, subtitleDelayMs: delayMs }
+      : selection.kind === "file"
+        ? { subtitlePath: selection.path, subtitleDelayMs: delayMs }
+        : {};
+
   return {
+    externalArgs,
     hasKey,
     preferred,
     shownLang,
