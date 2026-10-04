@@ -85,6 +85,7 @@ type MovieDetail = MovieSummary & {
   language: string;
   mpaRating: string | null;
   ytTrailerCode: string | null;
+  trailerUrl: string | null;       // página local del tráiler (http://127.0.0.1:<port>/trailer/<code>?title=…); null sin ytTrailerCode. Vale solo para la sesión, como las imágenes
   screenshotUrls: string[];        // capturas grandes nítidas (1280 px, large_screenshot_image1..3); [] si no hay. El hero y la ficha usan [0] ?? backgroundUrl (background_image viene pequeño y desenfocado)
   cast: CastMember[];
   torrents: Torrent[];             // en el orden de la API; el front decide cómo mostrarlos
@@ -407,7 +408,19 @@ type SettingsPatch = Partial<Settings>;
 |---|---|---|
 | `open_trailer_window` | `{ ytTrailerCode: string, title: string }` | `void` |
 
-Es el plan B por si el embed `youtube-nocookie` falla dentro de la WebView: abre una `WebviewWindow` aparte que carga la URL del embed directamente. Lo normal es que el front intente primero el modal con el iframe.
+Cadena del tráiler: (1) el modal de la app carga `MovieDetail.trailerUrl` en un `<iframe>`; (2) si falla, `open_trailer_window` abre esa misma página en una `WebviewWindow` aparte; (3) si también falla, el front abre `https://www.youtube.com/watch?v=<code>` en el navegador. El embed solo funciona desde la página local (`http://127.0.0.1`), porque YouTube exige un `Referer` válido (error 153) y `tauri://localhost` no lo manda.
+
+**Mensajes de la página `/trailer` al padre** (`window.parent.postMessage`, y `window.opener` si lo hay). La página carga el embed con `enablejsapi=1` y reenvía los eventos de la API de YouTube:
+
+```ts
+type TrailerMessage = {
+  source: "yts-trailer";
+  event: "ready" | "playing" | "ended" | "error";
+  code?: number;                   // solo en "error": código de YouTube (2, 5, 100, 101, 150, 153…)
+};
+```
+
+El front valida que `event.origin` sea el origen local de la sesión y da el modal por fallido si llega `error` o si en 8 s no llega `ready`.
 
 ## Eventos (backend → frontend)
 
@@ -510,3 +523,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.10.1** (2026-10-04): aclaraciones: límites en KiB/s; `torrent://stats` solo para el stream abierto; una segunda versión con el mismo nombre de carpeta lleva el sufijo ` (2)`; al promover se mueve toda la carpeta del torrent cuando se cierra el stream (mientras se verifica: `queued`).
 - **v0.11** (2026-10-04): carpetas elegibles. `dataDir` → `downloadsDir` + `cacheDir` (en caliente, migración del valor viejo); `StorageUsage` por disco y disponibilidad; `DownloadState` `unavailable` y `moving`; comandos `move_downloads`/`cancel_move_downloads` y evento `downloads://move-progress`. Rompe `dataDir`/`freeDiskBytes`, que ninguna versión publicada usaba.
 - **v0.12** (2026-10-04): fase 7. `get_featured` (banner rotativo con motivo) y `get_home_profile` (fila "Porque viste X" y orden de géneros); `StreamPhase` `no_peers` (60 s sin peers); `StorageUsage.defaultDownloadsDir`/`defaultCacheDir`; variables de entorno para los E2E.
+- **v0.12.1** (2026-10-04): `MovieDetail.trailerUrl` (página local del tráiler, solo para la sesión) y mensajes `TrailerMessage` de la página `/trailer` al padre por `postMessage`; cadena modal → ventana → navegador.
