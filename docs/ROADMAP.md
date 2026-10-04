@@ -120,7 +120,7 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 > El **límite de la caché** (LRU, `get_storage_usage`, `clear_cache`) se adelantó de la fase 6 a esta por pedido del usuario: probando el streaming se quedó sin disco dos veces.
 
 - **backend:**
-  - `db.rs`: rusqlite (feature `bundled`) en `<dataDir>/yts-player.db`, migraciones versionadas y acceso a la DB fuera del hilo async (`spawn_blocking` o similar). Tablas `favorites`, `progress`, `settings`, `images` (registro hash → URL remota, para que las portadas guardadas sigan funcionando tras reiniciar) y `downloads` (se crea vacía; se usa en la fase 6).
+  - `db.rs`: rusqlite (feature `bundled`) en `~/.local/share/yts-player/yts-player.db` (siempre en la ubicación por defecto: `dataDir` solo mueve `cache/` y `library/`), migraciones versionadas y acceso a la DB fuera del hilo async (`spawn_blocking` o similar). Tablas `favorites`, `progress`, `settings`, `images` (registro hash → URL remota, para que las portadas guardadas sigan funcionando tras reiniciar) y `downloads` (se crea vacía; se usa en la fase 6).
   - Las películas guardadas (`MovieSummary`) se guardan **sin el origen** `http://127.0.0.1:<port>` y se reescriben con el puerto actual al leerlas (ver convenciones de `IPC.md`).
   - Comandos de Mi lista (`list_favorites`, `add_favorite`, `remove_favorite`) y de Continuar viendo (`save_progress`, `get_progress`, `list_continue_watching`, `remove_progress`). Se marca como vista (`finished`) a partir del 92 %.
   - `get_movie` devuelve `isFavorite` y `progress` reales; `start_stream` devuelve `resumeAtS` a partir del progreso guardado (null si está `finished`).

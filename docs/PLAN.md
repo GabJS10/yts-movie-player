@@ -111,3 +111,10 @@ yts-movie-player/
 - Cerrar a mitad de la película, volver a abrir la app y verificar que está en "Continuar viendo" y que retoma desde el mismo punto.
 - Agregar a Mi lista y reiniciar la app (debe persistir). Descargar una película, desconectar la red y reproducirla desde la biblioteca.
 - `curl -r 0-1000 http://127.0.0.1:PORT/stream/...` debe devolver `206 Partial Content`.
+
+## Decisiones y lecciones registradas durante el desarrollo
+- **Ubicación de los datos:** la DB (`yts-player.db`), `dht.json` y los ajustes viven siempre en `~/.local/share/yts-player/`. `Settings.dataDir` solo mueve `cache/` y `library/`, porque hay que poder leer `dataDir` antes de abrir la DB.
+- **Caché:** una carpeta por torrent (`cache/<infohash>/`), LRU por mtime contando los bytes **asignados** (los archivos de librqbit son *sparse*). Nunca toca streams abiertos ni con lectores (VLC), ni `cache/img`, ni `library/`.
+- **Espacio en disco (fase 4):** librqbit mantiene abiertos los archivos de un torrent pausado. Si se borran con `rm`, desaparecen de `du` pero `df` no libera el espacio hasta que el proceso termina. Por eso toda limpieza **primero saca el torrent de la sesión** (`TorrentEngine::evict`) y después borra. Hay un test que comprueba en `/proc/self/fd` que no quede nada abierto.
+- **WebKitGTK (fase 3):** el `<video>` no siempre dispara `playing` al recuperarse de una espera, un seek o una pausa. El estado del reproductor se deriva de `video.paused`/`currentTime` y de `canplay`/`seeked`/`timeupdate`.
+
