@@ -196,4 +196,58 @@ describe("Player", () => {
     unmount();
     expect(calls.filter((c) => c.cmd === "stop_stream").at(-1)?.args).toEqual({ infohash: x264.infohash });
   });
+
+  describe("progress", () => {
+    // Mock: Spider-Verse has progress at 3720 s (1:02:00).
+    const resumable = createMockBackend().handle("get_movie", { movieId: 10960 }) as MovieDetail;
+    const t = resumable.torrents.find((x) => x.quality === "1080p" && x.videoCodec === "x264")!;
+
+    async function playResumable(fromStart = false) {
+      const r = await renderWithProviders(<Player movie={resumable} torrent={t} fromStart={fromStart} />);
+      await waitFor(() => expect(status()).toBe("buffering"));
+      push(stats(t, { phase: "ready", bufferedAheadBytes: 8 * MB }));
+      await waitFor(() => expect(status()).toBe("playing"));
+      const v = video();
+      Object.defineProperty(v, "duration", { value: 7000, configurable: true });
+      Object.defineProperty(v, "videoWidth", { value: 1920, configurable: true });
+      Object.defineProperty(v, "videoHeight", { value: 800, configurable: true });
+      fireEvent.loadedMetadata(v);
+      return { ...r, v };
+    }
+
+    it("resumes at resumeAtS", async () => {
+      const { v } = await playResumable();
+      expect(v.currentTime).toBe(3720);
+    });
+
+    it("'Desde el principio' ignores the saved position", async () => {
+      const { v } = await playResumable(true);
+      expect(v.currentTime).toBe(0);
+    });
+
+    it("saves the position on pause and when leaving", async () => {
+      const { v, calls, unmount } = await playResumable();
+      act(() => void v.play());
+      v.currentTime = 3800;
+      act(() => v.pause());
+      const saves = () => calls.filter((c) => c.cmd === "save_progress").map((c) => c.args);
+      expect(saves()).toEqual([expect.objectContaining({ positionS: 3800, durationS: 7000 })]);
+
+      act(() => void v.play());
+      v.currentTime = 3900;
+      fireEvent.timeUpdate(v);
+      unmount();
+      expect(saves().at(-1)).toEqual(expect.objectContaining({ positionS: 3900, durationS: 7000 }));
+      expect((saves()[0] as { movie: { id: number } }).movie.id).toBe(10960);
+    });
+
+    it("an ended video is saved at its full duration", async () => {
+      const { v, calls } = await playResumable();
+      v.currentTime = 6990;
+      fireEvent.ended(v);
+      expect(calls.filter((c) => c.cmd === "save_progress").at(-1)?.args).toEqual(
+        expect.objectContaining({ positionS: 7000, durationS: 7000 }),
+      );
+    });
+  });
 });

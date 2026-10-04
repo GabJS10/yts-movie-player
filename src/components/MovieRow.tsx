@@ -19,7 +19,7 @@ type RowShellProps = {
 
 const SKELETONS = Array.from({ length: 8 }, (_, i) => <MovieCardSkeleton key={i} />);
 
-function RowShell({ title, note, more, children, trackRef, busy }: RowShellProps) {
+export function RowShell({ title, note, more, children, trackRef, busy }: RowShellProps) {
   const track = useRef<HTMLDivElement | null>(null);
   const [edges, setEdges] = useState({ start: true, end: false });
   const sync = useCallback(() => {
@@ -137,14 +137,16 @@ export function StaticMovieRow({
   title,
   movies,
   loading,
+  more,
 }: {
   title: string;
   movies: MovieSummary[] | undefined;
   loading?: boolean;
+  more?: LinkProps;
 }) {
   if (!loading && (!movies || movies.length === 0)) return null;
   return (
-    <RowShell title={title} busy={loading}>
+    <RowShell title={title} busy={loading} more={more}>
       {movies ? movies.map((m) => <MovieCard key={m.id} movie={m} />) : SKELETONS.slice(0, 4)}
     </RowShell>
   );

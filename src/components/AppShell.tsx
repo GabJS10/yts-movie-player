@@ -6,6 +6,7 @@ import { DOWNLOADS_READY } from "../lib/features";
 import { formatSpeed } from "../lib/format";
 import { useSwarmStore } from "../store/swarm";
 import { Icon, type IconName } from "./Icon";
+import { ToastHost } from "./Toast";
 
 type NavItem = {
   to: "/" | "/search" | "/my-list" | "/downloads" | "/settings";
@@ -120,6 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main id="main" tabIndex={-1} className="outline-none max-[900px]:pb-16">
         {children}
       </main>
+      <ToastHost />
 
       <nav
         aria-label="Principal (compacta)"

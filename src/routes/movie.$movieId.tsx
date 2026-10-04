@@ -1,14 +1,17 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useMovie, useSuggestions } from "../api/queries";
+import { useMovie, useSuggestions, useTorrentPrefs } from "../api/queries";
 import type { MovieDetail } from "../api/types";
 import { ErrorState } from "../components/ErrorState";
+import { FavoriteButton } from "../components/FavoriteButton";
 import { Icon } from "../components/Icon";
 import { MovieMeta } from "../components/MovieMeta";
 import { Poster } from "../components/Poster";
 import { StaticMovieRow } from "../components/MovieRow";
 import { VersionsTable } from "../components/VersionsTable";
 import { genreLabel } from "../lib/genres";
+import { toSummary } from "../lib/movie";
+import { formatClock } from "../lib/player";
 import { pickDefaultTorrent, sortForDisplay } from "../lib/versions";
 
 export const Route = createFileRoute("/movie/$movieId")({
@@ -49,8 +52,13 @@ const soon = "Disponible en una próxima versión";
 
 function MovieBody({ movie }: { movie: MovieDetail }) {
   const torrents = useMemo(() => sortForDisplay(movie.torrents), [movie.torrents]);
-  const [selected, setSelected] = useState(() => pickDefaultTorrent(movie.torrents)?.infohash ?? null);
-  const chosen = torrents.find((t) => t.infohash === selected);
+  // Until the user picks a row, the default follows the settings (they may load after the movie).
+  const prefs = useTorrentPrefs();
+  const [picked, setPicked] = useState<string | null>(null);
+  const chosen =
+    torrents.find((t) => t.infohash === picked) ?? pickDefaultTorrent(movie.torrents, prefs) ?? undefined;
+  const resume = movie.progress && !movie.progress.finished ? movie.progress : null;
+  const summary = useMemo(() => toSummary(movie), [movie]);
   // Sharp still first; the blurred background next; the poster (blurred further) as a last resort.
   const still = movie.screenshotUrls[0] ?? movie.backgroundUrl;
   const art = still ?? movie.coverLargeUrl ?? movie.coverUrl;
@@ -89,27 +97,35 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
 
           <div className="my-7 flex flex-wrap gap-3">
             {chosen ? (
-              <Link
-                to="/play/$movieId"
-                params={{ movieId: movie.id }}
-                search={{ infohash: chosen.infohash }}
-                className="btn btn-play"
-              >
-                <Icon name="play" size={22} />
-                {movie.progress && !movie.progress.finished
-                  ? `Continuar · ${chosen.quality}`
-                  : `Reproducir ${chosen.quality}`}
-              </Link>
+              <>
+                <Link
+                  to="/play/$movieId"
+                  params={{ movieId: movie.id }}
+                  search={{ infohash: chosen.infohash }}
+                  className="btn btn-play"
+                >
+                  <Icon name="play" size={22} />
+                  {resume ? `Continuar (${formatClock(resume.positionS)})` : `Reproducir ${chosen.quality}`}
+                </Link>
+                {resume && (
+                  <Link
+                    to="/play/$movieId"
+                    params={{ movieId: movie.id }}
+                    search={{ infohash: chosen.infohash, from: "start" }}
+                    className="btn btn-line"
+                  >
+                    <Icon name="refresh" size={22} />
+                    Desde el principio
+                  </Link>
+                )}
+              </>
             ) : (
               <button type="button" className="btn btn-play" disabled>
                 <Icon name="play" size={22} />
                 Reproducir
               </button>
             )}
-            <button type="button" className="btn btn-line" disabled title={soon}>
-              <Icon name={movie.isFavorite ? "heart" : "plus"} size={22} />
-              {movie.isFavorite ? "En Mi lista" : "Mi lista"}
-            </button>
+            <FavoriteButton movie={summary} isFavorite={movie.isFavorite} />
             <button type="button" className="btn btn-line" disabled title={soon}>
               <Icon name="download" size={22} />
               Descargar
@@ -142,8 +158,8 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
           {torrents.length > 0 ? (
             <VersionsTable
               torrents={torrents}
-              selected={selected}
-              onSelect={setSelected}
+              selected={chosen?.infohash ?? null}
+              onSelect={setPicked}
               labelledBy="versions-title"
             />
           ) : (

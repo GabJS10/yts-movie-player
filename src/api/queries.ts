@@ -1,8 +1,42 @@
 // TanStack Query hooks over the typed IPC client. Components read remote data only through these.
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { getApiStatus, getMovie, getSuggestions, listMovies } from "./tauri";
-import type { AppError, ListMoviesParams, MovieSummary } from "./types";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useInfiniteQuery,
+  type QueryClient,
+} from "@tanstack/react-query";
+import { useMemo } from "react";
+import { formatBytes } from "../lib/format";
+import type { TorrentPrefs } from "../lib/versions";
+import { showToast } from "../store/toast";
+import { describeError } from "./errors";
+import {
+  addFavorite,
+  clearCache,
+  getApiStatus,
+  getMovie,
+  getSettings,
+  getStorageUsage,
+  getSuggestions,
+  listContinueWatching,
+  listFavorites,
+  listMovies,
+  removeFavorite,
+  removeProgress,
+  updateSettings,
+} from "./tauri";
+import type {
+  AppError,
+  ContinueItem,
+  ListMoviesParams,
+  MovieDetail,
+  MovieSummary,
+  Progress,
+  Settings,
+  SettingsPatch,
+} from "./types";
 
 export const queryKeys = {
   movies: (params: ListMoviesParams) => ["movies", params] as const,
@@ -10,6 +44,10 @@ export const queryKeys = {
   suggestions: (id: number) => ["suggestions", id] as const,
   hero: ["hero"] as const,
   apiStatus: ["api-status"] as const,
+  favorites: ["favorites"] as const,
+  continueWatching: ["continue-watching"] as const,
+  settings: ["settings"] as const,
+  storage: ["storage"] as const,
 };
 
 /** Errors that a retry cannot fix. */
@@ -80,6 +118,174 @@ export function useSuggestions(movieId: number) {
   });
 }
 
-export function useApiStatus() {
-  return useQuery({ queryKey: queryKeys.apiStatus, queryFn: getApiStatus, retry });
+/** Base URLs with their latency; `live` re-measures every 15 s (Ajustes › Catálogo). */
+export function useApiStatus(options: { live?: boolean } = {}) {
+  return useQuery({
+    queryKey: queryKeys.apiStatus,
+    queryFn: getApiStatus,
+    retry,
+    staleTime: 0,
+    refetchInterval: options.live ? 15_000 : false,
+  });
+}
+
+// ───────── Mi lista ─────────
+
+export function useFavorites() {
+  return useQuery({ queryKey: queryKeys.favorites, queryFn: listFavorites, retry, staleTime: 0 });
+}
+
+type FavoriteVars = { movie: MovieSummary; on: boolean };
+type FavoriteSnapshot = { detail?: MovieDetail; list?: MovieSummary[] };
+
+/**
+ * ♥ toggle: flips the movie page and Mi lista caches at once; if the backend fails, both go back to
+ * what they were and a toast says so.
+ */
+export function useToggleFavorite() {
+  const qc = useQueryClient();
+  return useMutation<void, AppError, FavoriteVars, FavoriteSnapshot>({
+    mutationFn: ({ movie, on }) => (on ? addFavorite(movie) : removeFavorite(movie.id)),
+    onMutate: async ({ movie, on }) => {
+      await Promise.all([
+        qc.cancelQueries({ queryKey: queryKeys.movie(movie.id) }),
+        qc.cancelQueries({ queryKey: queryKeys.favorites }),
+      ]);
+      const detail = qc.getQueryData<MovieDetail>(queryKeys.movie(movie.id));
+      const list = qc.getQueryData<MovieSummary[]>(queryKeys.favorites);
+      if (detail) qc.setQueryData<MovieDetail>(queryKeys.movie(movie.id), { ...detail, isFavorite: on });
+      if (list) {
+        const rest = list.filter((m) => m.id !== movie.id);
+        qc.setQueryData<MovieSummary[]>(queryKeys.favorites, on ? [movie, ...rest] : rest);
+      }
+      return { detail, list };
+    },
+    onError: (_err, { movie, on }, snap) => {
+      if (snap?.detail) qc.setQueryData(queryKeys.movie(movie.id), snap.detail);
+      if (snap?.list) qc.setQueryData(queryKeys.favorites, snap.list);
+      showToast(on ? "No se pudo añadir a Mi lista" : "No se pudo quitar de Mi lista", "error");
+    },
+    onSuccess: (_data, { on }) => showToast(on ? "Añadida a Mi lista" : "Quitada de Mi lista"),
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.favorites }),
+  });
+}
+
+// ───────── Continuar viendo ─────────
+
+export function useContinueWatching() {
+  return useQuery({
+    queryKey: queryKeys.continueWatching,
+    queryFn: listContinueWatching,
+    retry,
+    staleTime: 0,
+  });
+}
+
+/** After save_progress: the movie page shows the new position without refetching get_movie. */
+export function applySavedProgress(qc: QueryClient, progress: Progress) {
+  const detail = qc.getQueryData<MovieDetail>(queryKeys.movie(progress.movieId));
+  if (detail) qc.setQueryData<MovieDetail>(queryKeys.movie(progress.movieId), { ...detail, progress });
+  void qc.invalidateQueries({ queryKey: queryKeys.continueWatching, refetchType: "active" });
+}
+
+export function useRemoveProgress() {
+  const qc = useQueryClient();
+  return useMutation<void, AppError, number, { list?: ContinueItem[]; detail?: MovieDetail }>({
+    mutationFn: removeProgress,
+    onMutate: async (movieId) => {
+      await qc.cancelQueries({ queryKey: queryKeys.continueWatching });
+      const list = qc.getQueryData<ContinueItem[]>(queryKeys.continueWatching);
+      const detail = qc.getQueryData<MovieDetail>(queryKeys.movie(movieId));
+      if (list)
+        qc.setQueryData<ContinueItem[]>(
+          queryKeys.continueWatching,
+          list.filter((i) => i.movie.id !== movieId),
+        );
+      if (detail) qc.setQueryData<MovieDetail>(queryKeys.movie(movieId), { ...detail, progress: null });
+      return { list, detail };
+    },
+    onError: (_err, movieId, snap) => {
+      if (snap?.list) qc.setQueryData(queryKeys.continueWatching, snap.list);
+      if (snap?.detail) qc.setQueryData(queryKeys.movie(movieId), snap.detail);
+      showToast("No se pudo quitar de Continuar viendo", "error");
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.continueWatching }),
+  });
+}
+
+// ───────── Ajustes ─────────
+
+export function useSettings() {
+  // Only this client changes them (update_settings returns the applied values).
+  return useQuery({ queryKey: queryKeys.settings, queryFn: getSettings, retry, staleTime: Infinity });
+}
+
+/** preferredQuality + preferX264 for pickDefaultTorrent; null until the settings load. */
+export function useTorrentPrefs(): TorrentPrefs | null {
+  const settings = useSettings().data;
+  const preferredQuality = settings?.preferredQuality;
+  const preferX264 = settings?.preferX264;
+  return useMemo(
+    () =>
+      preferredQuality !== undefined && preferX264 !== undefined ? { preferredQuality, preferX264 } : null,
+    [preferredQuality, preferX264],
+  );
+}
+
+/** Catalog data that depends on which YTS mirror answers. */
+const CATALOG_KEYS = [["movies"], queryKeys.hero, ["movie"], ["suggestions"], queryKeys.apiStatus];
+
+/**
+ * update_settings with the patch shown right away; on failure the previous values come back and a
+ * toast explains why. Changing the base URLs refetches the catalog without restarting.
+ */
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation<Settings, AppError, SettingsPatch, { prev?: Settings }>({
+    mutationFn: updateSettings,
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: queryKeys.settings });
+      const prev = qc.getQueryData<Settings>(queryKeys.settings);
+      if (prev) qc.setQueryData<Settings>(queryKeys.settings, { ...prev, ...patch });
+      return { prev };
+    },
+    onError: (err, _patch, ctx) => {
+      if (ctx?.prev) qc.setQueryData(queryKeys.settings, ctx.prev);
+      const copy = describeError(err);
+      showToast(
+        err.code === "invalid_input" ? `No se guardó: ${copy.title.toLowerCase()}` : copy.title,
+        "error",
+      );
+    },
+    onSuccess: (settings, patch) => {
+      qc.setQueryData(queryKeys.settings, settings);
+      if (patch.apiBaseUrls) for (const key of CATALOG_KEYS) void qc.invalidateQueries({ queryKey: key });
+      if (patch.cacheLimitBytes !== undefined) void qc.invalidateQueries({ queryKey: queryKeys.storage });
+    },
+  });
+}
+
+// ───────── Almacenamiento ─────────
+
+export function useStorageUsage() {
+  return useQuery({
+    queryKey: queryKeys.storage,
+    queryFn: getStorageUsage,
+    retry,
+    staleTime: 0,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useClearCache() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: clearCache,
+    onSuccess: ({ freedBytes }) =>
+      showToast(
+        freedBytes > 0 ? `Caché vaciada: ${formatBytes(freedBytes)} liberados` : "La caché ya estaba vacía",
+      ),
+    onError: (err: AppError) => showToast(describeError(err).title, "error"),
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.storage }),
+  });
 }

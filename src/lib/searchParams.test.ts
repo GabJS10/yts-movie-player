@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateCatalogSearch } from "./searchParams";
+import { validateCatalogSearch, validatePlaySearch } from "./searchParams";
 
 describe("validateCatalogSearch", () => {
   it("keeps valid params with their types", () => {
@@ -33,5 +33,18 @@ describe("validateCatalogSearch", () => {
         orderBy: "up",
       }),
     ).toEqual({});
+  });
+});
+
+describe("validatePlaySearch", () => {
+  const hash = "A".repeat(40);
+  it("keeps a valid infohash (lowercased) and from=start", () => {
+    expect(validatePlaySearch({ infohash: hash, from: "start" })).toEqual({
+      infohash: "a".repeat(40),
+      from: "start",
+    });
+  });
+  it("drops anything else", () => {
+    expect(validatePlaySearch({ infohash: "xyz", from: "middle" })).toEqual({});
   });
 });

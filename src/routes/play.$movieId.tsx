@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useMovie } from "../api/queries";
+import { useMovie, useSettings, useTorrentPrefs } from "../api/queries";
 import { ErrorState } from "../components/ErrorState";
 import { Player } from "../components/player/Player";
 import { validatePlaySearch } from "../lib/searchParams";
@@ -21,8 +21,12 @@ export const Route = createFileRoute("/play/$movieId")({
 // Full-screen surface: the shell hides its navigation on /play.
 function PlayerPage() {
   const { movieId } = Route.useParams();
-  const { infohash } = Route.useSearch();
+  const { infohash, from } = Route.useSearch();
   const movie = useMovie(movieId);
+  const prefs = useTorrentPrefs();
+  // Without a chosen version the default depends on the settings: wait for them (or their failure),
+  // or the player would start one stream and switch to another when they arrive.
+  const settingsPending = useSettings().isPending && !infohash;
 
   if (movie.isError) {
     return (
@@ -31,12 +35,13 @@ function PlayerPage() {
       </div>
     );
   }
-  if (!movie.data) {
+  if (!movie.data || settingsPending) {
     return <div className="fixed inset-0 z-[100] bg-black" aria-busy="true" aria-label="Cargando" />;
   }
 
   const torrent =
-    movie.data.torrents.find((t) => t.infohash === infohash) ?? pickDefaultTorrent(movie.data.torrents);
+    movie.data.torrents.find((t) => t.infohash === infohash) ??
+    pickDefaultTorrent(movie.data.torrents, prefs);
   if (!torrent) {
     return (
       <div className="fixed inset-0 z-[100] grid place-items-center bg-black p-6">
@@ -50,5 +55,5 @@ function PlayerPage() {
     );
   }
   // key: switching version (e.g. "Cambiar a 1080p x264") restarts the whole session.
-  return <Player key={torrent.infohash} movie={movie.data} torrent={torrent} />;
+  return <Player key={torrent.infohash} movie={movie.data} torrent={torrent} fromStart={from === "start"} />;
 }

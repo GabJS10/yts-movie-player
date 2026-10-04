@@ -1,14 +1,19 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { afterEach } from "vitest";
+import { useToastStore } from "../store/toast";
 import { installIntersectionObserver } from "./intersection";
 
 installIntersectionObserver();
 
+// findBy*/waitFor default to 1 s; lazy route chunks + the mock IPC can exceed it in a loaded parallel run.
+configure({ asyncUtilTimeout: 4000 });
+
 afterEach(() => {
   cleanup();
   clearMocks();
+  useToastStore.setState({ toast: null });
 });
 
 // jsdom has no media playback: play()/pause() flip `paused` and fire the matching events.

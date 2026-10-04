@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useFavorites } from "../api/queries";
+import { ContinueRow } from "../components/ContinueRow";
 import { HeroBanner } from "../components/HeroBanner";
-import { MovieRow } from "../components/MovieRow";
+import { MovieRow, StaticMovieRow } from "../components/MovieRow";
 import type { ListMoviesParams } from "../api/types";
 
 type RowDef = { title: string; params: Omit<ListMoviesParams, "page">; note?: string };
@@ -20,10 +22,15 @@ const ROWS: RowDef[] = [
 export const Route = createFileRoute("/")({ component: HomePage });
 
 function HomePage() {
+  const favorites = useFavorites();
   return (
     <>
       <HeroBanner />
       <div className="relative z-[2] -mt-10 pb-20 max-[520px]:-mt-6">
+        <ContinueRow />
+        {favorites.data && favorites.data.length > 0 && (
+          <StaticMovieRow title="Mi lista" movies={favorites.data} more={{ to: "/my-list" }} />
+        )}
         {ROWS.map((r) => (
           <MovieRow
             key={r.title}

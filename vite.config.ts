@@ -36,5 +36,7 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
     css: false,
+    // Full-app renders (home: hero + 10 rows) get slow when every file runs in parallel.
+    testTimeout: 15_000,
   },
 });

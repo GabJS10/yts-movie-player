@@ -45,10 +45,16 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
   return out;
 }
 
-/** /play/$movieId search params: the chosen version. Without it, the player picks the default. */
-export type PlaySearch = { infohash?: string };
+/**
+ * /play/$movieId search params: the chosen version (without it, the player picks the default) and
+ * `from: "start"` to ignore the saved position ("Desde el principio").
+ */
+export type PlaySearch = { infohash?: string; from?: "start" };
 
 export function validatePlaySearch(raw: Record<string, unknown>): PlaySearch {
+  const out: PlaySearch = {};
   const h = typeof raw.infohash === "string" ? raw.infohash.toLowerCase() : "";
-  return /^[0-9a-f]{40}$/.test(h) ? { infohash: h } : {};
+  if (/^[0-9a-f]{40}$/.test(h)) out.infohash = h;
+  if (raw.from === "start") out.from = "start";
+  return out;
 }

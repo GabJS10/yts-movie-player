@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { useHeroMovie, useMovie } from "../api/queries";
+import { useHeroMovie, useMovie, useTorrentPrefs } from "../api/queries";
 import { pickDefaultTorrent } from "../lib/versions";
 import { ErrorState } from "./ErrorState";
+import { FavoriteButton } from "./FavoriteButton";
 import { Icon } from "./Icon";
 import { MovieMeta } from "./MovieMeta";
 import { ReleaseTag } from "./ReleaseTag";
@@ -19,7 +20,8 @@ export function HeroBanner() {
   const movie = hero.data;
   // The summary has no stills, torrents or synopsis: the detail query fills them in (and warms the movie page).
   const detail = useMovie(movie?.id ?? 0, { enabled: !!movie });
-  const best = detail.data ? pickDefaultTorrent(detail.data.torrents) : null;
+  const prefs = useTorrentPrefs();
+  const best = detail.data ? pickDefaultTorrent(detail.data.torrents, prefs) : null;
   // Sharp still from the detail; the summary's backgroundUrl (small, blurred) only if the detail has none or fails.
   const art = detail.data
     ? (detail.data.screenshotUrls[0] ?? detail.data.backgroundUrl)
@@ -81,6 +83,7 @@ export function HeroBanner() {
                 <Icon name="info" size={22} />
                 Más info
               </Link>
+              <FavoriteButton movie={movie} isFavorite={detail.data?.isFavorite ?? null} variant="round" />
             </div>
           </>
         ) : (

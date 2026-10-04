@@ -47,6 +47,43 @@ describe("pickDefaultTorrent", () => {
   });
 });
 
+describe("pickDefaultTorrent with settings", () => {
+  const p720 = t({ quality: "720p", seeds: 40 });
+  const p1080 = t({ quality: "1080p", seeds: 80 });
+  const x1080 = t({ quality: "1080p", videoCodec: "x265", seeds: 100 });
+  const x2160 = t({ quality: "2160p", videoCodec: "x265", seeds: 100 });
+  const all = [p720, p1080, x1080, x2160];
+
+  it("picks the preferred quality, x264 first", () => {
+    expect(pickDefaultTorrent(all, { preferredQuality: "1080p", preferX264: true })).toBe(p1080);
+    expect(pickDefaultTorrent(all, { preferredQuality: "720p", preferX264: true })).toBe(p720);
+  });
+
+  it("without the preferred quality in x264, falls to the closest one below it", () => {
+    expect(pickDefaultTorrent(all, { preferredQuality: "2160p", preferX264: true })).toBe(p1080);
+    const only720and2160 = [p720, t({ quality: "2160p", seeds: 9 })];
+    expect(pickDefaultTorrent(only720and2160, { preferredQuality: "1080p", preferX264: true })).toBe(
+      only720and2160[0],
+    );
+    // Nothing at or below: the closest above.
+    const high = [t({ quality: "2160p", seeds: 5 }), p1080];
+    expect(pickDefaultTorrent(high, { preferredQuality: "720p", preferX264: true })).toBe(p1080);
+  });
+
+  it("with preferX264 off, the codec doesn't matter: quality, then seeds", () => {
+    expect(pickDefaultTorrent(all, { preferredQuality: "2160p", preferX264: false })).toBe(x2160);
+    expect(pickDefaultTorrent(all, { preferredQuality: "1080p", preferX264: false })).toBe(x1080);
+  });
+
+  it("still skips dead versions and 3D", () => {
+    const dead = t({ quality: "1080p", seeds: 0 });
+    const threeD = t({ quality: "3D", seeds: 90 });
+    expect(pickDefaultTorrent([dead, threeD, p720], { preferredQuality: "1080p", preferX264: true })).toBe(
+      p720,
+    );
+  });
+});
+
 describe("signalLevel", () => {
   it.each([
     [0, 0],

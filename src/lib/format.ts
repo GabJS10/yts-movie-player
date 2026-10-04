@@ -20,6 +20,12 @@ export function formatRuntime(minutes: number): string {
   return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
 }
 
+/** "Quedan 1 h 2 min" / "Quedan 4 min" / "Queda menos de un minuto". */
+export function timeLeft(positionS: number, durationS: number): string {
+  const min = Math.round(Math.max(0, durationS - positionS) / 60);
+  return min < 1 ? "Queda menos de un minuto" : `Quedan ${formatRuntime(min)}`;
+}
+
 const nfRating = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 export const formatRating = (r: number) => nfRating.format(r);
 

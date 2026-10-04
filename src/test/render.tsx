@@ -10,22 +10,38 @@ import { render } from "@testing-library/react";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ReactNode } from "react";
 import { App } from "../App";
-import { createMockBackend } from "../mocks/backend";
+import { createMockBackend, type MockBackend } from "../mocks/backend";
 import { createQueryClient } from "../lib/queryClient";
 import { createAppRouter } from "../router";
 
+type Options = {
+  /** Seed the mock backend before the first render (e.g. empty Mi lista, other settings). */
+  before?: (backend: MockBackend) => void;
+  /** Commands that reject with this AppError instead of reaching the mock. */
+  fail?: Partial<Record<string, { code: string; message: string }>>;
+};
+
 /** Mock backend behind IPC; returns it so tests can inspect calls. */
-export function installBackend() {
+export function installBackend(options: Options = {}) {
   const backend = createMockBackend();
+  options.before?.(backend);
   const calls: { cmd: string; args: unknown }[] = [];
+  const fail = { ...options.fail };
   mockIPC(
     (cmd, args) => {
       calls.push({ cmd, args });
+      const error = fail[cmd];
+      if (error) return Promise.reject(error);
       return backend.handle(cmd, args);
     },
     { shouldMockEvents: true },
   );
-  return { backend, calls };
+  /** Make `cmd` fail from now on (or succeed again with `null`). */
+  const setFailure = (cmd: string, error: { code: string; message: string } | null) => {
+    if (error) fail[cmd] = error;
+    else delete fail[cmd];
+  };
+  return { backend, calls, setFailure };
 }
 
 export function testQueryClient() {
@@ -35,8 +51,8 @@ export function testQueryClient() {
 }
 
 /** Renders the full app at `path`, with the mock backend behind IPC. */
-export async function renderApp(path = "/") {
-  const ipc = installBackend();
+export async function renderApp(path = "/", options: Options = {}) {
+  const ipc = installBackend(options);
   const queryClient = testQueryClient();
   const router = createAppRouter(queryClient, createMemoryHistory({ initialEntries: [path] }));
   await router.load();
@@ -45,8 +61,8 @@ export async function renderApp(path = "/") {
 }
 
 /** Renders a single component inside a router (for <Link>) and a QueryClient. */
-export async function renderWithProviders(ui: ReactNode) {
-  const ipc = installBackend();
+export async function renderWithProviders(ui: ReactNode, options: Options = {}) {
+  const ipc = installBackend(options);
   const queryClient = testQueryClient();
   const rootRoute = createRootRoute({
     component: () => (

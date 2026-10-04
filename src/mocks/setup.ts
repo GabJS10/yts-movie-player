@@ -5,10 +5,20 @@
 // - Search "!api" or "!net" → api_unavailable / network errors.
 // - /movie/1 → not_found.
 // - localStorage.setItem("mock:latency", "2000") → slower responses (skeletons); default 150–450 ms.
+// - localStorage.setItem("mock:fail", "add_favorite,update_settings") → those commands fail with `db`
+//   (optimistic rollback, error toasts).
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { createMockBackend } from "./backend";
+
+function failing(cmd: string): boolean {
+  try {
+    return (localStorage.getItem("mock:fail") ?? "").split(",").includes(cmd);
+  } catch {
+    return false;
+  }
+}
 
 function latency(): number {
   try {
@@ -27,6 +37,7 @@ export function installMocks(): void {
       new Promise((resolve, reject) => {
         window.setTimeout(() => {
           try {
+            if (failing(cmd)) throw { code: "db", message: `mock: ${cmd} forced to fail` };
             resolve(backend.handle(cmd, args));
           } catch (err) {
             reject(err);

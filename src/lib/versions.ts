@@ -7,19 +7,33 @@ export const qualityRank = (q: Quality) => QUALITY_RANK[q];
 /** Below this many seeds a version is flagged as slow to start. */
 export const LOW_SEEDS = 15;
 
+/** The two settings that steer the default version (Ajustes › Reproducción). */
+export type TorrentPrefs = { preferredQuality: Quality; preferX264: boolean };
+
 /**
- * Default version on the movie page: the highest-quality x264 torrent that has seeds
- * (x265/HEVC often doesn't play in WebKitGTK). 3D only when nothing else exists.
- * Ties go to the one with more seeds. Falls back to the best version with seeds, then to any.
+ * Default version on the movie page and in the player. Tiers, in order: x264 with seeds (x265/HEVC
+ * often doesn't play in WebKitGTK; skipped when `preferX264` is off), anything with seeds, anything
+ * but 3D, anything. Inside a tier the preferred quality wins, then the closest one below it, then the
+ * closest above; ties go to the one with more seeds. Without prefs, the highest quality wins.
  */
-export function pickDefaultTorrent(torrents: readonly Torrent[]): Torrent | null {
-  const better = (a: Torrent, b: Torrent) =>
-    qualityRank(b.quality) - qualityRank(a.quality) || b.seeds - a.seeds;
+export function pickDefaultTorrent(
+  torrents: readonly Torrent[],
+  prefs?: TorrentPrefs | null,
+): Torrent | null {
+  const target = prefs && prefs.preferredQuality !== "3D" ? qualityRank(prefs.preferredQuality) : 4;
+  // Lower is better: at or below the target, nearest first; above it, after every lower one.
+  const distance = (t: Torrent) => {
+    const r = qualityRank(t.quality);
+    return r <= target ? target - r : 10 + r;
+  };
+  const better = (a: Torrent, b: Torrent) => distance(a) - distance(b) || b.seeds - a.seeds;
   const best = (list: Torrent[]) => [...list].sort(better)[0] ?? null;
   const flat = torrents.filter((t) => t.quality !== "3D");
+  const seeded = flat.filter((t) => t.seeds > 0);
+  const x264First = prefs?.preferX264 ?? true;
   return (
-    best(flat.filter((t) => t.videoCodec === "x264" && t.seeds > 0)) ??
-    best(flat.filter((t) => t.seeds > 0)) ??
+    (x264First ? best(seeded.filter((t) => t.videoCodec === "x264")) : null) ??
+    best(seeded) ??
     best(flat) ??
     best([...torrents])
   );

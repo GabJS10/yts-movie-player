@@ -11,6 +11,7 @@ import {
   scrubLayers,
   shortcutAction,
 } from "../../lib/player";
+import { toSummary } from "../../lib/movie";
 import { pickDefaultTorrent } from "../../lib/versions";
 import { useSwarmStore } from "../../store/swarm";
 import { useUiStore } from "../../store/ui";
@@ -18,13 +19,19 @@ import { ErrorState } from "../ErrorState";
 import { BufferScreen } from "./BufferScreen";
 import { CodecError } from "./CodecError";
 import { PlayerControls } from "./PlayerControls";
+import { useProgressSaver } from "./useProgressSaver";
 
 const HIDE_CONTROLS_MS = 3000;
 
-type Props = { movie: MovieDetail; torrent: Torrent };
+type Props = {
+  movie: MovieDetail;
+  torrent: Torrent;
+  /** "Desde el principio": ignore the saved position (resumeAtS). */
+  fromStart?: boolean;
+};
 
 /** Stream session lifecycle, buffer pre-roll, <video> with custom controls and codec fallback. */
-export function Player({ movie, torrent }: Props) {
+export function Player({ movie, torrent, fromStart = false }: Props) {
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(playerReducer, initialPlayerState);
   const root = useRef<HTMLDivElement>(null);
@@ -185,6 +192,11 @@ export function Player({ movie, torrent }: Props) {
     toggleFullscreen,
   ]);
 
+  // ── Progress: save_progress every 10 s, on pause, on ended and on leave ──
+  const summary = useMemo(() => toSummary(movie), [movie]);
+  const progress = useProgressSaver(video, summary, !!state.session && !preroll);
+  const resumeAtS = fromStart ? null : (state.session?.resumeAtS ?? null);
+
   // ── <video> events ──
   const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>) => {
     const v = e.currentTarget;
@@ -192,8 +204,7 @@ export function Player({ movie, torrent }: Props) {
       dispatch({ type: "codec-error" });
       return;
     }
-    const resume = state.session?.resumeAtS;
-    if (resume && resume < v.duration - 5) v.currentTime = resume;
+    if (resumeAtS && resumeAtS < v.duration - 5) v.currentTime = resumeAtS;
     setTime({ current: v.currentTime, duration: v.duration });
   };
   // WebKitGTK/GStreamer often recovers from a stall without firing `playing` again.
@@ -242,6 +253,7 @@ export function Player({ movie, torrent }: Props) {
             const v = e.currentTarget;
             setTime({ current: v.currentTime, duration: v.duration });
             setIsPaused(v.paused);
+            progress.track();
             dispatch({ type: "video-timeupdate", currentTime: v.currentTime, paused: v.paused });
           }}
           onDurationChange={(e) => {
@@ -262,7 +274,9 @@ export function Player({ movie, torrent }: Props) {
             setIsPaused(e.currentTarget.paused);
             dispatch({ type: "video-pause" });
             setChromeVisible(true);
+            progress.onPause();
           }}
+          onEnded={() => progress.onEnded()}
           onWaiting={() => dispatch({ type: "video-waiting" })}
           onSeeking={() => dispatch({ type: "video-seeking" })}
           onSeeked={onResumable}
@@ -281,7 +295,12 @@ export function Player({ movie, torrent }: Props) {
           session={state.session}
           stats={state.stats}
           alternative={alternative}
-          resumeAtS={state.session?.resumeAtS ?? movie.progress?.positionS ?? null}
+          resumeAtS={
+            fromStart
+              ? null
+              : (state.session?.resumeAtS ??
+                (movie.progress && !movie.progress.finished ? movie.progress.positionS : null))
+          }
           onBack={back}
         />
       )}

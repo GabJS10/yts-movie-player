@@ -133,6 +133,7 @@ export function createMockBackend(): MockBackend {
   seedDownload(3304, "1080p", "done", 1);
 
   const streams = new Map<string, StreamSim>();
+  let cacheBytes = Math.round(3.1 * 1024 ** 3);
 
   let settings: Settings = {
     apiBaseUrls: ["https://movies-api.accel.li/api/v2/", "https://yts.gg/api/v2/"],
@@ -237,7 +238,10 @@ export function createMockBackend(): MockBackend {
         videoCodec: t.videoCodec,
         likelyPlayable: t.videoCodec === "x264",
         bufferTargetBytes: settings.bufferTargetBytes,
-        resumeAtS: progress.get(movieId)?.positionS ?? null,
+        resumeAtS: (() => {
+          const p = progress.get(movieId);
+          return p && !p.finished ? p.positionS : null;
+        })(),
         source: done ? "library" : "network",
       };
       streams.set(infohash, { session, ticks: 0, buffered: 0, seeds: t.seeds, peers: t.peers });
@@ -358,16 +362,35 @@ export function createMockBackend(): MockBackend {
 
     get_settings: () => settings,
     update_settings: ({ patch }) => {
+      // Absent key = untouched; null on a nullable field = cleared (spread does both).
+      if (patch.apiBaseUrls !== undefined) {
+        if (patch.apiBaseUrls.length === 0 || patch.apiBaseUrls.length > 10)
+          fail("invalid_input", "apiBaseUrls: between 1 and 10 URLs");
+        for (const u of patch.apiBaseUrls)
+          if (!/^https?:\/\/[^/\s]+/.test(u)) fail("invalid_input", `invalid base url: ${u}`);
+      }
+      if (patch.cacheLimitBytes !== undefined && patch.cacheLimitBytes < 1024 ** 3)
+        fail("invalid_input", "cacheLimitBytes below 1 GB");
+      if (patch.bufferTargetBytes !== undefined && patch.bufferTargetBytes <= 0)
+        fail("invalid_input", "bufferTargetBytes must be positive");
+      if (patch.externalPlayer !== undefined && !patch.externalPlayer.trim())
+        fail("invalid_input", "externalPlayer must not be empty");
       settings = { ...settings, ...patch };
+      // LRU: shrinking the limit evicts down to it.
+      cacheBytes = Math.min(cacheBytes, settings.cacheLimitBytes);
       return settings;
     },
     get_storage_usage: () => ({
-      cacheBytes: Math.round(3.1 * 1024 ** 3),
+      cacheBytes,
       cacheLimitBytes: settings.cacheLimitBytes,
       libraryBytes: Math.round(24.6 * 1024 ** 3),
       freeDiskBytes: 180 * 1024 ** 3,
     }),
-    clear_cache: () => ({ freedBytes: Math.round(3.1 * 1024 ** 3) }),
+    clear_cache: () => {
+      const freedBytes = cacheBytes;
+      cacheBytes = 0;
+      return { freedBytes };
+    },
 
     open_trailer_window: () => undefined,
   };
