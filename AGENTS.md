@@ -25,6 +25,7 @@ El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia t
 
 ### Reglas de coordinación
 - **Cada agente edita solo sus archivos.** Si necesitas un cambio en otra área, pídeselo a su dueño (o a `plan`) en lugar de hacerlo tú.
+- **Commits sin la línea `Co-Authored-By: Claude …`** (pedido del usuario). Mensajes en inglés, estilo `feat(frontend): …`.
 - **Nada de `git stash`, `git checkout -- .`, `git reset --hard`, `git clean` ni comandos que toquen todo el árbol:** el árbol de trabajo es compartido y los otros agentes tienen cambios sin commitear. Para hacer commit, usa `git add <tus rutas>`.
 - **Contrato IPC en `docs/IPC.md`**: los comandos Tauri (nombre, parámetros, tipo de retorno y errores) y los eventos (`torrent://stats`, etc.) con sus payloads. `backend` lo propone o actualiza al crear o cambiar un comando, y `frontend` lo implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes a través de `plan`.
 - **`plan` reparte el trabajo** siguiendo las fases de `docs/PLAN.md`.
