@@ -70,7 +70,12 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let local_base = format!("http://127.0.0.1:{server_port}");
 
     let config = YtsConfig {
-        base_urls: current.api_base_urls.clone(),
+        // E2E: `YTS_PLAYER_API_BASE_URLS` points at a fake YTS server for this run.
+        base_urls: settings::api_base_urls_override(
+            std::env::var(settings::API_BASE_URLS_ENV).ok().as_deref(),
+        )
+        .inspect(|urls| tracing::info!(?urls, "API base URLs from the environment"))
+        .unwrap_or_else(|| current.api_base_urls.clone()),
         ..YtsConfig::default()
     };
     let allowed_hosts = ImageStore::default_allowed_hosts(&config.base_urls);
@@ -83,7 +88,18 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     images.register(tauri::async_runtime::block_on(db.images())?);
     let yts = YtsClient::new(config, Arc::clone(&images))?;
 
+    // E2E: `YTS_PLAYER_NO_DHT=1` keeps the torrents off the public swarm.
+    let no_dht = torrent::no_dht(std::env::var(torrent::NO_DHT_ENV).ok().as_deref());
+    if no_dht {
+        tracing::info!("no DHT and no public trackers ({})", torrent::NO_DHT_ENV);
+    }
     let engine_config = EngineConfig {
+        dht: !no_dht,
+        trackers: if no_dht {
+            Vec::new()
+        } else {
+            torrent::TRACKERS.iter().map(|t| t.to_string()).collect()
+        },
         dht_state_file: Some(app_paths.data_dir.join("dht.json")),
         allowed_torrent_hosts: allowed_hosts,
         buffer_target_bytes: current.buffer_target_bytes,

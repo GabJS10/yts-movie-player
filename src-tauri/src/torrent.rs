@@ -57,6 +57,15 @@ pub const TRACKERS: [&str; 7] = [
     "udp://tracker.dler.org:6969/announce",
 ];
 
+/// `YTS_PLAYER_NO_DHT=1` (E2E): no DHT, no local discovery and no public trackers; only the
+/// trackers inside each `.torrent` (the local seeder's).
+pub const NO_DHT_ENV: &str = "YTS_PLAYER_NO_DHT";
+
+/// Whether a `YTS_PLAYER_NO_DHT` value turns the public swarm off.
+pub fn no_dht(value: Option<&str>) -> bool {
+    value.is_some_and(|v| matches!(v.trim(), "1" | "true" | "yes"))
+}
+
 /// Read-ahead window librqbit prioritizes for every open file stream
 /// (`PER_STREAM_BUF_DEFAULT` in librqbit 9.0.1). Mirrored to mark "priority" cells.
 pub const STREAM_PRIORITY_WINDOW: u64 = 32 * 1024 * 1024;
@@ -362,7 +371,10 @@ pub struct EngineConfig {
     pub dht_state_file: Option<PathBuf>,
     /// `None`: random port on all interfaces.
     pub listen_addr: Option<SocketAddr>,
+    /// Public trackers added to every torrent (on top of the ones in its `.torrent`).
     pub trackers: Vec<String>,
+    /// No trackers at all, not even the `.torrent`'s (tests that only use `initial_peers`).
+    pub disable_trackers: bool,
     /// Extra peers for every torrent (tests).
     pub initial_peers: Vec<SocketAddr>,
     /// Hosts the `.torrent` may be downloaded from.
@@ -387,6 +399,7 @@ impl EngineConfig {
             dht_state_file: None,
             listen_addr: None,
             trackers: TRACKERS.iter().map(|s| s.to_string()).collect(),
+            disable_trackers: false,
             initial_peers: Vec::new(),
             allowed_torrent_hosts: Vec::new(),
             torrent_file_timeout: Duration::from_secs(5),
@@ -654,7 +667,7 @@ impl TorrentEngine {
         });
         let opts = SessionOptions {
             dht,
-            disable_trackers: cfg.trackers.is_empty(),
+            disable_trackers: cfg.disable_trackers,
             listen: Some(ListenerOptions {
                 listen_addr: cfg
                     .listen_addr
@@ -2149,5 +2162,11 @@ mod tests {
         assert!(is_valid_infohash(HASH));
         assert!(!is_valid_infohash("xyz"));
         assert!(!is_valid_infohash(&"g".repeat(40)));
+    }
+
+    #[test]
+    fn no_dht_values() {
+        assert!(no_dht(Some("1")) && no_dht(Some(" true ")));
+        assert!(!no_dht(None) && !no_dht(Some("0")) && !no_dht(Some("")));
     }
 }

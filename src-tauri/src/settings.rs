@@ -201,6 +201,34 @@ pub fn validate(s: Settings) -> AppResult<Settings> {
     })
 }
 
+/// `YTS_PLAYER_API_BASE_URLS` (E2E): comma separated list that replaces `apiBaseUrls`
+/// for this run (not stored).
+pub const API_BASE_URLS_ENV: &str = "YTS_PLAYER_API_BASE_URLS";
+
+/// The URLs of a `YTS_PLAYER_API_BASE_URLS` value, normalized; `None` if unset, empty or
+/// invalid (with a warning).
+pub fn api_base_urls_override(value: Option<&str>) -> Option<Vec<String>> {
+    let urls: Vec<String> = value?
+        .split(',')
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if urls.is_empty() {
+        return None;
+    }
+    match validate(Settings {
+        api_base_urls: urls,
+        ..defaults(Path::new("/"))
+    }) {
+        Ok(s) => Some(s.api_base_urls),
+        Err(e) => {
+            tracing::warn!(error = %e, "ignoring {API_BASE_URLS_ENV}");
+            None
+        }
+    }
+}
+
 /// Absolute, without `..`, without a trailing slash.
 fn clean_dir(field: &str, value: &str) -> AppResult<String> {
     let dir = clean_text(field, value)?;
@@ -769,5 +797,19 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
         assert!(!dir_available(&tmp.path().join("missing")));
+    }
+
+    #[test]
+    fn api_base_urls_from_the_environment() {
+        assert_eq!(api_base_urls_override(None), None);
+        assert_eq!(api_base_urls_override(Some(" , ")), None);
+        assert_eq!(api_base_urls_override(Some("not a url")), None);
+        assert_eq!(
+            api_base_urls_override(Some("http://127.0.0.1:8123/api/v2, http://127.0.0.1:9/x/")),
+            Some(vec![
+                "http://127.0.0.1:8123/api/v2/".to_owned(),
+                "http://127.0.0.1:9/x/".to_owned()
+            ])
+        );
     }
 }
