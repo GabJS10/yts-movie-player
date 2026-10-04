@@ -20,7 +20,7 @@ export function ErrorState({ error, onRetry, onBack, backLabel = "Volver", compa
   const copy = describeError(error);
   const next = ERROR_NEXT[error.code];
   const retry = next.retry && onRetry;
-  const btn = `btn btn-sm ${retry ? "btn-ghost" : "btn-line"}`;
+  const btn = "btn btn-line btn-sm";
   return (
     <div
       role="alert"
