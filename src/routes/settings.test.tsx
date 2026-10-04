@@ -2,6 +2,8 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { CACHE_COMMIT_MS } from "../components/settings/StorageSection";
+import { QUOTA_KEY } from "../mocks/backend";
+import { useSubtitlesQuota } from "../store/subtitlesQuota";
 import { renderApp } from "../test/render";
 
 const GB = 1024 ** 3;
@@ -237,6 +239,16 @@ describe("/settings", () => {
         { openSubtitlesUsername: "gabriel" },
         { openSubtitlesPassword: "secreto" },
       ]);
+    });
+
+    it("Probar with no downloads left turns on the 'cupo agotado' mode", async () => {
+      const user = userEvent.setup();
+      await open({
+        before: (b) => b.handle("update_settings", { patch: { openSubtitlesApiKey: QUOTA_KEY } }),
+      });
+      await user.click(within(region()).getByRole("button", { name: "Probar" }));
+      await within(region()).findByText(/Clave válida/);
+      expect(useSubtitlesQuota.getState().exhausted).toBe(true);
     });
 
     it("Probar explains a rejected key", async () => {

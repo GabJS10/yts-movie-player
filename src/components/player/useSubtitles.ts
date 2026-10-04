@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSettings } from "../../api/queries";
 import {
-  getSubtitlesStatus,
   loadSubtitle,
   loadSubtitleFile,
   pickSubtitleFile,
@@ -11,6 +10,7 @@ import {
 } from "../../api/tauri";
 import type { AppError, ExternalSubtitleArgs, SubtitleOption, SubtitleTrack } from "../../api/types";
 import { FALLBACK_LANG, parseVtt, stepDelay, type Cue } from "../../lib/subtitles";
+import { onQuotaExhausted, useSubtitlesQuota } from "../../store/subtitlesQuota";
 import { useUiStore } from "../../store/ui";
 
 export type SubtitleSelection =
@@ -68,6 +68,12 @@ export function useSubtitles({ movieId, infohash, started, menuOpen }: Params) {
     retry: false,
   });
 
+  // Entering "cupo agotado": refresh the lists, so `cached` says what still loads (searching is free).
+  const quotaExhausted = useSubtitlesQuota((q) => q.exhausted);
+  useEffect(() => {
+    if (quotaExhausted) void qc.invalidateQueries({ queryKey: ["subtitles", movieId] });
+  }, [quotaExhausted, qc, movieId]);
+
   const [selection, setSelection] = useState<SubtitleSelection>({ kind: "off" });
   const [cues, setCues] = useState<Cue[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -86,10 +92,7 @@ export function useSubtitles({ movieId, infohash, started, menuOpen }: Params) {
   const fail = useCallback(async (err: unknown) => {
     const error = toAppError(err);
     if (error.code === "subtitles_quota") {
-      const resetAt = await getSubtitlesStatus().then(
-        (s) => s.resetAt,
-        () => null,
-      );
+      const resetAt = await onQuotaExhausted();
       setNotice({ kind: "quota", resetAt });
     } else if (error.code === "subtitles_auth") setNotice({ kind: "auth" });
     else setNotice({ kind: "error", error });

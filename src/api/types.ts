@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.8); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.9); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -164,6 +164,10 @@ export type SubtitleOption = {
   matchesRelease: boolean;
   /** Translated by AI or machine. */
   aiTranslated: boolean;
+  /** Its page on opensubtitles.com (to download it by hand when the quota is spent). */
+  pageUrl: string | null;
+  /** Already in the disk cache: loading it doesn't spend quota. */
+  cached: boolean;
 };
 
 export type SubtitleTrack = {

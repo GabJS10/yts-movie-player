@@ -1,10 +1,10 @@
 import { useRef, useState, type ReactNode } from "react";
 import { describeError } from "../../api/errors";
 import { useUpdateSettings } from "../../api/queries";
-import { getSubtitlesStatus, openExternalUrl, toAppError } from "../../api/tauri";
+import { openExternalUrl, toAppError } from "../../api/tauri";
 import type { AppError, Settings, SettingsPatch, SubtitlesStatus } from "../../api/types";
-import { isTauri } from "../../lib/runtime";
 import { formatResetTime, OPENSUBTITLES_KEYS_URL, SUBTITLE_LANGS } from "../../lib/subtitles";
+import { fetchSubtitlesStatus } from "../../store/subtitlesQuota";
 import { Icon } from "../Icon";
 import { SetRow, SetSection, Switch } from "./controls";
 
@@ -86,10 +86,7 @@ function describeStatus(s: SubtitlesStatus, hasAccount: boolean): string {
   return parts.join(" · ");
 }
 
-const openKeysPage = () => {
-  if (isTauri()) void openExternalUrl(OPENSUBTITLES_KEYS_URL).catch(() => undefined);
-  else window.open(OPENSUBTITLES_KEYS_URL, "_blank", "noopener");
-};
+const openKeysPage = () => void openExternalUrl(OPENSUBTITLES_KEYS_URL).catch(() => undefined);
 
 /** Ajustes › Subtítulos: OpenSubtitles key and optional account, "Probar", language and auto-load. */
 export function SubtitlesSection({ settings }: { settings: Settings }) {
@@ -108,7 +105,7 @@ export function SubtitlesSection({ settings }: { settings: Settings }) {
     setTesting(true);
     await saving.current;
     try {
-      setResult({ ok: true, status: await getSubtitlesStatus() });
+      setResult({ ok: true, status: await fetchSubtitlesStatus() });
     } catch (err) {
       setResult({ ok: false, error: toAppError(err) });
     } finally {

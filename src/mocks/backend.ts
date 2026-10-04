@@ -170,7 +170,10 @@ export function createMockBackend(): MockBackend {
   let cacheBytes = Math.round(3.1 * 1024 ** 3);
 
   // OpenSubtitles: magic keys exercise the error paths ("invalid" → subtitles_auth, "quota" → subtitles_quota).
+  // Disk cache of .vtt: loading these spends no quota. The second option of every movie starts cached,
+  // so the "quota" key still has something that loads.
   const downloaded = new Set<string>();
+  const isCached = (id: string) => downloaded.has(id) || id.endsWith("-2");
   let remaining = 20;
   const requireKey = () => {
     const key = settings.openSubtitlesApiKey;
@@ -321,16 +324,22 @@ export function createMockBackend(): MockBackend {
       const release = t
         ? `${t.quality}.${t.source === "bluray" ? "BluRay" : "WEBRip"}.x264`
         : "1080p.BluRay.x264";
-      const option = (n: number, label: string, over: Partial<SubtitleOption> = {}): SubtitleOption => ({
-        id: `${m.id}-${lang}-${n}`,
-        lang,
-        label,
-        downloads: 0,
-        hearingImpaired: false,
-        matchesRelease: false,
-        aiTranslated: false,
-        ...over,
-      });
+      const option = (n: number, label: string, over: Partial<SubtitleOption> = {}): SubtitleOption => {
+        const id = `${m.id}-${lang}-${n}`;
+        return {
+          id,
+          lang,
+          label,
+          downloads: 0,
+          hearingImpaired: false,
+          matchesRelease: false,
+          aiTranslated: false,
+          // The third one has no page (UI: disabled when the quota is spent).
+          pageUrl: n === 3 ? null : `https://www.opensubtitles.com/es/subtitles/${m.imdbCode}-${lang}-${n}`,
+          cached: isCached(id),
+          ...over,
+        };
+      };
       // Already in contract order: release match, then plain ones, then SDH / AI, by downloads.
       return [
         option(1, `${m.title}.${m.year}.${release}-[YTS.MX]`, { downloads: 4812, matchesRelease: !!t }),
@@ -345,10 +354,10 @@ export function createMockBackend(): MockBackend {
     },
     load_subtitle: ({ subtitleId }) => {
       requireKey();
-      if (settings.openSubtitlesApiKey === QUOTA_KEY && !downloaded.has(subtitleId))
+      if (settings.openSubtitlesApiKey === QUOTA_KEY && !isCached(subtitleId))
         fail("subtitles_quota", `daily quota exhausted, resets at ${quotaResetAt()}`);
       // A cached .vtt doesn't spend quota.
-      if (!downloaded.has(subtitleId)) {
+      if (!isCached(subtitleId)) {
         downloaded.add(subtitleId);
         remaining = Math.max(0, remaining - 1);
       }

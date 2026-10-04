@@ -1,8 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { describeError } from "../../api/errors";
+import { openExternalUrl } from "../../api/tauri";
 import type { SubtitleOption } from "../../api/types";
-import { FALLBACK_LANG, formatDelay, langLabel } from "../../lib/subtitles";
+import { FALLBACK_LANG, formatDelay, formatResetTime, langLabel } from "../../lib/subtitles";
+import { useSubtitlesQuota } from "../../store/subtitlesQuota";
 import { Icon } from "../Icon";
 import type { Subtitles } from "./useSubtitles";
 
@@ -11,8 +13,10 @@ const nf = new Intl.NumberFormat("es-ES");
 
 type Props = { subs: Subtitles; open: boolean; onOpenChange: (open: boolean) => void };
 
-function OptionMeta({ o }: { o: SubtitleOption }) {
+function OptionMeta({ o, quota }: { o: SubtitleOption; quota: boolean }) {
   const bits = [`${nf.format(o.downloads)} descargas`];
+  if (quota && o.cached) bits.unshift("Ya descargado");
+  if (quota && !o.cached && !o.pageUrl) bits.unshift("Sin página en OpenSubtitles");
   if (o.hearingImpaired) bits.push("Para sordos");
   if (o.aiTranslated) bits.push("Traducción automática");
   return (
@@ -25,6 +29,11 @@ function OptionMeta({ o }: { o: SubtitleOption }) {
       {bits.join(" · ")}
     </span>
   );
+}
+
+function quotaLine(resetAt: string | null) {
+  const at = formatResetTime(resetAt);
+  return `Cupo agotado${at ? ` hasta las ${at}` : ""}: elige uno para descargarlo en OpenSubtitles y suéltalo aquí.`;
 }
 
 /** Player subtitle menu (prototype): off, options per language, "Cargar archivo…" and the delay. */
@@ -61,6 +70,7 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
   };
 
   const { selection, options, loadingId } = subs;
+  const quota = useSubtitlesQuota();
   const langs = [...new Set([subs.preferred, FALLBACK_LANG])];
   const isOn = selection.kind !== "off";
 
@@ -133,28 +143,57 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
                   No hay subtítulos en {langLabel(subs.shownLang).toLowerCase()} para esta película.
                 </p>
               ) : (
-                options.data.slice(0, MAX_OPTIONS).map((o) => {
-                  const on = selection.kind === "option" && selection.option.id === o.id;
-                  return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      className="menu-item"
-                      role="menuitemradio"
-                      aria-checked={on}
-                      disabled={loadingId === o.id}
-                      onClick={() => void subs.choose(o)}
-                    >
-                      <span className="chk">{on && <Icon name="check" size={18} />}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate" title={o.label}>
-                          {loadingId === o.id ? "Cargando…" : o.label}
+                <>
+                  {quota.exhausted && (
+                    <p className="m-0 px-4 pt-1 pb-2 text-[13px] text-warn" data-testid="quota-line">
+                      {quotaLine(quota.resetAt)}
+                    </p>
+                  )}
+                  {options.data.slice(0, MAX_OPTIONS).map((o) => {
+                    // With the quota spent, only cached files load; the rest open their page to download by hand.
+                    if (quota.exhausted && !o.cached) {
+                      const url = o.pageUrl;
+                      return (
+                        <button
+                          key={o.id}
+                          type="button"
+                          className="menu-item disabled:cursor-not-allowed disabled:opacity-50"
+                          role="menuitem"
+                          disabled={!url}
+                          title={url ? "Abrir su página en OpenSubtitles para descargarlo" : undefined}
+                          onClick={() => url && void openExternalUrl(url).catch(() => undefined)}
+                        >
+                          <span className="chk text-text-2">{url && <Icon name="external" size={18} />}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{o.label}</span>
+                            <OptionMeta o={o} quota />
+                            {url && <span className="sr-only"> (abre su página en OpenSubtitles)</span>}
+                          </span>
+                        </button>
+                      );
+                    }
+                    const on = selection.kind === "option" && selection.option.id === o.id;
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        className="menu-item"
+                        role="menuitemradio"
+                        aria-checked={on}
+                        disabled={loadingId === o.id}
+                        onClick={() => void subs.choose(o)}
+                      >
+                        <span className="chk">{on && <Icon name="check" size={18} />}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate" title={o.label}>
+                            {loadingId === o.id ? "Cargando…" : o.label}
+                          </span>
+                          <OptionMeta o={o} quota={quota.exhausted} />
                         </span>
-                        <OptionMeta o={o} />
-                      </span>
-                    </button>
-                  );
-                })
+                      </button>
+                    );
+                  })}
+                </>
               )}
             </>
           ) : (

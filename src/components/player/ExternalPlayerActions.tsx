@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { describeError } from "../../api/errors";
-import { getSubtitlesStatus, openExternalPlayer, toAppError } from "../../api/tauri";
+import { openExternalPlayer, toAppError } from "../../api/tauri";
 import type { AppError, ExternalPlayerResult, ExternalSubtitleArgs, Torrent } from "../../api/types";
 import { formatResetTime } from "../../lib/subtitles";
+import { onQuotaExhausted } from "../../store/subtitlesQuota";
 import { Icon } from "../Icon";
 
 type Props = {
@@ -62,13 +63,7 @@ export function ExternalPlayerActions({ movieId, infohash, alternative, primary 
     setNote(null);
     try {
       const { subtitle } = await openExternalPlayer(infohash, subtitles);
-      const resetAt =
-        subtitle === "quota"
-          ? await getSubtitlesStatus().then(
-              (s) => s.resetAt,
-              () => null,
-            )
-          : null;
+      const resetAt = subtitle === "quota" ? await onQuotaExhausted() : null;
       setNote(subtitleNote(subtitle, resetAt));
     } catch (err) {
       setError(toAppError(err));

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { isTauri } from "../lib/runtime";
 import type {
   AppError,
   CommandArgs,
@@ -111,9 +112,18 @@ export async function pickSubtitleFile(): Promise<string | null> {
   }
 }
 
-/** Opens a web page in the system browser (tauri-plugin-opener). */
-export const openExternalUrl = (url: string) =>
-  openUrl(url).catch((err: unknown) => Promise.reject(toAppError(err)));
+/** Opens a web page in the system browser (tauri-plugin-opener); a new tab outside Tauri (dev). */
+export async function openExternalUrl(url: string): Promise<void> {
+  if (!isTauri()) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  try {
+    await openUrl(url);
+  } catch (err) {
+    throw toAppError(err);
+  }
+}
 
 // ───────── My list ─────────
 export const listFavorites = () => call("list_favorites");

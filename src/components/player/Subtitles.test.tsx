@@ -283,4 +283,41 @@ describe("Player subtitles", () => {
       );
     });
   });
+
+  it("quota spent: cached options load, the others open their OpenSubtitles page, no page = disabled", async () => {
+    const user = userEvent.setup();
+    const { calls } = await play(1632, (b) =>
+      b.handle("update_settings", { patch: { openSubtitlesApiKey: QUOTA_KEY } }),
+    );
+    // Auto-load hits the quota → notice + "cupo agotado" mode.
+    await screen.findByTestId("subtitle-notice");
+    await user.click(screen.getByRole("button", { name: "Subtítulos" }));
+    const menu = screen.getByRole("menu", { name: "Subtítulos" });
+    expect(await within(menu).findByTestId("quota-line")).toHaveTextContent(
+      /^Cupo agotado hasta las \d{2}:\d{2}: elige uno para descargarlo en OpenSubtitles y suéltalo aquí\.$/,
+    );
+
+    // 1: not cached, has a page → opens it in the browser.
+    const page = within(menu).getByRole("menuitem", {
+      name: /Interstellar\.2014\.1080p\.BluRay\.x264-\[YTS.*abre su página en OpenSubtitles/,
+    });
+    await user.click(page);
+    await waitFor(() =>
+      expect(cmds(calls, "plugin:opener|open_url")).toEqual([
+        expect.objectContaining({ url: "https://www.opensubtitles.com/es/subtitles/tt0816692-es-1" }),
+      ]),
+    );
+    expect(cmds(calls, "load_subtitle")).toEqual([{ subtitleId: "1632-es-1" }]); // only the failed auto-load
+
+    // 3: no page → disabled.
+    expect(within(menu).getByRole("menuitem", { name: /BRRip/ })).toBeDisabled();
+
+    // 2: cached → loads as usual, no quota spent.
+    const cached = within(menu).getByRole("menuitemradio", { name: /720p\.WEBRip/ });
+    expect(cached).toHaveTextContent("Ya descargado");
+    await user.click(cached);
+    await waitFor(() => expect(cmds(calls, "load_subtitle").at(-1)).toEqual({ subtitleId: "1632-es-2" }));
+    at(0.5);
+    await waitFor(() => expect(subtitleText()).not.toBeNull());
+  });
 });
