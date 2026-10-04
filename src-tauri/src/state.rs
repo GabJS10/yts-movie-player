@@ -13,7 +13,7 @@ use crate::torrent::TorrentEngine;
 use crate::yts::YtsClient;
 
 pub struct AppState {
-    /// Effective layout (`dataDir` from the settings at startup).
+    /// Default layout (`~/.local/share/yts-player`): DB, `subs/`, default cache and library.
     pub paths: AppPaths,
     /// Port of the local HTTP server (`stream.rs`).
     pub server_port: u16,

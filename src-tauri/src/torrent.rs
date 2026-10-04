@@ -468,11 +468,24 @@ struct LocalFile {
     readers: Arc<Readers>,
 }
 
+/// Where a torrent's files are (fixed for the entry's life).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Output {
-    /// `cache/<infohash>/`.
-    Cache,
+    /// `<cacheDir>/<infohash>/`, the cache folder at the time the stream started.
+    Cache(PathBuf),
     Library(PathBuf),
+}
+
+impl Output {
+    fn is_cache(&self) -> bool {
+        matches!(self, Self::Cache(_))
+    }
+
+    fn folder(&self) -> &Path {
+        match self {
+            Self::Cache(dir) | Self::Library(dir) => dir,
+        }
+    }
 }
 
 struct Active {
@@ -552,8 +565,8 @@ struct Entry {
 }
 
 impl Entry {
-    fn new(req: StreamRequest) -> Self {
-        Self::with_output(req, Output::Cache, None)
+    fn new(req: StreamRequest, cache_folder: PathBuf) -> Self {
+        Self::with_output(req, Output::Cache(cache_folder), None)
     }
 
     fn with_output(req: StreamRequest, output: Output, torrent_bytes: Option<Bytes>) -> Self {
@@ -621,6 +634,8 @@ pub struct TorrentEngine {
     buffer_target: AtomicU64,
     /// Finished downloads served from disk, by infohash.
     local: Mutex<HashMap<String, LocalFile>>,
+    /// Where new streams go (`cacheDir`, changeable at runtime).
+    cache_dir: std::sync::RwLock<PathBuf>,
 }
 
 fn torrent_err(context: &str, e: impl std::fmt::Display) -> AppError {
@@ -664,6 +679,7 @@ impl TorrentEngine {
         )?;
         let (stats_tx, _) = broadcast::channel(64);
         let cfg_buffer_target = cfg.buffer_target_bytes;
+        let cfg_output_dir = cfg.output_dir.clone();
         let engine = Arc::new(Self {
             api: Api::new(Arc::clone(&session), None),
             session,
@@ -674,6 +690,7 @@ impl TorrentEngine {
             stats_tx,
             buffer_target: AtomicU64::new(cfg_buffer_target),
             local: Mutex::new(HashMap::new()),
+            cache_dir: std::sync::RwLock::new(cfg_output_dir),
         });
         spawn_stats_loop(Arc::downgrade(&engine), engine.cfg.stats_interval);
         Ok(engine)
@@ -692,16 +709,41 @@ impl TorrentEngine {
         self.allowed_hosts.set(hosts);
     }
 
-    /// Folder of a streamed torrent: `cache/<infohash>/`. Unit of the cache LRU.
+    /// Where new streams are written.
+    pub fn cache_dir(&self) -> PathBuf {
+        match self.cache_dir.read() {
+            Ok(g) => g.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// New streams go to `dir`; open ones finish where they are.
+    pub fn set_cache_dir(&self, dir: PathBuf) {
+        tracing::info!(dir = %dir.display(), "cache folder for new streams");
+        match self.cache_dir.write() {
+            Ok(mut g) => *g = dir,
+            Err(poisoned) => *poisoned.into_inner() = dir,
+        }
+    }
+
+    /// Folder of a new streamed torrent: `<cacheDir>/<infohash>/`. Unit of the cache LRU.
     pub fn torrent_dir(&self, infohash: &str) -> PathBuf {
-        self.cfg.output_dir.join(infohash.to_ascii_lowercase())
+        self.cache_dir().join(infohash.to_ascii_lowercase())
+    }
+
+    /// The cache folder the torrent actually lives in, if it is a stream in the engine.
+    pub fn cache_folder_of(&self, infohash: &str) -> Option<PathBuf> {
+        let entry = self.entry(&infohash.to_ascii_lowercase())?;
+        match &entry.output {
+            Output::Cache(dir) => Some(dir.clone()),
+            Output::Library(_) => None,
+        }
     }
 
     /// Records an access for the cache LRU (the folder's mtime). Best effort.
-    fn touch(&self, infohash: &str) {
-        let dir = self.torrent_dir(infohash);
+    fn touch(&self, dir: &Path) {
         let result =
-            std::fs::File::open(&dir).and_then(|f| f.set_modified(std::time::SystemTime::now()));
+            std::fs::File::open(dir).and_then(|f| f.set_modified(std::time::SystemTime::now()));
         if let Err(e) = result {
             tracing::debug!(dir = %dir.display(), error = %e, "could not touch torrent folder");
         }
@@ -744,9 +786,12 @@ impl TorrentEngine {
     ///
     /// The torrent must leave the librqbit session first: a paused torrent keeps its files
     /// open, and deleting them would not free any space until the app exits.
+    ///
+    /// Only the torrent whose files are in `dir` is touched: an old copy left in a previous
+    /// cache folder is deleted even if the same infohash is streaming somewhere else.
     pub async fn evict(&self, infohash: &str, dir: &Path) -> AppResult<bool> {
         let infohash = infohash.to_ascii_lowercase();
-        let entry = self.entry(&infohash);
+        let entry = self.entry(&infohash).filter(|e| e.output.folder() == dir);
         let _control = match &entry {
             Some(e) => Some(Arc::clone(&e.control).lock_owned().await),
             None => None,
@@ -765,7 +810,11 @@ impl TorrentEngine {
             }
         }
         if let Ok(id) = Id20::from_str(&infohash) {
-            if self.session.get(TorrentIdOrHash::Hash(id)).is_some() {
+            let in_dir = self
+                .session
+                .get(TorrentIdOrHash::Hash(id))
+                .is_some_and(|h| h.output_folder() == dir);
+            if in_dir {
                 self.session
                     .delete(TorrentIdOrHash::Hash(id), false)
                     .await
@@ -804,10 +853,13 @@ impl TorrentEngine {
         }
         let (entry, _control) = self
             .lock_entry(&infohash, || {
-                Entry::new(StreamRequest {
-                    infohash: infohash.clone(),
-                    ..req.clone()
-                })
+                Entry::new(
+                    StreamRequest {
+                        infohash: infohash.clone(),
+                        ..req.clone()
+                    },
+                    self.torrent_dir(&infohash),
+                )
             })
             .await?;
         let active = self.activate(&infohash, &entry).await?;
@@ -820,8 +872,8 @@ impl TorrentEngine {
         }
         entry.stopped.store(false, Ordering::Relaxed);
         entry.mark_alive();
-        if entry.output == Output::Cache {
-            self.touch(&infohash);
+        if let Output::Cache(dir) = &entry.output {
+            self.touch(dir);
         }
 
         Ok(StreamSession {
@@ -923,7 +975,7 @@ impl TorrentEngine {
             }
         };
         self.reconcile(&entry).await?;
-        download_torrent(active, entry.output == Output::Cache)
+        download_torrent(active, entry.output.is_cache())
     }
 
     /// Moves a download that was being streamed from `cache/<infohash>/` into `folder`
@@ -936,9 +988,9 @@ impl TorrentEngine {
             .entry(&infohash)
             .ok_or_else(|| AppError::NotFound(format!("no torrent {infohash}")))?;
         let old_control = Arc::clone(&old.control).lock_owned().await;
-        if old.output != Output::Cache {
+        let Output::Cache(src_dir) = old.output.clone() else {
             return Ok(true);
-        }
+        };
         if !old.stopped.load(Ordering::Relaxed) || old.readers.has_open() {
             return Ok(false);
         }
@@ -971,8 +1023,7 @@ impl TorrentEngine {
                     .await
                     .map_err(|e| torrent_err("removing torrent from session", e))?;
             }
-            self.move_from_cache(&infohash, &active.rel_path, folder)
-                .await?;
+            move_cache_folder(&src_dir, folder).await?;
             self.activate(&infohash, &new).await?;
             self.reconcile(&new).await
         }
@@ -996,7 +1047,7 @@ impl TorrentEngine {
     /// Whether [`Self::promote`] would move the torrent now (no stream, no reader).
     pub fn can_promote(&self, infohash: &str) -> bool {
         self.entry(&infohash.to_ascii_lowercase()).is_some_and(|e| {
-            e.output == Output::Cache
+            e.output.is_cache()
                 && e.active.get().is_some()
                 && e.stopped.load(Ordering::Relaxed)
                 && !e.readers.has_open()
@@ -1017,10 +1068,7 @@ impl TorrentEngine {
         let moved = tokio::fs::symlink_metadata(src_dir.join(rel_path))
             .await
             .is_ok();
-        if tokio::fs::symlink_metadata(&src_dir).await.is_ok() {
-            move_tree(&src_dir, folder).await?;
-        }
-        remove_path(&src_dir).await?;
+        move_cache_folder(&src_dir, folder).await?;
         Ok(moved)
     }
 
@@ -1032,6 +1080,26 @@ impl TorrentEngine {
         };
         let _control = Arc::clone(&entry.control).lock_owned().await;
         entry.set_download(Some(run));
+        self.reconcile(&entry).await
+    }
+
+    /// Pauses and resumes a running torrent: it announces again and retries the known
+    /// peers (librqbit does not reconnect to a lost peer by itself).
+    pub async fn restart_torrent(&self, infohash: &str) -> AppResult<()> {
+        let Some(entry) = self.entry(&infohash.to_ascii_lowercase()) else {
+            return Ok(());
+        };
+        let _control = Arc::clone(&entry.control).lock_owned().await;
+        let Some(active) = entry.active.get() else {
+            return Ok(());
+        };
+        if active.handle.is_paused() {
+            return Ok(());
+        }
+        self.session
+            .pause(&active.handle)
+            .await
+            .map_err(|e| torrent_err("pausing torrent", e))?;
         self.reconcile(&entry).await
     }
 
@@ -1229,8 +1297,8 @@ impl TorrentEngine {
         };
         let _control = Arc::clone(&entry.control).lock_owned().await;
         entry.stopped.store(true, Ordering::Relaxed);
-        if entry.output == Output::Cache {
-            self.touch(&entry.req.infohash);
+        if let Output::Cache(dir) = &entry.output {
+            self.touch(dir);
         }
         // A torrent that is also a running download keeps going.
         self.reconcile(&entry).await
@@ -1435,8 +1503,9 @@ impl TorrentEngine {
         let mut peers = listed.seen_peers.clone();
         peers.extend(self.cfg.initial_peers.iter().copied());
         let (output_folder, sub_folder) = match &entry.output {
-            Output::Cache => (None, Some(req.infohash.clone())),
-            Output::Library(dir) => (Some(dir.to_string_lossy().into_owned()), None),
+            Output::Cache(dir) | Output::Library(dir) => {
+                (Some(dir.to_string_lossy().into_owned()), None::<String>)
+            }
         };
         // A download added paused (restored after a restart) still checks its pieces.
         let paused = entry.stopped.load(Ordering::Relaxed) && entry.download() == Some(false);
@@ -1763,6 +1832,14 @@ async fn move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
     }
     tokio::fs::copy(src, dst).await?;
     tokio::fs::remove_file(src).await
+}
+
+/// Moves a torrent folder from the cache into `folder` (merging) and deletes it.
+async fn move_cache_folder(src_dir: &Path, folder: &Path) -> std::io::Result<()> {
+    if tokio::fs::symlink_metadata(src_dir).await.is_ok() {
+        move_tree(src_dir, folder).await?;
+    }
+    remove_path(src_dir).await
 }
 
 /// Moves the contents of `src` into `dst` (created if needed), file by file.

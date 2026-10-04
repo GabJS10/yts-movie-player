@@ -3,8 +3,13 @@
 //! Each setting is a row `key → JSON value` in the `settings` table. Only keys the user
 //! changed are stored, so untouched settings follow the defaults of the running version.
 //! A stored value that no longer parses or validates falls back to its default.
+//!
+//! Folders (`downloadsDir`, `cacheDir`): validated without touching the disk here (absolute,
+//! not inside each other); when they change, [`SettingsStore::update`] also checks that they
+//! exist or can be created and are writable. A stored folder that is missing at startup
+//! (unmounted disk) is kept: the callers decide what to do (see [`dir_available`]).
 
-use std::path::Path;
+use std::path::{Component, Path};
 use std::sync::RwLock;
 
 use serde_json::{Map, Value};
@@ -44,13 +49,15 @@ pub fn defaults(data_dir: &Path) -> Settings {
         up_limit_kbps: None,
         seed_after_download: false,
         listen_port: None,
-        data_dir: data_dir.to_string_lossy().into_owned(),
+        downloads_dir: data_dir.join("library").to_string_lossy().into_owned(),
+        cache_dir: data_dir.join("cache").to_string_lossy().into_owned(),
         cache_limit_bytes: DEFAULT_CACHE_LIMIT_BYTES,
     }
 }
 
-/// Applies a patch: absent key = unchanged; `null` on a nullable setting = cleared.
-pub fn apply_patch(current: &Settings, patch: SettingsPatch) -> Settings {
+/// Applies a patch: absent key = unchanged; `null` on a nullable setting = cleared (for
+/// the folders: back to the default one).
+pub fn apply_patch(current: &Settings, defaults: &Settings, patch: SettingsPatch) -> Settings {
     let s = current.clone();
     Settings {
         api_base_urls: patch.api_base_urls.unwrap_or(s.api_base_urls),
@@ -73,7 +80,14 @@ pub fn apply_patch(current: &Settings, patch: SettingsPatch) -> Settings {
         up_limit_kbps: patch.up_limit_kbps.unwrap_or(s.up_limit_kbps),
         seed_after_download: patch.seed_after_download.unwrap_or(s.seed_after_download),
         listen_port: patch.listen_port.unwrap_or(s.listen_port),
-        data_dir: patch.data_dir.unwrap_or(s.data_dir),
+        downloads_dir: match patch.downloads_dir {
+            Some(v) => v.unwrap_or_else(|| defaults.downloads_dir.clone()),
+            None => s.downloads_dir,
+        },
+        cache_dir: match patch.cache_dir {
+            Some(v) => v.unwrap_or_else(|| defaults.cache_dir.clone()),
+            None => s.cache_dir,
+        },
         cache_limit_bytes: patch.cache_limit_bytes.unwrap_or(s.cache_limit_bytes),
     }
 }
@@ -159,9 +173,12 @@ pub fn validate(s: Settings) -> AppResult<Settings> {
         )));
     }
 
-    let data_dir = clean_text("dataDir", &s.data_dir)?;
-    if !Path::new(&data_dir).is_absolute() {
-        return Err(invalid(format!("dataDir: {data_dir:?} is not absolute")));
+    let downloads_dir = clean_dir("downloadsDir", &s.downloads_dir)?;
+    let cache_dir = clean_dir("cacheDir", &s.cache_dir)?;
+    if nested(&downloads_dir, &cache_dir) {
+        return Err(invalid(format!(
+            "downloadsDir {downloads_dir:?} and cacheDir {cache_dir:?} are inside each other"
+        )));
     }
 
     if !(MIN_CACHE_LIMIT_BYTES..=MAX_SAFE_INTEGER).contains(&s.cache_limit_bytes) {
@@ -178,9 +195,87 @@ pub fn validate(s: Settings) -> AppResult<Settings> {
         open_subtitles_password: password,
         subtitle_lang: lang,
         external_player: player,
-        data_dir,
+        downloads_dir,
+        cache_dir,
         ..s
     })
+}
+
+/// Absolute, without `..`, without a trailing slash.
+fn clean_dir(field: &str, value: &str) -> AppResult<String> {
+    let dir = clean_text(field, value)?;
+    let path = Path::new(&dir);
+    if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
+        return Err(invalid(format!("{field}: {dir:?} is not an absolute path")));
+    }
+    let normalized: std::path::PathBuf = path.components().collect();
+    Ok(normalized.to_string_lossy().into_owned())
+}
+
+/// One folder is the other or is inside it.
+pub fn nested(a: &str, b: &str) -> bool {
+    let (a, b) = (Path::new(a), Path::new(b));
+    a.starts_with(b) || b.starts_with(a)
+}
+
+/// The folder exists and this process can write in it (no disk writes).
+pub fn dir_available(path: &Path) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let Ok(c_path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+            return false;
+        };
+        // SAFETY: `c_path` is a valid NUL-terminated string that outlives the call.
+        unsafe { libc::access(c_path.as_ptr(), libc::W_OK) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+/// For a folder the user just chose: creates it if needed and checks that a file can be
+/// written in it. Errors are `invalid_input` (the UI shows them next to the field).
+pub fn prepare_dir(field: &str, dir: &Path) -> AppResult<()> {
+    let fail = |e: std::io::Error| invalid(format!("{field}: {}: {e}", dir.display()));
+    std::fs::create_dir_all(dir).map_err(fail)?;
+    let probe = dir.join(".yts-player-write-test");
+    std::fs::write(&probe, b"ok").map_err(fail)?;
+    std::fs::remove_file(&probe).map_err(fail)?;
+    Ok(())
+}
+
+/// Stored rows from before v0.11: `dataDir` becomes `cacheDir = <dataDir>/cache` and
+/// `downloadsDir = <dataDir>/library` (unless those are stored already). Returns the new
+/// rows (only values that differ from the defaults are kept) and whether anything changed.
+pub fn migrate_rows(
+    defaults: &Settings,
+    rows: Vec<(String, String)>,
+) -> (Vec<(String, String)>, bool) {
+    let Some(pos) = rows.iter().position(|(k, _)| k == "dataDir") else {
+        return (rows, false);
+    };
+    let mut rows = rows;
+    let (_, raw) = rows.remove(pos);
+    let Ok(Value::String(data_dir)) = serde_json::from_str::<Value>(&raw) else {
+        return (rows, true);
+    };
+    let base = Path::new(&data_dir);
+    for (key, sub, default) in [
+        ("cacheDir", "cache", &defaults.cache_dir),
+        ("downloadsDir", "library", &defaults.downloads_dir),
+    ] {
+        let value = base.join(sub).to_string_lossy().into_owned();
+        if rows.iter().any(|(k, _)| k == key) || &value == default {
+            continue;
+        }
+        rows.push((key.to_owned(), Value::String(value).to_string()));
+    }
+    (rows, true)
 }
 
 fn to_map(s: &Settings) -> AppResult<Map<String, Value>> {
@@ -237,6 +332,7 @@ pub fn changed_rows(before: &Settings, next: &Settings) -> AppResult<Vec<(String
 /// Current settings in memory, backed by the DB.
 pub struct SettingsStore {
     db: Db,
+    defaults: Settings,
     current: RwLock<Settings>,
     /// Serializes updates (read-modify-write).
     update_lock: tokio::sync::Mutex<()>,
@@ -244,10 +340,22 @@ pub struct SettingsStore {
 
 impl SettingsStore {
     pub async fn load(db: Db, defaults: &Settings) -> AppResult<Self> {
-        let rows = db.settings_rows().await?;
+        let (rows, migrated) = migrate_rows(defaults, db.settings_rows().await?);
+        if migrated {
+            tracing::info!("migrating dataDir to cacheDir/downloadsDir");
+            db.delete_settings(vec!["dataDir".to_owned()]).await?;
+            db.put_settings(
+                rows.iter()
+                    .filter(|(k, _)| k == "cacheDir" || k == "downloadsDir")
+                    .cloned()
+                    .collect(),
+            )
+            .await?;
+        }
         let current = overlay(defaults, &rows)?;
         Ok(Self {
             db,
+            defaults: defaults.clone(),
             current: RwLock::new(current),
             update_lock: tokio::sync::Mutex::new(()),
         })
@@ -264,7 +372,37 @@ impl SettingsStore {
     pub async fn update(&self, patch: SettingsPatch) -> AppResult<(Settings, Settings)> {
         let _guard = self.update_lock.lock().await;
         let before = self.get();
-        let next = validate(apply_patch(&before, patch))?;
+        let next = validate(apply_patch(&before, &self.defaults, patch))?;
+        let dirs: Vec<(&str, String)> = [
+            ("downloadsDir", &before.downloads_dir, &next.downloads_dir),
+            ("cacheDir", &before.cache_dir, &next.cache_dir),
+        ]
+        .into_iter()
+        .filter(|(_, a, b)| a != b)
+        .map(|(f, _, b)| (f, b.clone()))
+        .collect();
+        if !dirs.is_empty() {
+            let (downloads, cache) = (next.downloads_dir.clone(), next.cache_dir.clone());
+            let owned: Vec<(String, String)> = dirs
+                .iter()
+                .map(|(f, d)| (f.to_string(), d.clone()))
+                .collect();
+            tokio::task::spawn_blocking(move || {
+                for (field, dir) in &owned {
+                    prepare_dir(field, Path::new(dir))?;
+                }
+                // Through symlinks too.
+                let real = |d: &str| std::fs::canonicalize(d).ok();
+                if let (Some(a), Some(b)) = (real(&downloads), real(&cache)) {
+                    if a.starts_with(&b) || b.starts_with(&a) {
+                        return Err(invalid("downloadsDir and cacheDir are inside each other"));
+                    }
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|e| AppError::Internal(format!("settings task: {e}")))??;
+        }
         let rows = changed_rows(&before, &next)?;
         if !rows.is_empty() {
             self.db.put_settings(rows).await?;
@@ -309,11 +447,12 @@ mod tests {
         s.listen_port = Some(6881);
 
         // Empty patch: nothing changes.
-        assert_eq!(apply_patch(&s, patch(json!({}))), s);
+        assert_eq!(apply_patch(&s, &base(), patch(json!({}))), s);
 
         // null clears only the given keys; absent ones stay.
         let p = apply_patch(
             &s,
+            &base(),
             patch(json!({ "openSubtitlesApiKey": null, "listenPort": null })),
         );
         assert_eq!(p.open_subtitles_api_key, None);
@@ -324,6 +463,7 @@ mod tests {
         // Values replace.
         let p = apply_patch(
             &s,
+            &base(),
             patch(json!({ "downLimitKbps": 300, "preferredQuality": "720p", "preferX264": false })),
         );
         assert_eq!(p.down_limit_kbps, Some(300));
@@ -421,11 +561,25 @@ mod tests {
                 ..base()
             },
             Settings {
-                data_dir: "relative/dir".into(),
+                downloads_dir: "relative/dir".into(),
                 ..base()
             },
             Settings {
-                data_dir: "".into(),
+                cache_dir: "".into(),
+                ..base()
+            },
+            Settings {
+                cache_dir: "/a/../etc".into(),
+                ..base()
+            },
+            Settings {
+                downloads_dir: "/media/disk".into(),
+                cache_dir: "/media/disk/cache".into(),
+                ..base()
+            },
+            Settings {
+                downloads_dir: "/media/disk/x/".into(),
+                cache_dir: "/media/disk/x".into(),
                 ..base()
             },
             Settings {
@@ -511,5 +665,109 @@ mod tests {
 
         let reloaded = SettingsStore::load(db, &base()).await.unwrap();
         assert_eq!(reloaded.get(), after);
+    }
+
+    #[test]
+    fn folders_default_reset_and_normalize() {
+        let d = base();
+        assert_eq!(d.downloads_dir, "/home/u/.local/share/yts-player/library");
+        assert_eq!(d.cache_dir, "/home/u/.local/share/yts-player/cache");
+        let mut s = d.clone();
+        s.cache_dir = "/media/disk/c".into();
+        s.downloads_dir = "/media/disk/d".into();
+        // null = back to the default; absent = unchanged.
+        let p = apply_patch(&s, &d, patch(json!({ "cacheDir": null })));
+        assert_eq!(p.cache_dir, d.cache_dir);
+        assert_eq!(p.downloads_dir, "/media/disk/d");
+        // Trailing slash removed; siblings with a common prefix are not nested.
+        let v = validate(Settings {
+            downloads_dir: "/media/disk/movies/".into(),
+            cache_dir: "/media/disk/movies-cache".into(),
+            ..d
+        })
+        .unwrap();
+        assert_eq!(v.downloads_dir, "/media/disk/movies");
+        assert!(!nested(&v.downloads_dir, &v.cache_dir));
+    }
+
+    #[test]
+    fn data_dir_rows_migrate_to_the_two_folders() {
+        let d = base();
+        let rows = vec![
+            ("dataDir".to_owned(), "\"/media/disk/yts\"".to_owned()),
+            ("subtitleLang".to_owned(), "\"en\"".to_owned()),
+        ];
+        let (rows, changed) = migrate_rows(&d, rows);
+        assert!(changed);
+        let s = overlay(&d, &rows).unwrap();
+        assert_eq!(s.cache_dir, "/media/disk/yts/cache");
+        assert_eq!(s.downloads_dir, "/media/disk/yts/library");
+        assert_eq!(s.subtitle_lang, "en");
+        assert!(!rows.iter().any(|(k, _)| k == "dataDir"));
+
+        // The default dataDir migrates to the defaults: nothing stored.
+        let rows = vec![(
+            "dataDir".to_owned(),
+            "\"/home/u/.local/share/yts-player\"".to_owned(),
+        )];
+        let (rows, changed) = migrate_rows(&d, rows);
+        assert!(changed && rows.is_empty());
+        // Already migrated: untouched.
+        let rows = vec![("cacheDir".to_owned(), "\"/x/c\"".to_owned())];
+        assert_eq!(migrate_rows(&d, rows.clone()), (rows, false));
+    }
+
+    #[tokio::test]
+    async fn store_migrates_data_dir_and_checks_folders_on_disk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        db.put_settings(vec![(
+            "dataDir".into(),
+            serde_json::to_string(&tmp.path().join("old")).unwrap(),
+        )])
+        .await
+        .unwrap();
+        let store = SettingsStore::load(db.clone(), &base()).await.unwrap();
+        assert_eq!(
+            store.get().cache_dir,
+            tmp.path().join("old/cache").to_string_lossy()
+        );
+        let mut rows = db.settings_rows().await.unwrap();
+        rows.sort();
+        assert_eq!(
+            rows.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            ["cacheDir", "downloadsDir"]
+        );
+
+        // A new folder is created and must be writable.
+        let new_dir = tmp.path().join("new/downloads");
+        let (_, after) = store
+            .update(patch(json!({ "downloadsDir": new_dir })))
+            .await
+            .unwrap();
+        assert!(new_dir.is_dir());
+        assert!(dir_available(&new_dir));
+        assert_eq!(after.downloads_dir, new_dir.to_string_lossy());
+        assert!(std::fs::read_dir(&new_dir).unwrap().next().is_none());
+
+        // Not creatable (a file is in the way) → invalid_input, nothing changes.
+        let file = tmp.path().join("file");
+        std::fs::write(&file, b"x").unwrap();
+        let err = store
+            .update(patch(json!({ "cacheDir": file.join("sub") })))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+        assert_eq!(store.get(), after);
+
+        // Nested through a symlink.
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&new_dir, &link).unwrap();
+        let err = store
+            .update(patch(json!({ "cacheDir": link.join("cache") })))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+        assert!(!dir_available(&tmp.path().join("missing")));
     }
 }

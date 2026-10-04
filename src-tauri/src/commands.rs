@@ -136,7 +136,10 @@ pub async fn start_stream(
 #[tauri::command]
 pub async fn stop_stream(state: State<'_, AppState>, infohash: String) -> AppResult<()> {
     tracing::debug!(%infohash, "stop_stream");
-    state.torrents.stop_stream(&infohash).await
+    state.torrents.stop_stream(&infohash).await?;
+    // A stream left in a previous cache folder is deleted once closed.
+    state.cache.enforce_soon();
+    Ok(())
 }
 
 /// Opens the player from Settings with the stream and, when possible, the subtitles
@@ -307,6 +310,19 @@ pub async fn remove_download(
 }
 
 #[tauri::command]
+pub async fn move_downloads(state: State<'_, AppState>) -> AppResult<()> {
+    tracing::debug!("move_downloads");
+    state.downloads.start_move()
+}
+
+#[tauri::command]
+pub async fn cancel_move_downloads(state: State<'_, AppState>) -> AppResult<()> {
+    tracing::debug!("cancel_move_downloads");
+    state.downloads.cancel_move();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn open_download_folder(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -330,7 +346,8 @@ pub async fn get_settings(state: State<'_, AppState>) -> AppResult<Settings> {
 /// Applied now: `apiBaseUrls`, `bufferTargetBytes`, `cacheLimitBytes`, speed limits,
 /// `seedAfterDownload` (and the ones read on use: `externalPlayer`;
 /// `preferredQuality`/`preferX264` are used by the front).
-/// On the next start: `listenPort`, `dataDir`.
+/// Folders (`cacheDir`, `downloadsDir`) too, see `apply_cache_dir`. On the next start:
+/// `listenPort`.
 #[tauri::command]
 pub async fn update_settings(
     state: State<'_, AppState>,
@@ -372,8 +389,15 @@ pub async fn update_settings(
     if before.listen_port != after.listen_port {
         tracing::info!(listen_port = ?after.listen_port, "listenPort changed, applies on restart");
     }
-    if before.data_dir != after.data_dir {
-        tracing::info!(data_dir = %after.data_dir, "dataDir changed, applies on restart");
+    if before.cache_dir != after.cache_dir {
+        if let Some(warning) = apply_cache_dir(&state) {
+            tracing::warn!(error = %warning, "cache folder not available");
+        }
+    }
+    if before.downloads_dir != after.downloads_dir {
+        state
+            .downloads
+            .set_downloads_dir(std::path::PathBuf::from(&after.downloads_dir));
     }
     Ok(after)
 }
@@ -448,9 +472,47 @@ pub async fn get_subtitles_status(state: State<'_, AppState>) -> AppResult<Subti
     state.subtitles.status().await
 }
 
+/// Points the engine and the cache at `cacheDir`, or at the default folder while it is not
+/// available (the previous folder is emptied in the background). Returns the warning to
+/// show when it falls back to the default folder.
+pub fn apply_cache_dir(state: &AppState) -> Option<AppError> {
+    let configured = std::path::PathBuf::from(state.settings.get().cache_dir);
+    let (dir, available) = crate::cache::effective_cache_dir(&configured, &state.paths.cache_dir);
+    if state.torrents.cache_dir() == dir {
+        return None;
+    }
+    state.torrents.set_cache_dir(dir.clone());
+    state.cache.set_cache_dir(dir.clone());
+    state.cache.enforce_soon();
+    (!available).then(|| cache_fallback_warning(&configured, &dir))
+}
+
+pub fn cache_fallback_warning(configured: &std::path::Path, used: &std::path::Path) -> AppError {
+    AppError::Io(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!(
+            "cache folder {} is not available, streaming uses {}",
+            configured.display(),
+            used.display()
+        ),
+    ))
+}
+
 #[tauri::command]
 pub async fn get_storage_usage(state: State<'_, AppState>) -> AppResult<StorageUsage> {
-    state.cache.usage().await
+    let cache = state.cache.usage().await?;
+    let downloads = state.downloads.usage().await;
+    let configured_cache = std::path::PathBuf::from(state.settings.get().cache_dir);
+    Ok(StorageUsage {
+        cache_bytes: cache.cache_bytes,
+        cache_limit_bytes: state.cache.limit_bytes(),
+        library_bytes: downloads.library_bytes,
+        cache_free_bytes: cache.free_bytes,
+        downloads_free_bytes: downloads.free_bytes,
+        cache_dir_available: crate::settings::dir_available(&configured_cache),
+        downloads_dir_available: downloads.dir_available,
+        downloads_outside_dir: downloads.outside_dir,
+    })
 }
 
 #[tauri::command]

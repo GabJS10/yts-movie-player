@@ -310,6 +310,10 @@ pub enum DownloadState {
     Stalled,
     Done,
     Error,
+    /// Its folder is not there (unmounted disk); resumes by itself when it is back.
+    Unavailable,
+    /// Being moved by `move_downloads`.
+    Moving,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -354,7 +358,10 @@ pub struct Settings {
     pub up_limit_kbps: Option<u32>,
     pub seed_after_download: bool,
     pub listen_port: Option<u16>,
-    pub data_dir: String,
+    /// Absolute; default `~/.local/share/yts-player/library`.
+    pub downloads_dir: String,
+    /// Absolute; default `~/.local/share/yts-player/cache`.
+    pub cache_dir: String,
     pub cache_limit_bytes: u64,
 }
 
@@ -384,7 +391,11 @@ pub struct SettingsPatch {
     pub seed_after_download: Option<bool>,
     #[serde(deserialize_with = "present")]
     pub listen_port: Option<Option<u16>>,
-    pub data_dir: Option<String>,
+    /// `null` = back to the default folder.
+    #[serde(deserialize_with = "present")]
+    pub downloads_dir: Option<Option<String>>,
+    #[serde(deserialize_with = "present")]
+    pub cache_dir: Option<Option<String>>,
     pub cache_limit_bytes: Option<u64>,
 }
 
@@ -419,7 +430,8 @@ impl std::fmt::Debug for Settings {
             .field("up_limit_kbps", &self.up_limit_kbps)
             .field("seed_after_download", &self.seed_after_download)
             .field("listen_port", &self.listen_port)
-            .field("data_dir", &self.data_dir)
+            .field("downloads_dir", &self.downloads_dir)
+            .field("cache_dir", &self.cache_dir)
             .field("cache_limit_bytes", &self.cache_limit_bytes)
             .finish()
     }
@@ -452,7 +464,8 @@ impl std::fmt::Debug for SettingsPatch {
             .field("up_limit_kbps", &self.up_limit_kbps)
             .field("seed_after_download", &self.seed_after_download)
             .field("listen_port", &self.listen_port)
-            .field("data_dir", &self.data_dir)
+            .field("downloads_dir", &self.downloads_dir)
+            .field("cache_dir", &self.cache_dir)
             .field("cache_limit_bytes", &self.cache_limit_bytes)
             .finish()
     }
@@ -472,8 +485,15 @@ where
 pub struct StorageUsage {
     pub cache_bytes: u64,
     pub cache_limit_bytes: u64,
+    /// Every download, wherever it is.
     pub library_bytes: u64,
-    pub free_disk_bytes: u64,
+    pub cache_free_bytes: u64,
+    pub downloads_free_bytes: u64,
+    /// `false`: missing or not writable (streaming uses the default folder).
+    pub cache_dir_available: bool,
+    pub downloads_dir_available: bool,
+    /// Downloads still in another folder (to offer "Mover").
+    pub downloads_outside_dir: u64,
 }
 
 /// Return value of `clear_cache`.
@@ -534,6 +554,29 @@ pub struct DownloadChanged {
     pub download: Option<Download>,
 }
 
+/// Payload of `downloads://move-progress`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveProgress {
+    /// 1-based: the download being moved.
+    pub index: u32,
+    pub total: u32,
+    pub infohash: Option<String>,
+    /// Of the whole move.
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+    pub finished: bool,
+    pub cancelled: bool,
+    pub failed: Vec<MoveFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveFailure {
+    pub infohash: String,
+    pub message: String,
+}
+
 /// Payload of `app://error` (`AppError & { infohash }`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -576,6 +619,7 @@ pub struct ExternalPlayerResult {
 pub mod events {
     pub const TORRENT_STATS: &str = "torrent://stats";
     pub const DOWNLOAD_CHANGED: &str = "download://changed";
+    pub const MOVE_PROGRESS: &str = "downloads://move-progress";
     pub const APP_ERROR: &str = "app://error";
 }
 
@@ -1088,7 +1132,8 @@ mod tests {
             up_limit_kbps: Some(500),
             seed_after_download: false,
             listen_port: None,
-            data_dir: "/home/u/.local/share/yts-player".into(),
+            downloads_dir: "/home/u/.local/share/yts-player/library".into(),
+            cache_dir: "/media/disk/yts-cache".into(),
             cache_limit_bytes: 10_000_000_000,
         };
         assert_eq!(
@@ -1108,7 +1153,8 @@ mod tests {
                 "upLimitKbps": 500,
                 "seedAfterDownload": false,
                 "listenPort": null,
-                "dataDir": "/home/u/.local/share/yts-player",
+                "downloadsDir": "/home/u/.local/share/yts-player/library",
+                "cacheDir": "/media/disk/yts-cache",
                 "cacheLimitBytes": 10_000_000_000u64
             })
         );
@@ -1140,7 +1186,9 @@ mod tests {
         let patch: SettingsPatch = serde_json::from_value(json!({
             "preferX264": false,
             "downLimitKbps": null,
-            "upLimitKbps": 250
+            "upLimitKbps": 250,
+            "downloadsDir": null,
+            "cacheDir": "/media/disk/c"
         }))
         .unwrap();
         assert_eq!(
@@ -1149,6 +1197,8 @@ mod tests {
                 prefer_x264: Some(false),
                 down_limit_kbps: Some(None),
                 up_limit_kbps: Some(Some(250)),
+                downloads_dir: Some(None),
+                cache_dir: Some(Some("/media/disk/c".into())),
                 ..Default::default()
             }
         );
@@ -1162,11 +1212,49 @@ mod tests {
             cache_bytes: 1,
             cache_limit_bytes: 2,
             library_bytes: 3,
-            free_disk_bytes: 4,
+            cache_free_bytes: 4,
+            downloads_free_bytes: 5,
+            cache_dir_available: true,
+            downloads_dir_available: false,
+            downloads_outside_dir: 2,
         };
         assert_eq!(
             to_json(&usage),
-            json!({ "cacheBytes": 1, "cacheLimitBytes": 2, "libraryBytes": 3, "freeDiskBytes": 4 })
+            json!({
+                "cacheBytes": 1,
+                "cacheLimitBytes": 2,
+                "libraryBytes": 3,
+                "cacheFreeBytes": 4,
+                "downloadsFreeBytes": 5,
+                "cacheDirAvailable": true,
+                "downloadsDirAvailable": false,
+                "downloadsOutsideDir": 2
+            })
+        );
+        let progress = MoveProgress {
+            index: 1,
+            total: 2,
+            infohash: Some(HASH.into()),
+            bytes_done: 10,
+            bytes_total: 20,
+            finished: false,
+            cancelled: false,
+            failed: vec![MoveFailure {
+                infohash: HASH.into(),
+                message: "no space".into(),
+            }],
+        };
+        assert_eq!(
+            to_json(&progress),
+            json!({
+                "index": 1, "total": 2, "infohash": HASH, "bytesDone": 10, "bytesTotal": 20,
+                "finished": false, "cancelled": false,
+                "failed": [{ "infohash": HASH, "message": "no space" }]
+            })
+        );
+        assert_eq!(
+            to_json(&[DownloadState::Unavailable, DownloadState::Moving]),
+            json!(["unavailable", "moving"])
         );
         assert_eq!(
             to_json(&ClearCacheResult { freed_bytes: 7 }),

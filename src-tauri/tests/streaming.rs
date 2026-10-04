@@ -426,7 +426,6 @@ async fn cache_lru_keeps_open_streams_and_evicts_stopped_ones_releasing_files() 
     // Limit 0: everything should go, but the open stream is protected.
     let cache = CacheManager::new(
         dl.tmp.path().join("cache"),
-        library.clone(),
         Arc::clone(&dl.engine) as Arc<dyn Evictor>,
         0,
     );

@@ -10,24 +10,33 @@
 //! background tick (1 s) follows progress, moves streams that became downloads out of
 //! `cache/` ([`TorrentEngine::promote`]), marks finished ones `done` and emits
 //! `download://changed` whenever a state changes.
+//!
+//! Each download keeps its own folder, so changing `downloadsDir` only affects new ones;
+//! [`DownloadManager::start_move`] moves the existing ones (rename on the same disk, copy
+//! and delete across disks) with `downloads://move-progress`. A download whose folder's
+//! parent is gone (unmounted disk) is `unavailable`: its torrent leaves the session and
+//! comes back by itself when the folder returns.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
 use tokio::sync::broadcast;
 
+use crate::cache::{allocated_size, free_disk_bytes};
 use crate::db::{Db, DownloadRow};
 use crate::error::{AppError, AppResult};
 use crate::images::ImageStore;
+use crate::settings::dir_available;
 use crate::torrent::{
     is_valid_infohash, remove_path, DownloadRequest, LocalStream, StreamRequest, TorrentEngine,
 };
 use crate::types::{
-    Download, DownloadChanged, DownloadState, MovieDetail, MovieSummary, Quality, VideoCodec,
+    Download, DownloadChanged, DownloadState, MoveFailure, MoveProgress, MovieDetail, MovieSummary,
+    Quality, VideoCodec,
 };
 
 pub const TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -37,6 +46,16 @@ pub const SPACE_MARGIN_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Longest folder name we create (bytes); ext4 allows 255.
 const MAX_FOLDER_LEN: usize = 180;
+
+/// Chunk used when copying across disks (cancellation is checked between chunks).
+const COPY_CHUNK: usize = 1024 * 1024;
+
+/// `downloads://move-progress` at most this often while copying.
+const MOVE_PROGRESS_EVERY: Duration = Duration::from_millis(250);
+
+/// A stalled download without peers is restarted (re-announce, known peers again) at most
+/// this often: librqbit does not reconnect to a lost peer by itself.
+const KICK_EVERY: Duration = Duration::from_secs(60);
 
 /// How often (in ticks) the progress of active downloads is written to the DB.
 const PERSIST_EVERY_TICKS: u64 = 15;
@@ -67,9 +86,35 @@ pub struct DownloadsConfig {
     pub db: Db,
     pub images: Arc<ImageStore>,
     pub engine: Arc<TorrentEngine>,
+    /// `downloadsDir`: where new downloads go.
     pub library_dir: PathBuf,
     pub seed_after_download: bool,
     pub free_space: FreeSpaceFn,
+    /// Tests: always copy + delete when moving, as if the folders were on two disks.
+    pub always_copy: bool,
+    /// Tests: pause after each copied chunk, to cancel half way.
+    pub copy_chunk_delay: Option<Duration>,
+}
+
+impl DownloadsConfig {
+    pub fn new(
+        db: Db,
+        images: Arc<ImageStore>,
+        engine: Arc<TorrentEngine>,
+        library_dir: PathBuf,
+        seed_after_download: bool,
+    ) -> Self {
+        Self {
+            db,
+            images,
+            engine,
+            library_dir,
+            seed_after_download,
+            free_space: Arc::new(free_disk_bytes),
+            always_copy: false,
+            copy_chunk_delay: None,
+        }
+    }
 }
 
 struct Record {
@@ -78,11 +123,56 @@ struct Record {
     resolving: bool,
     /// Still in `cache/` (it was being streamed): waiting to be moved to `library/`.
     in_cache: bool,
+    /// Its folder's parent is gone (unmounted disk).
+    unavailable: bool,
+    /// Being moved by `move_downloads`.
+    moving: bool,
+    /// Last time a stalled torrent was restarted to look for peers again.
+    last_kick: Option<tokio::time::Instant>,
+}
+
+impl Record {
+    fn new(row: DownloadRow) -> Self {
+        Self {
+            row,
+            resolving: false,
+            in_cache: false,
+            unavailable: false,
+            moving: false,
+            last_kick: None,
+        }
+    }
+}
+
+/// The folder a download lives in (the `downloadsDir` it was created or moved into).
+fn root_of(row: &DownloadRow) -> PathBuf {
+    Path::new(&row.path)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default()
+}
+
+/// Downloads disk usage and folder state (part of `StorageUsage`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DownloadsUsage {
+    pub library_bytes: u64,
+    pub free_bytes: u64,
+    pub dir_available: bool,
+    pub outside_dir: u64,
+}
+
+enum MoveError {
+    Cancelled,
+    Failed(String),
 }
 
 pub struct DownloadManager {
     cfg: DownloadsConfig,
+    library_dir: std::sync::RwLock<PathBuf>,
     seed: AtomicBool,
+    move_running: AtomicBool,
+    move_cancel: AtomicBool,
+    move_events: broadcast::Sender<MoveProgress>,
     records: Mutex<HashMap<String, Record>>,
     /// Last state emitted per download, to emit only changes.
     emitted: Mutex<HashMap<String, DownloadState>>,
@@ -205,7 +295,12 @@ fn codec_str(c: VideoCodec) -> &'static str {
 impl DownloadManager {
     pub fn new(cfg: DownloadsConfig) -> Arc<Self> {
         let (events, _) = broadcast::channel(64);
+        let (move_events, _) = broadcast::channel(64);
         Arc::new(Self {
+            library_dir: std::sync::RwLock::new(cfg.library_dir.clone()),
+            move_running: AtomicBool::new(false),
+            move_cancel: AtomicBool::new(false),
+            move_events,
             seed: AtomicBool::new(cfg.seed_after_download),
             cfg,
             records: Mutex::new(HashMap::new()),
@@ -218,6 +313,28 @@ impl DownloadManager {
     /// `download://changed` payloads.
     pub fn subscribe(&self) -> broadcast::Receiver<DownloadChanged> {
         self.events.subscribe()
+    }
+
+    /// `downloads://move-progress` payloads.
+    pub fn subscribe_moves(&self) -> broadcast::Receiver<MoveProgress> {
+        self.move_events.subscribe()
+    }
+
+    /// `downloadsDir`: where new downloads go.
+    pub fn downloads_dir(&self) -> PathBuf {
+        match self.library_dir.read() {
+            Ok(g) => g.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// New downloads go to `dir`; existing ones stay until [`Self::start_move`].
+    pub fn set_downloads_dir(&self, dir: PathBuf) {
+        tracing::info!(dir = %dir.display(), "downloads folder for new downloads");
+        match self.library_dir.write() {
+            Ok(mut g) => *g = dir,
+            Err(poisoned) => *poisoned.into_inner() = dir,
+        }
     }
 
     fn local_base(&self) -> &str {
@@ -252,7 +369,10 @@ impl DownloadManager {
     pub async fn restore(&self) -> AppResult<()> {
         let rows = self.cfg.db.list_downloads(self.local_base()).await?;
         for mut row in rows {
-            if row.state == DONE {
+            let unavailable = !root_of(&row).is_dir();
+            if unavailable {
+                tracing::warn!(infohash = %row.infohash, path = %row.path, "download folder not available");
+            } else if row.state == DONE {
                 let exists = match Self::video_path(&row) {
                     Some(p) => tokio::fs::metadata(&p).await.is_ok(),
                     None => false,
@@ -289,9 +409,8 @@ impl DownloadManager {
                 records.insert(
                     row.infohash.clone(),
                     Record {
-                        row,
-                        resolving: false,
-                        in_cache: false,
+                        unavailable,
+                        ..Record::new(row)
                     },
                 );
             }
@@ -303,20 +422,26 @@ impl DownloadManager {
     /// Puts the restored torrents back in the session: active and paused downloads (from
     /// the saved `.torrent`, no network needed to start) and finished ones if seeding.
     pub fn resume_all(self: &Arc<Self>) {
-        let seed = self.seed.load(Ordering::Relaxed);
         for infohash in self.infohashes() {
-            let Some(row) = self.row(&infohash) else {
-                continue;
-            };
-            let wanted = match row.state.as_str() {
-                ACTIVE | PAUSED => true,
-                DONE => seed,
-                _ => false,
-            };
-            if wanted {
+            let available = self
+                .with_record(&infohash, |r| !r.unavailable)
+                .unwrap_or(false);
+            if available && self.wants_torrent(&infohash) {
                 self.spawn_resolve(&infohash);
             }
         }
+    }
+
+    /// Whether the download's torrent belongs in the session (active or paused, or
+    /// finished and seeding).
+    fn wants_torrent(&self, infohash: &str) -> bool {
+        let seed = self.seed.load(Ordering::Relaxed);
+        self.row(infohash)
+            .is_some_and(|row| match row.state.as_str() {
+                ACTIVE | PAUSED => true,
+                DONE => seed,
+                _ => false,
+            })
     }
 
     fn state_of_row(&self, row: &DownloadRow) -> DownloadState {
@@ -352,11 +477,14 @@ impl DownloadManager {
         let row = &rec.row;
         let stored = self.state_of_row(row);
         let stats = match stored {
+            _ if rec.moving || rec.unavailable => None,
             DownloadState::Done | DownloadState::Error => None,
             _ => self.cfg.engine.download_stats(&row.infohash),
         };
         let resolved = stats.as_ref().is_some_and(|s| s.resolved);
         let state = match stored {
+            _ if rec.moving => DownloadState::Moving,
+            _ if rec.unavailable => DownloadState::Unavailable,
             DownloadState::Active if rec.resolving || !resolved => DownloadState::Queued,
             DownloadState::Active if stats.as_ref().is_some_and(|s| s.stalled) => {
                 DownloadState::Stalled
@@ -562,8 +690,17 @@ impl DownloadManager {
             Some(s) if s.resolved && s.file_len > 0 => s.file_len.saturating_sub(s.downloaded),
             _ => torrent.size_bytes,
         };
-        tokio::fs::create_dir_all(&self.cfg.library_dir).await?;
-        let free = (self.cfg.free_space)(&self.cfg.library_dir);
+        let library_dir = self.downloads_dir();
+        if !dir_available(&library_dir) {
+            return Err(AppError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "downloads folder {} is not available",
+                    library_dir.display()
+                ),
+            )));
+        }
+        let free = (self.cfg.free_space)(&library_dir);
         check_space(free, needed)?;
 
         let taken: Vec<PathBuf> = self
@@ -572,7 +709,7 @@ impl DownloadManager {
             .map(|r| r.values().map(|r| PathBuf::from(&r.row.path)).collect())
             .unwrap_or_default();
         let folder = unique_folder(
-            &self.cfg.library_dir,
+            &library_dir,
             &folder_name(&movie.title, movie.year, torrent.quality),
             &taken,
         );
@@ -603,9 +740,8 @@ impl DownloadManager {
             records.insert(
                 infohash.clone(),
                 Record {
-                    row,
                     resolving: true,
-                    in_cache: false,
+                    ..Record::new(row)
                 },
             );
         }
@@ -719,19 +855,23 @@ impl DownloadManager {
         match row.state.as_str() {
             PAUSED => {
                 self.set_state(&infohash, ACTIVE, None).await;
+                let (resolving, parked) = self
+                    .with_record(&infohash, |r| (r.resolving, r.unavailable || r.moving))
+                    .unwrap_or_default();
                 if self.cfg.engine.has_torrent(&infohash) {
                     self.cfg
                         .engine
                         .set_download_running(&infohash, true)
                         .await?;
-                } else if !self
-                    .with_record(&infohash, |r| r.resolving)
-                    .unwrap_or(false)
-                {
+                } else if !resolving && !parked {
                     self.spawn_resolve(&infohash);
                 }
                 self.emit_if_changed(&infohash);
             }
+            ERROR
+                if self
+                    .with_record(&infohash, |r| r.unavailable || r.moving)
+                    .unwrap_or(true) => {}
             ERROR => {
                 if let Some(rel) = &row.rel_path {
                     if !self.cfg.engine.has_torrent(&infohash) {
@@ -756,10 +896,16 @@ impl DownloadManager {
     pub async fn remove(&self, infohash: &str, delete_files: bool) -> AppResult<()> {
         let infohash = infohash.to_ascii_lowercase();
         let _ops = self.ops.lock().await;
-        let in_cache = self
-            .with_record(&infohash, |r| r.in_cache)
+        let (in_cache, moving) = self
+            .with_record(&infohash, |r| (r.in_cache, r.moving))
             .ok_or_else(|| not_found(&infohash))?;
+        if moving {
+            return Err(AppError::InvalidInput(format!(
+                "download {infohash} is being moved"
+            )));
+        }
         let row = self.row(&infohash).ok_or_else(|| not_found(&infohash))?;
+        let cache_folder = self.cfg.engine.cache_folder_of(&infohash);
         if in_cache && !delete_files {
             // Still a stream in `cache/`: back to a plain cached stream.
             self.cfg.engine.unmark_download(&infohash).await?;
@@ -769,7 +915,8 @@ impl DownloadManager {
         if delete_files {
             remove_path(Path::new(&row.path)).await?;
             if in_cache {
-                remove_path(&self.cfg.engine.torrent_dir(&infohash)).await?;
+                let dir = cache_folder.unwrap_or_else(|| self.cfg.engine.torrent_dir(&infohash));
+                remove_path(&dir).await?;
             }
         }
         self.cfg.db.remove_download(&infohash).await?;
@@ -802,6 +949,42 @@ impl DownloadManager {
     }
 
     // -- Background ------------------------------------------------------------------------
+
+    /// Follows the download's folder: gone → `unavailable` (torrent out of the session);
+    /// back → resumes as it was. Returns whether the tick should skip the rest for it.
+    async fn check_availability(
+        self: &Arc<Self>,
+        infohash: &str,
+        row: &DownloadRow,
+        unavailable: bool,
+    ) -> bool {
+        let available = root_of(row).is_dir();
+        match (available, unavailable) {
+            (false, false) => {
+                tracing::warn!(%infohash, path = %row.path, "download folder disappeared");
+                self.with_record(infohash, |r| r.unavailable = true);
+                if let Err(e) = self.cfg.engine.remove_torrent(infohash).await {
+                    tracing::warn!(%infohash, error = %e, "could not release the torrent");
+                }
+                true
+            }
+            (false, true) => true,
+            (true, true) => {
+                tracing::info!(%infohash, path = %row.path, "download folder is back");
+                self.with_record(infohash, |r| r.unavailable = false);
+                let missing =
+                    row.state == DONE && Self::video_path(row).is_none_or(|p| !p.is_file());
+                if missing {
+                    self.set_state(infohash, ERROR, Some("downloaded file is missing".into()))
+                        .await;
+                } else if self.wants_torrent(infohash) {
+                    self.spawn_resolve(infohash);
+                }
+                true
+            }
+            (true, false) => false,
+        }
+    }
 
     /// Moves a promoted stream to `library/` (shown as `queued` while its pieces are
     /// checked again in the new place).
@@ -839,11 +1022,27 @@ impl DownloadManager {
     pub async fn tick(self: &Arc<Self>, persist: bool) {
         let _ops = self.ops.lock().await;
         for infohash in self.infohashes() {
-            let Some((row, resolving, in_cache)) =
-                self.with_record(&infohash, |r| (r.row.clone(), r.resolving, r.in_cache))
+            let Some((row, resolving, in_cache, unavailable, moving)) =
+                self.with_record(&infohash, |r| {
+                    (
+                        r.row.clone(),
+                        r.resolving,
+                        r.in_cache,
+                        r.unavailable,
+                        r.moving,
+                    )
+                })
             else {
                 continue;
             };
+            if moving {
+                self.emit_if_changed(&infohash);
+                continue;
+            }
+            if !in_cache && self.check_availability(&infohash, &row, unavailable).await {
+                self.emit_if_changed(&infohash);
+                continue;
+            }
             if row.state != ACTIVE && row.state != PAUSED {
                 self.emit_if_changed(&infohash);
                 continue;
@@ -871,6 +1070,25 @@ impl DownloadManager {
                     }
                     tracing::info!(%infohash, seed, "download finished");
                 }
+                Some(s)
+                    if row.state == ACTIVE
+                        && s.resolved
+                        && s.stalled
+                        && s.peers == 0
+                        && self
+                            .with_record(&infohash, |r| {
+                                r.last_kick.is_none_or(|t| t.elapsed() >= KICK_EVERY)
+                            })
+                            .unwrap_or(false) =>
+                {
+                    self.with_record(&infohash, |r| {
+                        r.last_kick = Some(tokio::time::Instant::now())
+                    });
+                    tracing::info!(%infohash, "stalled without peers, looking for peers again");
+                    if let Err(e) = self.cfg.engine.restart_torrent(&infohash).await {
+                        tracing::warn!(%infohash, error = %e, "could not restart the torrent");
+                    }
+                }
                 Some(s) if persist && s.resolved && s.downloaded > row.downloaded_bytes => {
                     let state = row.state.clone();
                     self.set_state(&infohash, &state, None).await;
@@ -880,6 +1098,387 @@ impl DownloadManager {
             self.emit_if_changed(&infohash);
         }
     }
+}
+
+impl DownloadManager {
+    // -- Storage and moving ------------------------------------------------------------------
+
+    /// Size of every download (wherever it is) and the state of `downloadsDir`.
+    pub async fn usage(&self) -> DownloadsUsage {
+        let dir = self.downloads_dir();
+        let folders: Vec<PathBuf> = self
+            .records
+            .lock()
+            .map(|r| r.values().map(|r| PathBuf::from(&r.row.path)).collect())
+            .unwrap_or_default();
+        let free_space = Arc::clone(&self.cfg.free_space);
+        tokio::task::spawn_blocking(move || {
+            let mut unique = folders.clone();
+            unique.sort();
+            unique.dedup();
+            let dir_available = dir_available(&dir);
+            DownloadsUsage {
+                library_bytes: unique.iter().map(|f| allocated_size(f)).sum(),
+                free_bytes: if dir_available { free_space(&dir) } else { 0 },
+                dir_available,
+                outside_dir: folders
+                    .iter()
+                    .filter(|f| f.parent() != Some(dir.as_path()))
+                    .count() as u64,
+            }
+        })
+        .await
+        .unwrap_or(DownloadsUsage {
+            library_bytes: 0,
+            free_bytes: 0,
+            dir_available: false,
+            outside_dir: 0,
+        })
+    }
+
+    pub fn move_running(&self) -> bool {
+        self.move_running.load(Ordering::SeqCst)
+    }
+
+    /// `move_downloads`: moves every download that is not in `downloadsDir` there, one at
+    /// a time in the background. `invalid_input` if a move is already running or the
+    /// folder is not available.
+    pub fn start_move(self: &Arc<Self>) -> AppResult<()> {
+        let dest = self.downloads_dir();
+        if !dir_available(&dest) {
+            return Err(AppError::InvalidInput(format!(
+                "downloads folder {} is not available",
+                dest.display()
+            )));
+        }
+        if self.move_running.swap(true, Ordering::SeqCst) {
+            return Err(AppError::InvalidInput("a move is already running".into()));
+        }
+        self.move_cancel.store(false, Ordering::SeqCst);
+        let manager = Arc::clone(self);
+        tokio::spawn(async move {
+            manager.run_move(dest).await;
+            manager.move_running.store(false, Ordering::SeqCst);
+        });
+        Ok(())
+    }
+
+    /// `cancel_move_downloads`: the download being copied stays where it was (the partial
+    /// copy is deleted) and the rest are not moved. No move running: no-op.
+    pub fn cancel_move(&self) {
+        if self.move_running() {
+            tracing::info!("cancelling the move of downloads");
+            self.move_cancel.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn emit_move(&self, p: &MoveProgress) {
+        let _ = self.move_events.send(p.clone());
+    }
+
+    fn taken_folders(&self) -> Vec<PathBuf> {
+        self.records
+            .lock()
+            .map(|r| r.values().map(|r| PathBuf::from(&r.row.path)).collect())
+            .unwrap_or_default()
+    }
+
+    /// A folder in `dest` with the download's name, free on disk and among downloads.
+    fn target_folder(&self, row: &DownloadRow, dest: &Path) -> PathBuf {
+        let name = Path::new(&row.path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| row.infohash.clone());
+        let mut taken = self.taken_folders();
+        loop {
+            let candidate = unique_folder(dest, &name, &taken);
+            if !candidate.exists() {
+                return candidate;
+            }
+            taken.push(candidate);
+        }
+    }
+
+    async fn set_path(&self, infohash: &str, path: &Path) -> AppResult<()> {
+        let path = path.to_string_lossy().into_owned();
+        self.cfg.db.set_download_path(infohash, &path).await?;
+        self.with_record(infohash, |r| r.row.path = path);
+        Ok(())
+    }
+
+    async fn run_move(self: &Arc<Self>, dest: PathBuf) {
+        let mut candidates: Vec<(String, String)> = self
+            .records
+            .lock()
+            .map(|r| {
+                r.values()
+                    .filter(|r| root_of(&r.row) != dest && !r.unavailable && !r.moving)
+                    .map(|r| (r.row.added_at.clone(), r.row.infohash.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        candidates.sort();
+        let mut items = Vec::new();
+        for (_, infohash) in candidates {
+            let Some((row, in_cache)) =
+                self.with_record(&infohash, |r| (r.row.clone(), r.in_cache))
+            else {
+                continue;
+            };
+            if in_cache {
+                // Nothing in the library yet: it will be promoted straight to the new folder.
+                let target = self.target_folder(&row, &dest);
+                if let Err(e) = self.set_path(&infohash, &target).await {
+                    tracing::warn!(%infohash, error = %e, "could not retarget download");
+                }
+                continue;
+            }
+            let src = PathBuf::from(&row.path);
+            let size = tokio::task::spawn_blocking(move || tree_len(&src))
+                .await
+                .unwrap_or(0);
+            items.push((infohash, size));
+        }
+
+        let mut progress = MoveProgress {
+            total: items.len() as u32,
+            bytes_total: items.iter().map(|(_, s)| s).sum(),
+            ..Default::default()
+        };
+        tracing::info!(count = items.len(), bytes = progress.bytes_total, dest = %dest.display(), "moving downloads");
+        self.emit_move(&progress);
+        let mut base = 0;
+        for (i, (infohash, size)) in items.iter().enumerate() {
+            if self.move_cancel.load(Ordering::SeqCst) {
+                progress.cancelled = true;
+                break;
+            }
+            progress.index = i as u32 + 1;
+            progress.infohash = Some(infohash.clone());
+            progress.bytes_done = base;
+            self.emit_move(&progress);
+            match self.move_one(infohash, &dest, base, &mut progress).await {
+                Ok(()) => {}
+                Err(MoveError::Cancelled) => progress.cancelled = true,
+                Err(MoveError::Failed(message)) => {
+                    tracing::warn!(%infohash, %message, "could not move download");
+                    progress.failed.push(MoveFailure {
+                        infohash: infohash.clone(),
+                        message,
+                    });
+                }
+            }
+            if progress.cancelled {
+                break;
+            }
+            base += size;
+            progress.bytes_done = base;
+        }
+        progress.finished = true;
+        tracing::info!(
+            cancelled = progress.cancelled,
+            failed = progress.failed.len(),
+            "move of downloads finished"
+        );
+        self.emit_move(&progress);
+    }
+
+    /// Moves one download: out of the torrent session (files closed), folder moved, then
+    /// back with its previous state (in its old folder if the move failed).
+    async fn move_one(
+        self: &Arc<Self>,
+        infohash: &str,
+        dest: &Path,
+        base: u64,
+        progress: &mut MoveProgress,
+    ) -> Result<(), MoveError> {
+        let row = {
+            let _ops = self.ops.lock().await;
+            let (row, resolving) = self
+                .with_record(infohash, |r| (r.row.clone(), r.resolving))
+                .ok_or_else(|| MoveError::Failed("download removed".into()))?;
+            if resolving {
+                return Err(MoveError::Failed("download is busy, try again".into()));
+            }
+            self.with_record(infohash, |r| r.moving = true);
+            self.emit_if_changed(infohash);
+            row
+        };
+        let released = self.cfg.engine.remove_torrent(infohash).await;
+        let result = match released {
+            Ok(()) => self.relocate(&row, dest, base, progress).await,
+            Err(e) => Err(MoveError::Failed(e.to_string())),
+        };
+        let _ops = self.ops.lock().await;
+        let result = match result {
+            Ok(target) => self
+                .set_path(infohash, &target)
+                .await
+                .map_err(|e| MoveError::Failed(e.to_string())),
+            Err(e) => Err(e),
+        };
+        self.with_record(infohash, |r| r.moving = false);
+        if self.wants_torrent(infohash) {
+            self.spawn_resolve(infohash);
+        }
+        self.emit_if_changed(infohash);
+        result
+    }
+
+    /// Moves the folder: `rename` on the same disk; otherwise space check, copy (with
+    /// progress and cancellation) and delete the source once the copy is complete.
+    async fn relocate(
+        &self,
+        row: &DownloadRow,
+        dest: &Path,
+        base: u64,
+        progress: &mut MoveProgress,
+    ) -> Result<PathBuf, MoveError> {
+        let src = PathBuf::from(&row.path);
+        let target = self.target_folder(row, dest);
+        if tokio::fs::symlink_metadata(&src).await.is_err() {
+            // Nothing on disk yet (e.g. just created): only the path changes.
+            return Ok(target);
+        }
+        if !self.cfg.always_copy {
+            match tokio::fs::rename(&src, &target).await {
+                Ok(()) => {
+                    tracing::info!(infohash = %row.infohash, to = %target.display(), "download folder renamed");
+                    return Ok(target);
+                }
+                Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {}
+                Err(e) => {
+                    return Err(MoveError::Failed(format!(
+                        "moving {} to {}: {e}",
+                        src.display(),
+                        target.display()
+                    )))
+                }
+            }
+        }
+        let size = {
+            let src = src.clone();
+            tokio::task::spawn_blocking(move || tree_len(&src))
+                .await
+                .unwrap_or(0)
+        };
+        check_space((self.cfg.free_space)(dest), size)
+            .map_err(|e| MoveError::Failed(e.to_string()))?;
+        match self.copy_tree(&src, &target, base, progress).await {
+            Ok(()) => {
+                if let Err(e) = remove_path(&src).await {
+                    tracing::warn!(src = %src.display(), error = %e, "copied, but the source could not be deleted");
+                }
+                tracing::info!(infohash = %row.infohash, to = %target.display(), "download folder copied");
+                Ok(target)
+            }
+            Err(e) => {
+                if let Err(err) = remove_path(&target).await {
+                    tracing::warn!(target = %target.display(), error = %err, "could not delete the partial copy");
+                }
+                Err(e)
+            }
+        }
+    }
+
+    async fn copy_tree(
+        &self,
+        src: &Path,
+        dst: &Path,
+        base: u64,
+        progress: &mut MoveProgress,
+    ) -> Result<(), MoveError> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let io = |what: &str, p: &Path, e: std::io::Error| {
+            MoveError::Failed(format!("{what} {}: {e}", p.display()))
+        };
+        let files = {
+            let dir = src.to_path_buf();
+            tokio::task::spawn_blocking(move || list_files(&dir))
+                .await
+                .map_err(|e| MoveError::Failed(e.to_string()))?
+                .map_err(|e| io("reading", src, e))?
+        };
+        let copied = AtomicU64::new(0);
+        let mut last_emit = tokio::time::Instant::now();
+        let mut buf = vec![0u8; COPY_CHUNK];
+        tokio::fs::create_dir_all(dst)
+            .await
+            .map_err(|e| io("creating", dst, e))?;
+        for rel in files {
+            let (from, to) = (src.join(&rel), dst.join(&rel));
+            if let Some(parent) = to.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| io("creating", parent, e))?;
+            }
+            let mut input = tokio::fs::File::open(&from)
+                .await
+                .map_err(|e| io("opening", &from, e))?;
+            let mut output = tokio::fs::File::create(&to)
+                .await
+                .map_err(|e| io("creating", &to, e))?;
+            loop {
+                if self.move_cancel.load(Ordering::SeqCst) {
+                    return Err(MoveError::Cancelled);
+                }
+                let n = input
+                    .read(&mut buf)
+                    .await
+                    .map_err(|e| io("reading", &from, e))?;
+                if n == 0 {
+                    break;
+                }
+                output
+                    .write_all(&buf[..n])
+                    .await
+                    .map_err(|e| io("writing", &to, e))?;
+                let done = copied.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
+                if last_emit.elapsed() >= MOVE_PROGRESS_EVERY {
+                    last_emit = tokio::time::Instant::now();
+                    progress.bytes_done = base + done;
+                    self.emit_move(progress);
+                }
+                if let Some(delay) = self.cfg.copy_chunk_delay {
+                    tokio::time::sleep(delay).await;
+                }
+            }
+            output.flush().await.map_err(|e| io("writing", &to, e))?;
+            output.sync_all().await.map_err(|e| io("syncing", &to, e))?;
+        }
+        Ok(())
+    }
+}
+
+/// Files under `dir`, relative to it.
+fn list_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    let mut stack = vec![PathBuf::new()];
+    while let Some(rel) = stack.pop() {
+        for item in std::fs::read_dir(dir.join(&rel))? {
+            let item = item?;
+            let child = rel.join(item.file_name());
+            if item.file_type()?.is_dir() {
+                stack.push(child);
+            } else {
+                out.push(child);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Bytes a copy of `path` writes (apparent lengths; sparse holes are written too).
+fn tree_len(path: &Path) -> u64 {
+    list_files(path)
+        .map(|files| {
+            files
+                .iter()
+                .filter_map(|f| std::fs::metadata(path.join(f)).ok())
+                .map(|m| m.len())
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

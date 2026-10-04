@@ -39,8 +39,8 @@ fn init_logging() {
 }
 
 fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
-    // The DB, the DHT state and the settings always live in the default location;
-    // `dataDir` (applied at startup) only moves `cache/` and `library/`.
+    // The DB, the DHT state, the settings, `subs/` and the image cache always live in the
+    // default location; `cacheDir` and `downloadsDir` are chosen apart (applied on the fly).
     let app_paths = AppPaths::default_location()?;
     std::fs::create_dir_all(&app_paths.data_dir)?;
     let db = Db::open(&app_paths.data_dir.join(db::DB_FILE))?;
@@ -50,9 +50,20 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     ))?);
     let current = settings.get();
 
-    let paths = AppPaths::new(&current.data_dir);
+    let paths = app_paths.clone();
     paths.ensure()?;
-    tracing::info!(data_dir = %paths.data_dir.display(), "data directories ready");
+    // A configured folder on a disk that is not mounted is not created: the cache falls
+    // back to the default one (with a warning) and downloads there are `unavailable`.
+    let configured_cache = std::path::PathBuf::from(&current.cache_dir);
+    let (cache_dir, cache_available) =
+        cache::effective_cache_dir(&configured_cache, &paths.cache_dir);
+    tracing::info!(
+        data_dir = %paths.data_dir.display(),
+        cache_dir = %cache_dir.display(),
+        cache_available,
+        downloads_dir = %current.downloads_dir,
+        "data directories ready"
+    );
 
     let listener = tauri::async_runtime::block_on(stream::bind())?;
     let server_port = listener.local_addr()?.port();
@@ -82,7 +93,7 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         listen_addr: current
             .listen_port
             .map(|port| (std::net::Ipv6Addr::UNSPECIFIED, port).into()),
-        ..EngineConfig::new(paths.cache_dir.clone(), local_base.clone())
+        ..EngineConfig::new(cache_dir.clone(), local_base.clone())
     };
     let torrents = match tauri::async_runtime::block_on(TorrentEngine::new(engine_config.clone())) {
         Ok(engine) => engine,
@@ -98,25 +109,24 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     tracing::info!(listen = ?torrents.listen_addr(), "torrent session ready");
     forward_torrent_stats(app.clone(), &torrents);
 
-    let downloads = DownloadManager::new(DownloadsConfig {
-        db: db.clone(),
-        images: Arc::clone(&images),
-        engine: Arc::clone(&torrents),
-        library_dir: paths.library_dir.clone(),
-        seed_after_download: current.seed_after_download,
-        free_space: Arc::new(cache::free_disk_bytes),
-    });
+    let downloads = DownloadManager::new(DownloadsConfig::new(
+        db.clone(),
+        Arc::clone(&images),
+        Arc::clone(&torrents),
+        std::path::PathBuf::from(&current.downloads_dir),
+        current.seed_after_download,
+    ));
     // Before the cache cleanup: downloads still in `cache/` are moved out first.
     tauri::async_runtime::block_on(downloads.restore())?;
     tauri::async_runtime::block_on(async {
         downloads.resume_all();
         downloads.spawn_tick(downloads::TICK_INTERVAL);
     });
-    forward_download_changes(app, &downloads);
+    forward_download_changes(app.clone(), &downloads);
+    forward_move_progress(app.clone(), &downloads);
 
     let cache = Arc::new(CacheManager::new(
-        paths.cache_dir.clone(),
-        paths.library_dir.clone(),
+        cache_dir.clone(),
         Arc::clone(&torrents) as Arc<dyn cache::Evictor>,
         current.cache_limit_bytes,
     ));
@@ -150,6 +160,53 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         subtitles,
         downloads,
     })
+}
+
+/// Re-emits `move_downloads` progress as `downloads://move-progress`.
+fn forward_move_progress(app: AppHandle, downloads: &DownloadManager) {
+    let mut rx = downloads.subscribe_moves();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(progress) => {
+                    if let Err(e) = app.emit(events::MOVE_PROGRESS, &progress) {
+                        tracing::warn!(error = %e, "could not emit move progress");
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
+/// How often `cacheDir` is checked (unmounted → default folder, back → configured one).
+const CACHE_DIR_CHECK: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Watches `cacheDir` and reports a fallback to the default folder with `app://error`.
+/// At startup the warning waits a little so the WebView is listening.
+fn watch_cache_dir(app: AppHandle, startup_warning: Option<error::AppError>) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let emit = |err: &error::AppError| {
+            let payload = types::BackgroundError::new(err, None);
+            if let Err(e) = app.emit(events::APP_ERROR, &payload) {
+                tracing::warn!(error = %e, "could not emit app error");
+            }
+        };
+        if let Some(warning) = &startup_warning {
+            emit(warning);
+        }
+        let mut ticker = tokio::time::interval(CACHE_DIR_CHECK);
+        loop {
+            ticker.tick().await;
+            let state = app.state::<AppState>();
+            if let Some(warning) = commands::apply_cache_dir(&state) {
+                tracing::warn!(error = %warning, "cache folder not available");
+                emit(&warning);
+            }
+        }
+    });
 }
 
 /// Re-emits download state changes as the `download://changed` event.
@@ -196,7 +253,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            app.manage(build_state(app.handle().clone())?);
+            let state = build_state(app.handle().clone())?;
+            let configured = std::path::PathBuf::from(state.settings.get().cache_dir);
+            let warning = (state.torrents.cache_dir() != configured).then(|| {
+                commands::cache_fallback_warning(&configured, &state.torrents.cache_dir())
+            });
+            if let Some(w) = &warning {
+                tracing::warn!(error = %w, "cache folder not available at startup");
+            }
+            app.manage(state);
+            watch_cache_dir(app.handle().clone(), warning);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -228,6 +294,8 @@ pub fn run() {
             commands::resume_download,
             commands::remove_download,
             commands::open_download_folder,
+            commands::move_downloads,
+            commands::cancel_move_downloads,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

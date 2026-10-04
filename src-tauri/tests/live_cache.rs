@@ -131,7 +131,6 @@ async fn live_disk_usage_and_eviction() {
     // Evicting through the engine removes the torrent from the session: files are closed.
     let cache = CacheManager::new(
         cache_dir.clone(),
-        base.join("library"),
         Arc::clone(&engine) as Arc<dyn Evictor>,
         0,
     );

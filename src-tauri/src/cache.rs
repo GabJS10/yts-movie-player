@@ -16,6 +16,9 @@
 //!
 //! Never touched: torrents in use (open streams, open readers), `cache/img` and anything
 //! outside `cache/` (so never `library/`).
+//!
+//! When `cacheDir` changes, the old folder becomes *stale*: every pass empties it (except
+//! what is still in use, which goes once the stream closes). The folder itself is kept.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -27,7 +30,7 @@ use futures_util::future::BoxFuture;
 
 use crate::error::{AppError, AppResult};
 use crate::torrent::TorrentEngine;
-use crate::types::{ClearCacheResult, StorageUsage};
+use crate::types::ClearCacheResult;
 
 /// Image cache inside `cache/`; kept by the LRU and by `clear_cache`.
 pub const IMG_DIR: &str = "img";
@@ -112,6 +115,18 @@ pub fn free_disk_bytes(_path: &Path) -> u64 {
     0
 }
 
+/// The cache folder to use: `configured` when it exists and is writable, else `default`
+/// (created if needed). Returns `(folder, configured is available)`.
+pub fn effective_cache_dir(configured: &Path, default: &Path) -> (PathBuf, bool) {
+    if crate::settings::dir_available(configured) {
+        return (configured.to_path_buf(), true);
+    }
+    if let Err(e) = std::fs::create_dir_all(default) {
+        tracing::warn!(dir = %default.display(), error = %e, "could not create the default cache folder");
+    }
+    (default.to_path_buf(), false)
+}
+
 /// Entries of `cache_dir` (except `img/`) and the bytes of `img/`.
 pub fn scan(cache_dir: &Path) -> std::io::Result<(Vec<CacheEntry>, u64)> {
     let mut entries = Vec::new();
@@ -166,9 +181,17 @@ pub fn plan_eviction<'a>(
     plan
 }
 
+/// Size of the cache and free space on its disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CacheUsage {
+    pub cache_bytes: u64,
+    pub free_bytes: u64,
+}
+
 pub struct CacheManager {
-    cache_dir: PathBuf,
-    library_dir: PathBuf,
+    cache_dir: std::sync::RwLock<PathBuf>,
+    /// Previous cache folders still to be emptied.
+    stale: std::sync::Mutex<Vec<PathBuf>>,
     evictor: Arc<dyn Evictor>,
     limit: AtomicU64,
     /// One cleanup at a time.
@@ -182,15 +205,10 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
 }
 
 impl CacheManager {
-    pub fn new(
-        cache_dir: PathBuf,
-        library_dir: PathBuf,
-        evictor: Arc<dyn Evictor>,
-        limit_bytes: u64,
-    ) -> Self {
+    pub fn new(cache_dir: PathBuf, evictor: Arc<dyn Evictor>, limit_bytes: u64) -> Self {
         Self {
-            cache_dir,
-            library_dir,
+            cache_dir: std::sync::RwLock::new(cache_dir),
+            stale: std::sync::Mutex::new(Vec::new()),
             evictor,
             limit: AtomicU64::new(limit_bytes),
             lock: tokio::sync::Mutex::new(()),
@@ -205,9 +223,59 @@ impl CacheManager {
         self.limit.store(bytes, Ordering::Relaxed);
     }
 
+    pub fn cache_dir(&self) -> PathBuf {
+        match self.cache_dir.read() {
+            Ok(g) => g.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// Switches to `dir`; the previous folder is emptied on the next passes.
+    pub fn set_cache_dir(&self, dir: PathBuf) {
+        let old = match self.cache_dir.write() {
+            Ok(mut g) => std::mem::replace(&mut *g, dir.clone()),
+            Err(poisoned) => std::mem::replace(&mut *poisoned.into_inner(), dir.clone()),
+        };
+        if let Ok(mut stale) = self.stale.lock() {
+            stale.retain(|d| d != &dir);
+            if old != dir && !stale.contains(&old) {
+                stale.push(old);
+            }
+        }
+    }
+
     async fn scan(&self) -> AppResult<(Vec<CacheEntry>, u64)> {
-        let dir = self.cache_dir.clone();
+        let dir = self.cache_dir();
         Ok(blocking(move || scan(&dir)).await??)
+    }
+
+    /// Empties the previous cache folders (what is not in use). Returns the bytes freed.
+    async fn clean_stale(&self) -> u64 {
+        let dirs = self.stale.lock().map(|s| s.clone()).unwrap_or_default();
+        let mut freed = 0;
+        for dir in dirs {
+            let scan_dir = dir.clone();
+            let entries = match blocking(move || scan(&scan_dir)).await {
+                Ok(Ok((entries, _))) => entries,
+                // Unmounted or unreadable: try again later.
+                _ => continue,
+            };
+            let plan: Vec<&CacheEntry> = entries.iter().collect();
+            freed += self.evict_all(&plan).await;
+            let left = blocking({
+                let dir = dir.clone();
+                move || scan(&dir).map(|(e, _)| e.len()).unwrap_or(0)
+            })
+            .await
+            .unwrap_or(1);
+            if left == 0 {
+                tracing::info!(dir = %dir.display(), "previous cache folder emptied");
+                if let Ok(mut stale) = self.stale.lock() {
+                    stale.retain(|d| d != &dir);
+                }
+            }
+        }
+        freed
     }
 
     /// Deletes `plan` (skipping what became in use meanwhile). Returns the bytes freed.
@@ -229,11 +297,12 @@ impl CacheManager {
     /// Evicts least recently used entries until the cache fits the limit.
     pub async fn enforce_limit(&self) -> AppResult<u64> {
         let _guard = self.lock.lock().await;
+        let stale_freed = self.clean_stale().await;
         let (entries, img_bytes) = self.scan().await?;
         let total = img_bytes + entries.iter().map(|e| e.bytes).sum::<u64>();
         let limit = self.limit_bytes();
         if total <= limit {
-            return Ok(0);
+            return Ok(stale_freed);
         }
         let protected = self.evictor.in_use();
         let plan = plan_eviction(&entries, total, limit, &protected);
@@ -244,40 +313,31 @@ impl CacheManager {
         } else {
             tracing::info!(freed, left, limit, "cache limit enforced");
         }
-        Ok(freed)
+        Ok(freed + stale_freed)
     }
 
     /// Deletes every entry except the ones in use and `img/`.
     pub async fn clear(&self) -> AppResult<ClearCacheResult> {
         let _guard = self.lock.lock().await;
+        let stale_freed = self.clean_stale().await;
         let (entries, _) = self.scan().await?;
         let protected = self.evictor.in_use();
         let plan: Vec<&CacheEntry> = entries
             .iter()
             .filter(|e| !protected.contains(&e.name))
             .collect();
-        let freed_bytes = self.evict_all(&plan).await;
+        let freed_bytes = self.evict_all(&plan).await + stale_freed;
         tracing::info!(freed_bytes, "cache cleared");
         Ok(ClearCacheResult { freed_bytes })
     }
 
-    pub async fn usage(&self) -> AppResult<StorageUsage> {
-        let (cache, library) = (self.cache_dir.clone(), self.library_dir.clone());
-        let (cache_bytes, library_bytes, free_disk_bytes) = blocking(move || {
-            let free_on = if cache.exists() { &cache } else { &library };
-            (
-                allocated_size(&cache),
-                allocated_size(&library),
-                free_disk_bytes(free_on),
-            )
+    pub async fn usage(&self) -> AppResult<CacheUsage> {
+        let cache = self.cache_dir();
+        blocking(move || CacheUsage {
+            cache_bytes: allocated_size(&cache),
+            free_bytes: free_disk_bytes(&cache),
         })
-        .await?;
-        Ok(StorageUsage {
-            cache_bytes,
-            cache_limit_bytes: self.limit_bytes(),
-            library_bytes,
-            free_disk_bytes,
-        })
+        .await
     }
 
     /// Enforces the limit now and then every `interval`, while the manager is alive.
@@ -374,7 +434,6 @@ mod tests {
         let evictor = Arc::new(FakeEvictor::default());
         let manager = CacheManager::new(
             cache.clone(),
-            library.clone(),
             Arc::clone(&evictor) as Arc<dyn Evictor>,
             limit,
         );
@@ -487,12 +546,11 @@ mod tests {
         assert!(freed_bytes >= 150 * KB, "{freed_bytes}");
         let after = s.manager.usage().await.unwrap();
         assert_eq!(after.cache_bytes, before.cache_bytes - freed_bytes);
-        assert_eq!(after.library_bytes, before.library_bytes);
         assert!(s.library.join("x/movie.mp4").exists());
     }
 
     #[tokio::test]
-    async fn usage_reports_cache_library_limit_and_free_space() {
+    async fn usage_reports_cache_and_free_space() {
         let s = setup(5 * 1024 * KB);
         entry(&s.cache, "aaaa", 100 * KB, 10);
         write(&s.library.join("x/movie.mp4"), 200 * KB);
@@ -501,11 +559,50 @@ mod tests {
             u.cache_bytes >= 100 * KB && u.cache_bytes < 200 * KB,
             "{u:?}"
         );
-        assert!(
-            u.library_bytes >= 200 * KB && u.library_bytes < 300 * KB,
-            "{u:?}"
+        assert!(u.free_bytes > 0);
+    }
+
+    #[tokio::test]
+    async fn changing_the_folder_empties_the_old_one_except_in_use() {
+        let s = setup(10 * 1024 * KB);
+        entry(&s.cache, "aaaa", 100 * KB, 10);
+        entry(&s.cache, "bbbb", 100 * KB, 10);
+        write(&s.cache.join(IMG_DIR).join("cover"), 20 * KB);
+        s.evictor.in_use.lock().unwrap().insert("aaaa".into());
+        let new_dir = s.cache.parent().unwrap().join("cache2");
+        std::fs::create_dir_all(&new_dir).unwrap();
+        entry(&new_dir, "cccc", 100 * KB, 10);
+
+        s.manager.set_cache_dir(new_dir.clone());
+        assert_eq!(s.manager.cache_dir(), new_dir);
+        s.manager.enforce_limit().await.unwrap();
+        // Old folder: emptied except the stream in use and img/; new folder untouched.
+        assert_eq!(names(&s.cache), ["aaaa", IMG_DIR]);
+        assert_eq!(names(&new_dir), ["cccc"]);
+        assert!(s.manager.usage().await.unwrap().cache_bytes < 200 * KB);
+
+        // Once the stream closes it goes too, on the next pass.
+        s.evictor.in_use.lock().unwrap().clear();
+        s.manager.enforce_limit().await.unwrap();
+        assert_eq!(names(&s.cache), [IMG_DIR]);
+        assert!(s.manager.stale.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn missing_cache_folder_falls_back_to_the_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (configured, default) = (tmp.path().join("usb/cache"), tmp.path().join("default"));
+        assert_eq!(
+            effective_cache_dir(&configured, &default),
+            (default.clone(), false)
         );
-        assert_eq!(u.cache_limit_bytes, 5 * 1024 * KB);
-        assert!(u.free_disk_bytes > 0);
+        assert!(default.is_dir());
+        // Never created on a disk that is not there.
+        assert!(!configured.exists());
+        std::fs::create_dir_all(&configured).unwrap();
+        assert_eq!(
+            effective_cache_dir(&configured, &default),
+            (configured, true)
+        );
     }
 }

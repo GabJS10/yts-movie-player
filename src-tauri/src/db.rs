@@ -446,6 +446,18 @@ impl Db {
         .await
     }
 
+    pub async fn set_download_path(&self, infohash: &str, path: &str) -> AppResult<()> {
+        let (infohash, path) = (infohash.to_owned(), path.to_owned());
+        self.call(move |c| {
+            c.execute(
+                "UPDATE downloads SET path = ?2 WHERE infohash = ?1",
+                params![infohash, path],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Every download, oldest first, with the current local origin on its movie.
     pub async fn list_downloads(&self, local_base: &str) -> AppResult<Vec<DownloadRow>> {
         let rows: Vec<(DownloadRow, String)> = self
@@ -563,6 +575,16 @@ impl Db {
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect::<Result<_, _>>()?;
             Ok(rows)
+        })
+        .await
+    }
+
+    pub async fn delete_settings(&self, keys: Vec<String>) -> AppResult<()> {
+        self.call(move |c| {
+            for key in &keys {
+                c.execute("DELETE FROM settings WHERE key = ?1", [key])?;
+            }
+            Ok(())
         })
         .await
     }
