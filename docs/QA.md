@@ -75,3 +75,4 @@ Cómo marcar: `[x]` bien, `[!]` falla (anotar el detalle debajo), `[-]` no aplic
 ## Registro
 | Fecha | Versión / commit | Quién | Resultado | Notas |
 |---|---|---|---|---|
+| 2026-10-04 | `fase-7` | usuario | ✅ | Repaso de lo nuevo: tráiler en el modal, teclado, banner, sin peers (60 s), failover y API caída, cierre ordenado. Las secciones de fases anteriores se probaron en su fase. |

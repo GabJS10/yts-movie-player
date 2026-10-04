@@ -19,8 +19,8 @@
 | 4 | Persistencia: Mi lista, Continuar viendo, Ajustes base y límite de caché | Favoritos y progreso que sobreviven a un reinicio; la caché no llena el disco | ✅ Terminada (`fase-4`) |
 | 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | ✅ Terminada (`fase-5`) |
 | 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | ✅ Terminada (`fase-6`) |
-| 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | ⏳ Siguiente |
-| 8 | Empaquetado y release v1.0 | `.deb` y AppImage publicados en GitHub Releases | — |
+| 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | ✅ Terminada (`fase-7`) |
+| 8 | Empaquetado y release v1.0 | `.deb` y AppImage publicados en GitHub Releases | ⏳ Siguiente |
 
 ## Cómo se trabaja cada fase
 
@@ -201,7 +201,9 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
   - tests: migración, validación, mover en el mismo disco y con copia (dos tmpdirs), cancelación a mitad, falta de espacio, carpeta que desaparece y vuelve; front: selector, diálogo de progreso y estados.
 - **Cierre:** descargar una película, cortar la red, reiniciar la app y reproducirla desde Descargas; las carpetas se pueden cambiar y las descargas existentes se mueven con progreso; pausar/reanudar sobrevive a un reinicio; los límites de velocidad se notan; quitar con archivos libera el espacio. Tag `fase-6`.
 
-## Fase 7: Tráilers, pulido, robustez y E2E
+## Fase 7: Tráilers, pulido, robustez y E2E ✅
+
+**Resultado real:** banner rotativo con recomendaciones e Inicio personalizado; tráiler en el modal a través de la página local `/trailer` (YouTube exige `Referer`); pantalla `no_peers`, una acción para cada `ErrorCode`, cierre ordenado (~1,4 s) y rendimiento medido (23 MB, 43 % de un núcleo con 4 descargas + 1 stream); los dos problemas de la fase 2 resueltos; E2E en dos capas en el CI (WebdriverIO sobre la app real sin internet y Playwright WebKit + axe con mocks).
 
 **Objetivo:** una app que se siente terminada, que no deja al usuario sin salida, con un Inicio que cambia y con E2E en el CI. Contrato: IPC v0.12.
 
