@@ -17,8 +17,8 @@
 | 2 | Catálogo | Home, Búsqueda y Ficha con datos reales de YTS | ✅ Terminada (`fase-2`) |
 | 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | ✅ Terminada (`fase-3`) |
 | 4 | Persistencia: Mi lista, Continuar viendo, Ajustes base y límite de caché | Favoritos y progreso que sobreviven a un reinicio; la caché no llena el disco | ✅ Terminada (`fase-4`) |
-| 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | ⏳ Siguiente |
-| 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | — |
+| 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | ✅ Terminada (`fase-5`) |
+| 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | ⏳ Siguiente |
 | 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | — |
 | 8 | Empaquetado y release v1.0 | `.deb` y AppImage publicados en GitHub Releases | — |
 
@@ -142,7 +142,9 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
   - Frontend: ♥ optimista y su deshacer, fila Continuar viendo, temporizador de `save_progress` (fake timers), retomar, formulario de Ajustes, Almacenamiento y versión por defecto según los ajustes.
 - **Cierre:** al reiniciar la app se conservan Mi lista y Continuar viendo (con portadas); la película retoma donde quedó y "Desde el principio" funciona; al pasar el 92 % sale de Continuar viendo; cambiar la calidad o las URLs en Ajustes tiene efecto sin reiniciar; la caché no pasa del límite y "Vaciar caché ahora" libera el espacio. Tag `fase-4`.
 
-## Fase 5: Subtítulos
+## Fase 5: Subtítulos ✅
+
+**Resultado real:** subtítulos en español automáticos y sincronizados, retraso con G/H, `.srt` propio (diálogo o arrastrar), subtítulos y retraso también en VLC (el retraso va horneado en un `.srt` porque `--sub-delay` de VLC no aplica a `.vtt`), y con el cupo agotado el menú abre la página de OpenSubtitles. Cupo: 5 descargas/día sin sesión, 20 con cuenta gratuita; lo cacheado en disco no gasta cupo.
 
 **Objetivo:** subtítulos en español que se cargan solos y quedan sincronizados, más la opción de cargar un `.srt` propio. Contrato: IPC v0.7.
 
