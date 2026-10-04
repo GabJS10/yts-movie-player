@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.9 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.10 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -91,6 +91,7 @@ type MovieDetail = MovieSummary & {
   isFavorite: boolean;
   progress: Progress | null;
   download: Download | null;       // si ya hay una descarga de cualquier versión
+  offline: boolean;                // true = viene de la copia guardada al descargar (sin red); los campos que no estén en la copia van vacíos
 };
 
 type MoviePage = {
@@ -293,7 +294,17 @@ type Download = {
 };
 ```
 
-Si se llama a `start_download` sobre un torrent que ya se está reproduciendo, se **promueve**: deja de ser caché y pasa a `library/`, sin volver a descargar lo que ya se bajó.
+Si se llama a `start_download` sobre un torrent que ya se está reproduciendo, se **promueve**: deja de ser caché y pasa a `library/`, sin volver a descargar lo que ya se bajó (evict → mover la carpeta → volver a agregar apuntando a `library/`; las piezas ya bajadas se verifican, no se descargan).
+
+- **Carpeta legible:** `library/<Título> (<año>) [<calidad>]/<archivo de video>` (caracteres inválidos saneados). Solo se descarga el archivo de video, igual que en el streaming.
+- **Espacio:** antes de empezar se comprueba el espacio libre frente a lo que falta por bajar; si no alcanza → `io` con un mensaje claro y la descarga no se crea.
+- **Ficha sin conexión:** `start_download` guarda el `MovieDetail` completo en la DB. Si `get_movie` falla por red y la película está descargada (o descargándose), devuelve esa copia con `offline: true`.
+- **Reproducir lo descargado:** con la descarga en `done`, `start_stream` sirve el archivo de `library/` directamente (sin motor torrent ni red), `source: "library"`, y el búfer se considera completo desde el principio.
+- **Reinicio:** al arrancar se recuperan las descargas de la DB conservando su estado (activa / pausada / terminada). Un archivo de `library/` que ya no existe → `error`.
+- **Al terminar:** con `seedAfterDownload` sigue compartiendo dentro del límite de subida; si no, se pausa el torrent (el estado sigue `done`).
+- **Progreso:** el front consulta `list_downloads` (≈1 s) mientras la página Descargas o la Ficha de una película en descarga están visibles. `torrent://stats` sigue siendo solo para el stream abierto.
+- `remove_download { deleteFiles: true }` saca el torrent de la sesión **antes** de borrar (si no, librqbit mantiene el archivo abierto y el espacio no se libera; ver `PLAN.md`).
+- `open_download_folder` abre la carpeta en el gestor de archivos del sistema.
 
 ### Ajustes y almacenamiento
 
@@ -340,7 +351,7 @@ type ClearCacheResult = { freedBytes: number };
 type SettingsPatch = Partial<Settings>;
 ```
 
-- `update_settings` valida los datos y devuelve los ajustes completos ya aplicados. Los límites de velocidad y el puerto se aplican en caliente, sin reiniciar la app.
+- `update_settings` valida los datos y devuelve los ajustes completos ya aplicados. Los límites de velocidad y `seedAfterDownload` se aplican en caliente (si librqbit no permite cambiar los límites en caliente, se aplican al reiniciar y la UI lo indica). `listenPort` se guarda y **se aplica al reiniciar la app** (cambiarlo en caliente obligaría a reiniciar la sesión torrent y cortar los streams).
 - `dataDir` es la excepción: el cambio se guarda, pero **se aplica al reiniciar la app**, y lo que hay en `cache/` y `library/` no se mueve solo. La UI tiene que avisarlo ("Se aplicará al reiniciar; las descargas existentes se quedan en la carpeta anterior").
 - `openSubtitlesApiKey`, `openSubtitlesUsername` y `openSubtitlesPassword` solo se guardan en local (SQLite) y no se escriben nunca en los logs. Cambiarlos invalida el token de sesión de OpenSubtitles.
 
@@ -422,3 +433,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.7** (2026-10-04): subtítulos. `SubtitleOption.aiTranslated`, comando `get_subtitles_status` (tipo `SubtitlesStatus`), credenciales opcionales `openSubtitlesUsername`/`openSubtitlesPassword` en `Settings`, caché de `.vtt` en disco y reglas de orden. Sin cambios que rompan.
 - **v0.8** (2026-10-04): `open_external_player` pasa subtítulos al reproductor externo (`subtitleId?`, `subtitlePath?`, `subtitleDelayMs?`) y devuelve `ExternalPlayerResult` en vez de `void`. `subtitlesOff?` respeta "Desactivados".
 - **v0.9** (2026-10-04): `SubtitleOption.pageUrl` y `SubtitleOption.cached`; con el cupo agotado, el clic en una opción no cacheada abre su página de OpenSubtitles.
+- **v0.10** (2026-10-04): descargas. `MovieDetail.offline`; reglas de carpeta legible, comprobación de espacio, ficha sin conexión, reproducción directa desde `library/`, recuperación al reiniciar y seeding. Progreso por polling de `list_downloads`. `listenPort` se aplica al reiniciar.

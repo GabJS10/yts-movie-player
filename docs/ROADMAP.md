@@ -170,23 +170,30 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Añadido al cierre (IPC v0.9): cupo agotado.** Con el cupo agotado, el clic en un subtítulo no cacheado del menú abre su página de OpenSubtitles en el navegador, para descargarlo a mano y soltarlo sobre el reproductor; los cacheados se siguen cargando.
 - **Cierre:** al reproducir aparecen solos los subtítulos en español y sincronizados, el retraso funciona, se puede cargar un `.srt` manual, sin key la app explica qué hacer y VLC se abre con los subtítulos. Tag `fase-5`.
 
-## Fase 6: Descargas, caché y Ajustes completos
+## Fase 6: Descargas y Ajustes de torrent
 
-**Objetivo:** guardar películas para verlas sin conexión y controlar el disco y la red.
+**Objetivo:** guardar películas para verlas sin conexión y controlar la red. (El límite de la caché, `get_storage_usage` y `clear_cache` ya se hicieron en la fase 4.) Contrato: IPC v0.10, sección Descargas.
+
+**Decisiones:** (1) sin conexión de verdad: copia del `MovieDetail` en la DB y reproducción directa desde `library/`; (2) carpetas legibles `Título (año) [calidad]`; (3) progreso por polling de `list_downloads`, sin evento nuevo; (4) el puerto se aplica al reiniciar; (5) comprobación de espacio antes de descargar.
 
 - **backend:**
-  - Comandos de descargas (`start_download`, `pause_download`, `resume_download`, `remove_download`, `open_download_folder`).
-  - Promover un stream a descarga (se mueve a `library/` sin volver a bajar lo descargado).
-  - `start_stream` reproduce desde `library/` si la película ya está descargada.
-  - Evento `download://changed`.
-  - (El límite de la caché, `get_storage_usage` y `clear_cache` se adelantaron a la fase 4.) Al promover a descarga, el archivo deja de contar para la caché.
-  - Límites de velocidad, puerto y seeding aplicados en caliente.
-  - Recuperar las descargas al reiniciar la app.
-- **frontend:** página Descargas (estados, progreso, ETA, acciones), el contador en la barra de navegación, el botón Descargar en la Ficha y la sección Torrent de Ajustes (Almacenamiento ya existe desde la fase 4).
+  - Comandos `start_download`, `list_downloads`, `pause_download`, `resume_download`, `remove_download` (evict antes de borrar) y `open_download_folder`. Evento `download://changed` en cada cambio de estado.
+  - Promover un stream a descarga sin volver a bajar lo descargado; desde ese momento ya no cuenta para la caché LRU.
+  - Copia del `MovieDetail` al descargar; `get_movie` sin red → copia con `offline: true`.
+  - `start_stream` sobre una descarga terminada sirve el archivo local (`source: "library"`), sin red ni peers.
+  - Recuperar las descargas al reiniciar con su estado; seeding según `seedAfterDownload`.
+  - Ajustes de torrent: límites de bajada/subida en caliente (verificar si librqbit 9 lo permite; si no, al reiniciar y avisarlo), `seedAfterDownload` en caliente, `listenPort` al reiniciar.
+  - Comprobación de espacio libre antes de crear la descarga.
+- **frontend:**
+  - Página **Descargas** como en el prototipo: estado, progreso, velocidad, peers, ETA y acciones (pausar/reanudar, quitar con diálogo "¿borrar también los archivos?", abrir carpeta, reproducir). Estado vacío.
+  - **Contador** de descargas activas en la barra de navegación (con `download://changed`).
+  - **Ficha:** Descargar → "Descargando 45 %" → "Descargada ✓"; Reproducir de una descargada arranca al instante.
+  - **Sin conexión:** desde Descargas se abre la Ficha y se reproduce; aviso discreto "Sin conexión" y se ocultan las filas que dependen de la red. Con `offline: true` la Ficha muestra lo que haya.
+  - **Ajustes → Torrent** funcional (deja de ser "Próximamente"): límites, seeding y puerto con la nota "se aplica al reiniciar".
 - **Tests:**
-  - Backend: transiciones de estado, promoción de stream a descarga, limpieza LRU y reanudación al reiniciar (integración con un torrent local).
-  - Frontend: lista de descargas a partir de los eventos y formularios de límites.
-- **Cierre:** una película descargada se reproduce **sin red**, la caché no pasa del límite y los límites de velocidad funcionan. Tag `fase-6`.
+  - Backend: transiciones de estado, promoción de stream a descarga sin rebajar (torrent local), recuperación al reiniciar, `get_movie` offline, falta de espacio, reproducción desde `library/` y que `remove_download` libera el espacio.
+  - Frontend: página Descargas con polling y eventos, contador, estados del botón de la Ficha, modo sin conexión y formulario de Torrent.
+- **Cierre:** descargar una película, cortar la red, reiniciar la app y reproducirla desde Descargas; pausar/reanudar sobrevive a un reinicio; los límites de velocidad se notan; quitar con archivos libera el espacio. Tag `fase-6`.
 
 ## Fase 7: Tráilers, pulido, robustez y E2E
 
