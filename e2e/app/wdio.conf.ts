@@ -5,7 +5,7 @@
 // - a fake YTS API (fake-yts.mjs) points the first movie at that torrent,
 // - the app gets its own XDG_DATA_HOME, so the user's data is never touched.
 //
-// Prerequisites: `npm run tauri build -- --debug --no-bundle` (from the repo root),
+// Prerequisites: `e2e/scripts/build-app.sh` (debug build with the frontend embedded),
 // `cargo install tauri-driver --locked`, WebKitWebDriver (apt: webkit2gtk-driver), ffmpeg.
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, statSync, rmSync } from "node:fs";
@@ -17,7 +17,8 @@ import { startFakeYts } from "./fake-yts.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
-const application = path.join(root, "src-tauri/target/debug/yts-player");
+const application = path.join(root, "src-tauri/target/e2e/debug/yts-player");
+const seederBin = path.join(root, "src-tauri/target/e2e/debug/examples/e2e_seeder");
 const tauriDriverBin = path.join(os.homedir(), ".cargo/bin/tauri-driver");
 
 let seeder: ChildProcess | undefined;
@@ -28,10 +29,8 @@ let dataHome: string | undefined;
 type SeederInfo = { infohash: string; torrentPath: string; port: number };
 
 function startSeeder(video: string): Promise<SeederInfo> {
-  seeder = spawn("cargo", ["run", "--quiet", "--example", "e2e_seeder", "--", video], {
-    cwd: path.join(root, "src-tauri"),
-    stdio: ["ignore", "pipe", "inherit"],
-  });
+  // Prebuilt by build-app.sh: `cargo run` would recompile from a working tree that may be mid-edit.
+  seeder = spawn(seederBin, [video], { stdio: ["ignore", "pipe", "inherit"] });
   const lines = createInterface({ input: seeder.stdout! });
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("e2e_seeder did not start in 300 s")), 300_000);
@@ -48,6 +47,19 @@ function startSeeder(video: string): Promise<SeederInfo> {
   });
 }
 
+async function prepare() {
+  const video = execFileSync(path.join(root, "e2e/scripts/make-video.sh"), { encoding: "utf8" }).trim();
+  const info = await startSeeder(video);
+  const yts = await startFakeYts({ seeder: { ...info, sizeBytes: statSync(video).size } });
+  fakeYts = yts;
+  dataHome = mkdtempSync(path.join(os.tmpdir(), "yts-e2e-"));
+  // Inherited by the workers, then by tauri-driver and the app.
+  process.env.XDG_DATA_HOME = dataHome;
+  process.env.YTS_PLAYER_API_BASE_URLS = yts.baseUrl;
+  process.env.YTS_PLAYER_NO_DHT = "1";
+  process.env.E2E_PLAYABLE_MOVIE_ID = String(yts.playableId);
+}
+
 export const config: WebdriverIO.Config = {
   runner: "local",
   specs: ["./specs/**/*.e2e.ts"],
@@ -58,7 +70,8 @@ export const config: WebdriverIO.Config = {
     {
       // @ts-expect-error tauri-driver specific capability
       "tauri:options": { application },
-      browserName: "wry",
+      // WebKitWebDriver speaks classic WebDriver only (no BiDi / webSocketUrl).
+      "wdio:enforceWebDriverClassic": true,
     },
   ],
   logLevel: "warn",
@@ -69,18 +82,13 @@ export const config: WebdriverIO.Config = {
   mochaOpts: { ui: "bdd", timeout: 180_000 },
 
   async onPrepare() {
-    const video = execFileSync(path.join(root, "e2e/scripts/make-video.sh"), { encoding: "utf8" }).trim();
-    const info = await startSeeder(video);
-    const yts = await startFakeYts({
-      seeder: { ...info, sizeBytes: statSync(video).size },
-    });
-    fakeYts = yts;
-    dataHome = mkdtempSync(path.join(os.tmpdir(), "yts-e2e-"));
-    // Inherited by the workers, then by tauri-driver and the app.
-    process.env.XDG_DATA_HOME = dataHome;
-    process.env.YTS_PLAYER_API_BASE_URLS = yts.baseUrl;
-    process.env.YTS_PLAYER_NO_DHT = "1";
-    process.env.E2E_PLAYABLE_MOVIE_ID = String(yts.playableId);
+    // WebdriverIO only logs errors thrown in onPrepare and runs the specs anyway.
+    try {
+      await prepare();
+    } catch (err) {
+      console.error(err);
+      process.exit(1);
+    }
   },
 
   beforeSession() {
@@ -92,6 +100,7 @@ export const config: WebdriverIO.Config = {
   },
 
   onComplete() {
+    tauriDriver?.kill();
     fakeYts?.close();
     seeder?.kill("SIGTERM");
     if (dataHome) rmSync(dataHome, { recursive: true, force: true });
