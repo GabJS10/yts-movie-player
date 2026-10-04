@@ -34,10 +34,36 @@ pub enum ImageError {
     Io(#[from] std::io::Error),
 }
 
+/// Hosts allowed for outgoing requests, shared with the redirect policy of the HTTP
+/// client so it can be replaced at runtime (when the API base URLs change in Settings).
+#[derive(Debug, Clone, Default)]
+pub struct HostAllowlist(Arc<RwLock<HashSet<String>>>);
+
+impl HostAllowlist {
+    pub fn new(hosts: impl IntoIterator<Item = String>) -> Self {
+        let list = Self::default();
+        list.set(hosts);
+        list
+    }
+
+    pub fn set(&self, hosts: impl IntoIterator<Item = String>) {
+        let hosts = hosts.into_iter().map(|h| h.to_ascii_lowercase()).collect();
+        if let Ok(mut g) = self.0.write() {
+            *g = hosts;
+        }
+    }
+
+    fn contains(&self, host: &str) -> bool {
+        self.0
+            .read()
+            .is_ok_and(|g| g.contains(&host.to_ascii_lowercase()))
+    }
+}
+
 pub struct ImageStore {
     local_base: String,
     dir: PathBuf,
-    allowed_hosts: Arc<HashSet<String>>,
+    allowed_hosts: HostAllowlist,
     registry: RwLock<HashMap<String, String>>,
     http: reqwest::Client,
 }
@@ -50,14 +76,9 @@ impl ImageStore {
         local_base: impl Into<String>,
     ) -> AppResult<Self> {
         std::fs::create_dir_all(&dir)?;
-        let allowed_hosts: Arc<HashSet<String>> = Arc::new(
-            allowed_hosts
-                .into_iter()
-                .map(|h| h.to_ascii_lowercase())
-                .collect(),
-        );
+        let allowed_hosts = HostAllowlist::new(allowed_hosts);
         let http = restricted_client(
-            Arc::clone(&allowed_hosts),
+            allowed_hosts.clone(),
             Duration::from_secs(5),
             Duration::from_secs(20),
         )?;
@@ -79,6 +100,27 @@ impl ImageStore {
                 .filter_map(|u| Url::parse(u).ok()?.host_str().map(str::to_owned)),
         );
         hosts
+    }
+
+    /// Replaces the allowed image hosts (see [`Self::default_allowed_hosts`]).
+    pub fn set_allowed_hosts(&self, hosts: impl IntoIterator<Item = String>) {
+        self.allowed_hosts.set(hosts);
+    }
+
+    pub fn local_base(&self) -> &str {
+        &self.local_base
+    }
+
+    /// Registers known `hash → remote URL` pairs (saved in the DB by a previous session).
+    pub fn register(&self, pairs: impl IntoIterator<Item = (String, String)>) {
+        if let Ok(mut registry) = self.registry.write() {
+            registry.extend(pairs);
+        }
+    }
+
+    /// Remote URL behind a hash registered in this session.
+    pub fn remote_url(&self, hash: &str) -> Option<String> {
+        self.lookup(hash)
     }
 
     pub fn hash_of(remote_url: &str) -> String {
@@ -168,7 +210,7 @@ impl ImageStore {
 /// HTTP client that only follows redirects towards `hosts` (yts.gg → img.yts.gg).
 /// Callers must still check the host of the initial URL with [`host_allowed`].
 pub fn restricted_client(
-    hosts: Arc<HashSet<String>>,
+    hosts: HostAllowlist,
     connect_timeout: Duration,
     timeout: Duration,
 ) -> AppResult<reqwest::Client> {
@@ -190,11 +232,8 @@ pub fn restricted_client(
         .map_err(|e| AppError::Internal(format!("http client: {e}")))
 }
 
-pub fn host_allowed(hosts: &HashSet<String>, url: &Url) -> bool {
-    matches!(url.scheme(), "http" | "https")
-        && url
-            .host_str()
-            .is_some_and(|h| hosts.contains(&h.to_ascii_lowercase()))
+pub fn host_allowed(hosts: &HostAllowlist, url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https") && url.host_str().is_some_and(|h| hosts.contains(h))
 }
 
 /// Writes to a temporary file and renames it, so concurrent readers never see partial data.
@@ -259,6 +298,24 @@ mod tests {
         assert!(ok("https://movies-api.accel.li/a.jpg"));
         assert!(!ok("https://evil.example/a.jpg"));
         assert!(!ok("ftp://yts.gg/a.jpg"));
+
+        // Replaced at runtime (new API base URLs in Settings).
+        store.set_allowed_hosts(ImageStore::default_allowed_hosts(&[
+            "https://mirror.example/api/v2/".into(),
+        ]));
+        assert!(ok("https://MIRROR.example/a.jpg"));
+        assert!(ok("https://img.yts.gg/a.jpg"));
+        assert!(!ok("https://movies-api.accel.li/a.jpg"));
+    }
+
+    #[test]
+    fn registry_can_be_restored() {
+        let (_tmp, store) = store();
+        let remote = "https://yts.gg/a.jpg";
+        let hash = ImageStore::hash_of(remote);
+        assert_eq!(store.remote_url(&hash), None);
+        store.register([(hash.clone(), remote.to_owned())]);
+        assert_eq!(store.remote_url(&hash).as_deref(), Some(remote));
     }
 
     #[test]

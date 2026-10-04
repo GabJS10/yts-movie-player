@@ -507,3 +507,37 @@ async fn api_status_probes_every_endpoint() {
     assert_eq!(status[1].role, EndpointRole::Fallback);
     assert!(!status[1].ok && status[1].latency_ms.is_none());
 }
+
+#[tokio::test]
+async fn base_urls_change_at_runtime_and_drop_the_cache() {
+    let old = MockServer::start().await;
+    let new = MockServer::start().await;
+    mount_fixture(&old, "list_movies.json", "list_movies.json").await;
+    mount_fixture(&new, "list_movies.json", "list_movies.json").await;
+    let h = client(vec![base(&old)]);
+    let params = ListMoviesParams::default();
+
+    h.client.list_movies(&params).await.unwrap();
+    assert_eq!(requests(&old).await, 1);
+
+    // Same list: no-op, the cache stays.
+    h.client.set_base_urls(&[base(&old)]).unwrap();
+    h.client.list_movies(&params).await.unwrap();
+    assert_eq!(requests(&old).await, 1);
+
+    // New list: same request goes to the new server (cache dropped).
+    h.client.set_base_urls(&[base(&new), base(&old)]).unwrap();
+    assert_eq!(h.client.active_base_url(), base(&new));
+    h.client.list_movies(&params).await.unwrap();
+    assert_eq!(requests(&new).await, 1);
+    assert_eq!(requests(&old).await, 1);
+    let status = h.client.api_status().await;
+    assert_eq!(status.len(), 2);
+    assert_eq!(status[0].base_url, base(&new));
+    assert_eq!(status[0].role, EndpointRole::Active);
+
+    assert!(matches!(
+        h.client.set_base_urls(&[]),
+        Err(AppError::InvalidInput(_))
+    ));
+}

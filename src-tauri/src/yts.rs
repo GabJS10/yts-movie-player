@@ -2,7 +2,7 @@
 //! conversion to IPC types. See `docs/YTS-API.md`.
 
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -18,7 +18,7 @@ use crate::types::{
     MovieSummary, OrderBy, Quality, QualityFilter, SortBy, Torrent, TorrentSource, VideoCodec,
 };
 
-/// Fixed for now; configurable from Settings in phase 4.
+/// Defaults of the `apiBaseUrls` setting.
 pub const DEFAULT_BASE_URLS: [&str; 2] = [
     "https://movies-api.accel.li/api/v2/",
     "https://yts.gg/api/v2/",
@@ -69,7 +69,8 @@ struct EndpointState {
 
 pub struct YtsClient {
     http: reqwest::Client,
-    base_urls: Vec<String>,
+    /// Replaced as a whole when the settings change; readers take a snapshot.
+    base_urls: RwLock<Arc<Vec<String>>>,
     recheck_interval: Duration,
     endpoints: Mutex<EndpointState>,
     cache: Cache<String, Bytes>,
@@ -104,22 +105,15 @@ enum AttemptError {
 
 impl YtsClient {
     pub fn new(config: YtsConfig, images: Arc<ImageStore>) -> AppResult<Self> {
-        if config.base_urls.is_empty() {
-            return Err(AppError::InvalidInput("no YTS base URLs configured".into()));
-        }
+        let base_urls = normalize_base_urls(&config.base_urls)?;
         let http = reqwest::Client::builder()
             .connect_timeout(config.connect_timeout)
             .timeout(config.request_timeout)
             .build()
             .map_err(|e| AppError::Internal(format!("http client: {e}")))?;
-        let base_urls = config
-            .base_urls
-            .iter()
-            .map(|u| format!("{}/", u.trim_end_matches('/')))
-            .collect();
         Ok(Self {
             http,
-            base_urls,
+            base_urls: RwLock::new(Arc::new(base_urls)),
             recheck_interval: config.primary_recheck_interval,
             endpoints: Mutex::new(EndpointState {
                 active: 0,
@@ -131,6 +125,32 @@ impl YtsClient {
                 .build(),
             images,
         })
+    }
+
+    /// Replaces the base URLs at runtime: back to the first one, with an empty cache.
+    pub fn set_base_urls(&self, urls: &[String]) -> AppResult<()> {
+        let urls = normalize_base_urls(urls)?;
+        if **self.urls() == urls {
+            return Ok(());
+        }
+        match self.base_urls.write() {
+            Ok(mut g) => *g = Arc::new(urls),
+            Err(_) => return Err(AppError::Internal("base URL lock poisoned".into())),
+        }
+        if let Ok(mut state) = self.endpoints.lock() {
+            state.active = 0;
+            state.last_primary_check = Instant::now();
+        }
+        self.cache.invalidate_all();
+        tracing::info!(urls = ?self.urls(), "YTS base URLs changed");
+        Ok(())
+    }
+
+    fn urls(&self) -> Arc<Vec<String>> {
+        match self.base_urls.read() {
+            Ok(g) => Arc::clone(&g),
+            Err(poisoned) => Arc::clone(&poisoned.into_inner()),
+        }
     }
 
     pub async fn list_movies(&self, params: &ListMoviesParams) -> AppResult<MoviePage> {
@@ -195,32 +215,33 @@ impl YtsClient {
     /// Probes every base URL in parallel (uncached) and reports latency.
     pub async fn api_status(&self) -> Vec<ApiEndpointStatus> {
         let active = self.active_index();
-        let probes = self
-            .base_urls
-            .iter()
-            .enumerate()
-            .map(|(idx, base)| async move {
-                let started = Instant::now();
-                let result = self
-                    .attempt::<RawListData>(base, "list_movies.json?limit=1")
-                    .await;
-                let ok = result.is_ok();
-                ApiEndpointStatus {
-                    base_url: base.clone(),
-                    role: if idx == active {
-                        EndpointRole::Active
-                    } else {
-                        EndpointRole::Fallback
-                    },
-                    latency_ms: ok.then(|| started.elapsed().as_millis() as u64),
-                    ok,
-                }
-            });
+        let urls = self.urls();
+        let probes = urls.iter().enumerate().map(|(idx, base)| async move {
+            let started = Instant::now();
+            let result = self
+                .attempt::<RawListData>(base, "list_movies.json?limit=1")
+                .await;
+            let ok = result.is_ok();
+            ApiEndpointStatus {
+                base_url: base.clone(),
+                role: if idx == active {
+                    EndpointRole::Active
+                } else {
+                    EndpointRole::Fallback
+                },
+                latency_ms: ok.then(|| started.elapsed().as_millis() as u64),
+                ok,
+            }
+        });
         futures_util::future::join_all(probes).await
     }
 
-    pub fn active_base_url(&self) -> &str {
-        &self.base_urls[self.active_index()]
+    pub fn active_base_url(&self) -> String {
+        let urls = self.urls();
+        urls.get(self.active_index())
+            .or_else(|| urls.first())
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn active_index(&self) -> usize {
@@ -242,8 +263,9 @@ impl YtsClient {
     async fn fetch_uncached<T: DeserializeOwned>(&self, path: &str) -> Result<Bytes, FetchError> {
         let mut all_network = true;
         let mut last_error = String::new();
-        for idx in self.attempt_order() {
-            let base = &self.base_urls[idx];
+        let urls = self.urls();
+        for idx in self.attempt_order(urls.len()) {
+            let base = &urls[idx];
             let result = match self.attempt_raw(base, path).await {
                 Ok(body) => parse_body::<T>(&body).map(|_| body),
                 Err(e) => Err(e),
@@ -251,7 +273,7 @@ impl YtsClient {
             match result {
                 Ok(body) => {
                     tracing::debug!(%base, %path, bytes = body.len(), "YTS response ok");
-                    self.mark_success(idx);
+                    self.mark_success(&urls, idx);
                     return Ok(body);
                 }
                 Err(AttemptError::Network(msg)) => {
@@ -297,7 +319,7 @@ impl YtsClient {
 
     /// Active endpoint first, then the rest in preference order. If we failed over and the
     /// recheck interval elapsed, the primary goes first again.
-    fn attempt_order(&self) -> Vec<usize> {
+    fn attempt_order(&self, len: usize) -> Vec<usize> {
         let first = match self.endpoints.lock() {
             Ok(mut state) => {
                 if state.active != 0 && state.last_primary_check.elapsed() >= self.recheck_interval
@@ -310,15 +332,20 @@ impl YtsClient {
             }
             Err(_) => 0,
         };
+        let first = if first < len { first } else { 0 };
         std::iter::once(first)
-            .chain((0..self.base_urls.len()).filter(|&i| i != first))
+            .chain((0..len).filter(|&i| i != first))
             .collect()
     }
 
-    fn mark_success(&self, idx: usize) {
+    fn mark_success(&self, urls: &Arc<Vec<String>>, idx: usize) {
+        // The list may have been replaced while this request was in flight.
+        if !Arc::ptr_eq(urls, &self.urls()) {
+            return;
+        }
         if let Ok(mut state) = self.endpoints.lock() {
             if state.active != idx {
-                tracing::info!(base = %self.base_urls[idx], "switching active YTS endpoint");
+                tracing::info!(base = %urls[idx], "switching active YTS endpoint");
                 state.active = idx;
                 state.last_primary_check = Instant::now();
             }
@@ -402,6 +429,16 @@ impl YtsClient {
             download: None,
         }
     }
+}
+
+fn normalize_base_urls(urls: &[String]) -> AppResult<Vec<String>> {
+    if urls.is_empty() {
+        return Err(AppError::InvalidInput("no YTS base URLs configured".into()));
+    }
+    Ok(urls
+        .iter()
+        .map(|u| format!("{}/", u.trim().trim_end_matches('/')))
+        .collect())
 }
 
 fn details_path(movie_id: u64) -> String {

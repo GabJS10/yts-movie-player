@@ -30,7 +30,7 @@ use tokio::time::Instant;
 use url::Url;
 
 use crate::error::{AppError, AppResult};
-use crate::images::{host_allowed, restricted_client};
+use crate::images::{host_allowed, restricted_client, HostAllowlist};
 use crate::types::{
     PieceMapWindow, StreamPhase, StreamSession, StreamSource, TorrentStats, VideoCodec,
 };
@@ -438,6 +438,10 @@ impl Readers {
         }
     }
 
+    fn has_open(&self) -> bool {
+        self.map.lock().map(|m| !m.is_empty()).unwrap_or(false)
+    }
+
     fn close(&self, id: u64) {
         if let Ok(mut map) = self.map.lock() {
             map.remove(&id);
@@ -512,9 +516,11 @@ pub struct TorrentEngine {
     api: Api,
     cfg: EngineConfig,
     http: reqwest::Client,
-    allowed_hosts: Arc<HashSet<String>>,
+    allowed_hosts: HostAllowlist,
     entries: Mutex<HashMap<String, Arc<Entry>>>,
     stats_tx: broadcast::Sender<TorrentStats>,
+    /// `bufferTargetBytes` setting, changeable at runtime.
+    buffer_target: AtomicU64,
 }
 
 fn torrent_err(context: &str, e: impl std::fmt::Display) -> AppError {
@@ -550,18 +556,14 @@ impl TorrentEngine {
         let session = Session::new_with_opts(cfg.output_dir.clone(), opts)
             .await
             .map_err(|e| torrent_err("creating session", e))?;
-        let allowed_hosts: Arc<HashSet<String>> = Arc::new(
-            cfg.allowed_torrent_hosts
-                .iter()
-                .map(|h| h.to_ascii_lowercase())
-                .collect(),
-        );
+        let allowed_hosts = HostAllowlist::new(cfg.allowed_torrent_hosts.iter().cloned());
         let http = restricted_client(
-            Arc::clone(&allowed_hosts),
+            allowed_hosts.clone(),
             cfg.torrent_file_timeout,
             cfg.torrent_file_timeout,
         )?;
         let (stats_tx, _) = broadcast::channel(64);
+        let cfg_buffer_target = cfg.buffer_target_bytes;
         let engine = Arc::new(Self {
             api: Api::new(Arc::clone(&session), None),
             session,
@@ -570,9 +572,107 @@ impl TorrentEngine {
             allowed_hosts,
             entries: Mutex::new(HashMap::new()),
             stats_tx,
+            buffer_target: AtomicU64::new(cfg_buffer_target),
         });
         spawn_stats_loop(Arc::downgrade(&engine), engine.cfg.stats_interval);
         Ok(engine)
+    }
+
+    pub fn buffer_target_bytes(&self) -> u64 {
+        self.buffer_target.load(Ordering::Relaxed)
+    }
+
+    pub fn set_buffer_target_bytes(&self, bytes: u64) {
+        self.buffer_target.store(bytes, Ordering::Relaxed);
+    }
+
+    /// Replaces the hosts the `.torrent` may be downloaded from.
+    pub fn set_allowed_torrent_hosts(&self, hosts: impl IntoIterator<Item = String>) {
+        self.allowed_hosts.set(hosts);
+    }
+
+    /// Folder of a streamed torrent: `cache/<infohash>/`. Unit of the cache LRU.
+    pub fn torrent_dir(&self, infohash: &str) -> PathBuf {
+        self.cfg.output_dir.join(infohash.to_ascii_lowercase())
+    }
+
+    /// Records an access for the cache LRU (the folder's mtime). Best effort.
+    fn touch(&self, infohash: &str) {
+        let dir = self.torrent_dir(infohash);
+        let result =
+            std::fs::File::open(&dir).and_then(|f| f.set_modified(std::time::SystemTime::now()));
+        if let Err(e) = result {
+            tracing::debug!(dir = %dir.display(), error = %e, "could not touch torrent folder");
+        }
+    }
+
+    /// Before the first read, `pieceMap`/buffering start at this fraction of the file
+    /// (the saved progress) instead of byte 0.
+    pub fn hint_start_fraction(&self, infohash: &str, fraction: f64) {
+        let Some(entry) = self.entry(&infohash.to_ascii_lowercase()) else {
+            return;
+        };
+        let Some(active) = entry.active.get() else {
+            return;
+        };
+        if !fraction.is_finite() || fraction <= 0.0 {
+            return;
+        }
+        let byte = (active.geo.len as f64 * fraction.min(1.0)) as u64;
+        if let Ok(mut last) = entry.readers.last.lock() {
+            last.get_or_insert(byte);
+        };
+    }
+
+    /// Infohashes the cache must not touch: streams not stopped (including ones still
+    /// starting) and any torrent with an open reader (e.g. an external player).
+    pub fn in_use(&self) -> HashSet<String> {
+        let Ok(entries) = self.entries.lock() else {
+            return HashSet::new();
+        };
+        entries
+            .iter()
+            .filter(|(_, e)| !e.stopped.load(Ordering::Relaxed) || e.readers.has_open())
+            .map(|(h, _)| h.clone())
+            .collect()
+    }
+
+    /// Removes a stopped torrent from the session and deletes its folder. Returns `false`
+    /// (and touches nothing) if the torrent is in use.
+    ///
+    /// The torrent must leave the librqbit session first: a paused torrent keeps its files
+    /// open, and deleting them would not free any space until the app exits.
+    pub async fn evict(&self, infohash: &str, dir: &Path) -> AppResult<bool> {
+        let infohash = infohash.to_ascii_lowercase();
+        let entry = self.entry(&infohash);
+        let _control = match &entry {
+            Some(e) => Some(Arc::clone(&e.control).lock_owned().await),
+            None => None,
+        };
+        if let Some(e) = &entry {
+            if !e.stopped.load(Ordering::Relaxed) || e.readers.has_open() {
+                return Ok(false);
+            }
+            if let Ok(mut entries) = self.entries.lock() {
+                if entries
+                    .get(&infohash)
+                    .is_some_and(|cur| Arc::ptr_eq(cur, e))
+                {
+                    entries.remove(&infohash);
+                }
+            }
+        }
+        if let Ok(id) = Id20::from_str(&infohash) {
+            if self.session.get(TorrentIdOrHash::Hash(id)).is_some() {
+                self.session
+                    .delete(TorrentIdOrHash::Hash(id), false)
+                    .await
+                    .map_err(|e| torrent_err("removing torrent from session", e))?;
+                tracing::info!(%infohash, "torrent removed from session");
+            }
+        }
+        remove_path(dir).await?;
+        Ok(true)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<TorrentStats> {
@@ -637,6 +737,7 @@ impl TorrentEngine {
         }
         entry.stopped.store(false, Ordering::Relaxed);
         entry.mark_alive();
+        self.touch(&infohash);
 
         Ok(StreamSession {
             infohash: infohash.clone(),
@@ -646,7 +747,7 @@ impl TorrentEngine {
             file_size_bytes: active.geo.len,
             video_codec: entry.req.video_codec,
             likely_playable: entry.req.video_codec == VideoCodec::X264,
-            buffer_target_bytes: self.cfg.buffer_target_bytes,
+            buffer_target_bytes: self.buffer_target_bytes(),
             resume_at_s: None,
             source: StreamSource::Network,
         })
@@ -663,6 +764,7 @@ impl TorrentEngine {
         };
         let _control = Arc::clone(&entry.control).lock_owned().await;
         entry.stopped.store(true, Ordering::Relaxed);
+        self.touch(&entry.req.infohash);
         // Phase 6: torrents that are also downloads must keep running.
         if let Some(active) = entry.active.get() {
             if !active.handle.is_paused() {
@@ -828,6 +930,7 @@ impl TorrentEngine {
                 AddTorrent::from_bytes(listed.torrent_bytes.clone()),
                 Some(AddTorrentOptions {
                     only_files: Some(vec![file_idx]),
+                    sub_folder: Some(req.infohash.clone()),
                     overwrite: true,
                     initial_peers: Some(peers),
                     trackers: Some(self.cfg.trackers.clone()),
@@ -922,7 +1025,7 @@ impl TorrentEngine {
                     file_len: 0,
                     position: 0,
                     buffered_ahead: 0,
-                    buffer_target: self.cfg.buffer_target_bytes,
+                    buffer_target: self.buffer_target_bytes(),
                     idle_for: entry.started.elapsed(),
                     stall_after: self.cfg.stall_after,
                 }),
@@ -965,7 +1068,7 @@ impl TorrentEngine {
             .unwrap_or_default();
 
         let (positions, current) = entry.readers.snapshot();
-        // Before the first read: resumeAtS (null until phase 4) → byte 0.
+        // Before the first read: resumeAtS (see `hint_start_fraction`) → byte 0.
         let position = current.unwrap_or(0);
         let buffered = buffered_ahead(&geo, &have, position);
         let complete = geo.len > 0 && downloaded >= geo.len;
@@ -982,7 +1085,7 @@ impl TorrentEngine {
             file_len: geo.len,
             position,
             buffered_ahead: buffered,
-            buffer_target: self.cfg.buffer_target_bytes,
+            buffer_target: self.buffer_target_bytes(),
             idle_for: entry.idle_for(),
             stall_after: self.cfg.stall_after,
         });
@@ -1084,6 +1187,19 @@ impl AsyncRead for TrackedReader {
 impl Drop for TrackedReader {
     fn drop(&mut self) {
         self.readers.close(self.id);
+    }
+}
+
+/// Deletes a file or a folder; missing is fine.
+async fn remove_path(path: &Path) -> std::io::Result<()> {
+    let result = match tokio::fs::symlink_metadata(path).await {
+        Ok(m) if m.is_dir() => tokio::fs::remove_dir_all(path).await,
+        Ok(_) => tokio::fs::remove_file(path).await,
+        Err(e) => Err(e),
+    };
+    match result {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        other => other,
     }
 }
 

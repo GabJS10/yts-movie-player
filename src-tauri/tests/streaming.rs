@@ -16,6 +16,7 @@ use librqbit::{
 use tokio::sync::broadcast;
 use wiremock::matchers::path;
 use wiremock::{Mock, MockServer, ResponseTemplate};
+use yts_player_lib::cache::{CacheManager, Evictor};
 use yts_player_lib::error::AppError;
 use yts_player_lib::images::ImageStore;
 use yts_player_lib::stream;
@@ -530,4 +531,78 @@ async fn strict_mode_start_stop_start_resumes_the_same_session() {
     assert_eq!(again.unwrap(), first);
     stop.unwrap();
     assert_eq!(dl.engine.is_paused(&seeder.infohash), Some(true));
+}
+
+/// Files of `dir` that this process still has open (Linux: `/proc/self/fd`).
+fn open_files_under(dir: &Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir("/proc/self/fd")
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| std::fs::read_link(e.path()).ok())
+                .filter(|target| target.starts_with(dir))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cache_lru_keeps_open_streams_and_evicts_stopped_ones_releasing_files() {
+    let seeder = start_seeder().await;
+    let dl = start_downloader(vec![seeder.addr], |_| {}).await;
+    let mut rx = dl.engine.subscribe();
+    let session = dl.engine.start_stream(request(&seeder, None)).await.unwrap();
+    collect_until_done(&mut rx).await;
+
+    // One folder per torrent: cache/<infohash>/…
+    let dir = dl.engine.torrent_dir(&seeder.infohash);
+    assert_eq!(dir, dl.tmp.path().join("cache").join(&seeder.infohash));
+    assert!(file_in(&dir, VIDEO_NAME).is_some());
+    let library = dl.tmp.path().join("library");
+    std::fs::create_dir_all(library.join("Saved")).unwrap();
+    std::fs::write(library.join("Saved/movie.mp4"), b"kept").unwrap();
+
+    // Limit 0: everything should go, but the open stream is protected.
+    let cache = CacheManager::new(
+        dl.tmp.path().join("cache"),
+        library.clone(),
+        Arc::clone(&dl.engine) as Arc<dyn Evictor>,
+        0,
+    );
+    assert!(dl.engine.in_use().contains(&seeder.infohash));
+    assert_eq!(cache.enforce_limit().await.unwrap(), 0);
+    assert_eq!(cache.clear().await.unwrap().freed_bytes, 0);
+    assert!(dir.exists());
+
+    // Stopped but a reader is still open (e.g. VLC): still protected.
+    let file_idx: usize = session.stream_url.rsplit('/').next().unwrap().parse().unwrap();
+    let (reader, _) = dl
+        .engine
+        .open_reader(&seeder.infohash, file_idx, 0)
+        .await
+        .unwrap();
+    dl.engine.stop_stream(&seeder.infohash).await.unwrap();
+    assert!(dl.engine.in_use().contains(&seeder.infohash));
+    assert!(!dl.engine.evict(&seeder.infohash, &dir).await.unwrap());
+    assert!(dir.exists());
+    drop(reader);
+
+    // Stopped and unused: evicted, out of the session and with no file left open, so the
+    // space is really released (a paused librqbit torrent keeps its files open).
+    assert!(dl.engine.in_use().is_empty());
+    assert!(!open_files_under(&dir).is_empty() || cfg!(not(target_os = "linux")));
+    let freed = cache.enforce_limit().await.unwrap();
+    assert!(freed >= VIDEO_LEN as u64, "{freed}");
+    assert!(!dir.exists());
+    assert_eq!(dl.engine.is_paused(&seeder.infohash), None);
+    assert!(open_files_under(&dir).is_empty());
+    assert!(library.join("Saved/movie.mp4").exists());
+
+    // Watching it again downloads it again into a fresh folder.
+    let mut rx = dl.engine.subscribe();
+    let again = dl.engine.start_stream(request(&seeder, None)).await.unwrap();
+    collect_until_done(&mut rx).await;
+    let (status, _, body) = get(&again.stream_url, Some("bytes=1000-1999")).await;
+    assert_eq!(status, 206);
+    assert_eq!(body, seeder.video[1000..2000]);
+    assert!(dir.exists());
 }
