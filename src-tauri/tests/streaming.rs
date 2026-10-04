@@ -477,3 +477,35 @@ async fn cache_lru_keeps_open_streams_and_evicts_stopped_ones_releasing_files() 
     assert_eq!(body, seeder.video[1000..2000]);
     assert!(dir.exists());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_peer_ever_connected_reports_no_peers() {
+    let seeder = start_seeder().await;
+    let yts = MockServer::start().await;
+    Mock::given(path("/torrent/download/x"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(seeder.torrent_bytes.to_vec(), "application/x-bittorrent"),
+        )
+        .mount(&yts)
+        .await;
+    // The .torrent arrives, but the only peer it knows does not answer.
+    let dl = start_downloader(vec!["127.0.0.1:9".parse().unwrap()], |c| {
+        c.no_peers_after = Duration::from_secs(1);
+    })
+    .await;
+    let mut rx = dl.engine.subscribe();
+    dl.engine
+        .start_stream(request(
+            &seeder,
+            Some(format!("{}/torrent/download/x", yts.uri())),
+        ))
+        .await
+        .unwrap();
+    let stats = collect_until(&mut rx, StreamPhase::NoPeers).await;
+    let phases = dedup_phases(&stats);
+    assert_eq!(phases.last(), Some(&StreamPhase::NoPeers), "{phases:?}");
+    assert_eq!(phases.first(), Some(&StreamPhase::Connecting), "{phases:?}");
+    // It keeps trying: the stream is still there.
+    assert!(dl.engine.session_url(&seeder.infohash).is_ok());
+}

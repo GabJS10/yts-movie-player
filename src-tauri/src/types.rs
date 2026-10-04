@@ -150,6 +150,53 @@ pub struct MovieDetail {
     pub offline: bool,
 }
 
+/// Why a movie is in the rotating banner (`get_featured`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum FeaturedReason {
+    BecauseWatched {
+        source_movie_id: u64,
+        source_title: String,
+    },
+    BecauseList {
+        source_movie_id: u64,
+        source_title: String,
+    },
+    /// Lowercase, as in `ListMoviesParams.genre`.
+    Genre {
+        genre: String,
+    },
+    Trending,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeaturedItem {
+    pub movie: MovieDetail,
+    pub reason: FeaturedReason,
+}
+
+/// Row "Porque viste X".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BecauseWatchedRow {
+    pub source_movie_id: u64,
+    pub source_title: String,
+    pub movies: Vec<MovieSummary>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeProfile {
+    pub because_watched: Option<BecauseWatchedRow>,
+    /// Lowercase genres by affinity; empty = no history.
+    pub genre_order: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MoviePage {
@@ -494,6 +541,9 @@ pub struct StorageUsage {
     pub downloads_dir_available: bool,
     /// Downloads still in another folder (to offer "Mover").
     pub downloads_outside_dir: u64,
+    /// For "Restablecer" and to know whether a folder is the default one.
+    pub default_downloads_dir: String,
+    pub default_cache_dir: String,
 }
 
 /// Return value of `clear_cache`.
@@ -515,6 +565,8 @@ pub enum StreamPhase {
     Buffering,
     Ready,
     Stalled,
+    /// 60 s since `start_stream` without ever connecting to a peer.
+    NoPeers,
     Seeding,
     Done,
 }
@@ -783,6 +835,7 @@ mod tests {
                 StreamPhase::Buffering,
                 StreamPhase::Ready,
                 StreamPhase::Stalled,
+                StreamPhase::NoPeers,
                 StreamPhase::Seeding,
                 StreamPhase::Done
             ]),
@@ -792,6 +845,7 @@ mod tests {
                 "buffering",
                 "ready",
                 "stalled",
+                "no_peers",
                 "seeding",
                 "done"
             ])
@@ -1217,6 +1271,8 @@ mod tests {
             cache_dir_available: true,
             downloads_dir_available: false,
             downloads_outside_dir: 2,
+            default_downloads_dir: "/d".into(),
+            default_cache_dir: "/c".into(),
         };
         assert_eq!(
             to_json(&usage),
@@ -1228,7 +1284,9 @@ mod tests {
                 "downloadsFreeBytes": 5,
                 "cacheDirAvailable": true,
                 "downloadsDirAvailable": false,
-                "downloadsOutsideDir": 2
+                "downloadsOutsideDir": 2,
+                "defaultDownloadsDir": "/d",
+                "defaultCacheDir": "/c"
             })
         );
         let progress = MoveProgress {
@@ -1321,6 +1379,47 @@ mod tests {
         assert_eq!(
             to_json(&BackgroundError::new(&AppError::Internal("x".into()), None)),
             json!({ "code": "internal", "message": "internal error: x", "infohash": null })
+        );
+    }
+
+    #[test]
+    fn featured_reasons_and_home_profile() {
+        assert_eq!(
+            to_json(&FeaturedReason::BecauseWatched {
+                source_movie_id: 1,
+                source_title: "A".into()
+            }),
+            json!({ "kind": "because_watched", "sourceMovieId": 1, "sourceTitle": "A" })
+        );
+        assert_eq!(
+            to_json(&FeaturedReason::BecauseList {
+                source_movie_id: 2,
+                source_title: "B".into()
+            }),
+            json!({ "kind": "because_list", "sourceMovieId": 2, "sourceTitle": "B" })
+        );
+        assert_eq!(
+            to_json(&FeaturedReason::Genre {
+                genre: "sci-fi".into()
+            }),
+            json!({ "kind": "genre", "genre": "sci-fi" })
+        );
+        assert_eq!(
+            to_json(&FeaturedReason::Trending),
+            json!({ "kind": "trending" })
+        );
+        assert_eq!(
+            to_json(&HomeProfile::default()),
+            json!({ "becauseWatched": null, "genreOrder": [] })
+        );
+        let row = BecauseWatchedRow {
+            source_movie_id: 3,
+            source_title: "C".into(),
+            movies: vec![summary()],
+        };
+        assert_eq!(
+            to_json(&row),
+            json!({ "sourceMovieId": 3, "sourceTitle": "C", "movies": [summary_json()] })
         );
     }
 }

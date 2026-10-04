@@ -13,8 +13,9 @@ use crate::subtitles::{Credentials, Release};
 use crate::torrent::{kbps_to_bps, StreamRequest};
 use crate::types::{
     ApiEndpointStatus, ClearCacheResult, ContinueItem, Download, ExternalPlayerResult,
-    ListMoviesParams, MovieDetail, MoviePage, MovieSummary, Progress, Settings, SettingsPatch,
-    StorageUsage, StreamSession, SubtitleOption, SubtitleTrack, SubtitlesStatus,
+    FeaturedItem, HomeProfile, ListMoviesParams, MovieDetail, MoviePage, MovieSummary, Progress,
+    Settings, SettingsPatch, StorageUsage, StreamSession, SubtitleOption, SubtitleTrack,
+    SubtitlesStatus,
 };
 
 // ---------------------------------------------------------------------------
@@ -72,6 +73,33 @@ pub async fn get_suggestions(
 ) -> AppResult<Vec<MovieSummary>> {
     tracing::debug!(movie_id, "get_suggestions");
     state.yts.suggestions(movie_id).await
+}
+
+/// History for the recommendations: progress, Mi lista and downloads.
+async fn history(state: &AppState) -> AppResult<crate::recommend::History> {
+    let base = local_base(state);
+    Ok(crate::recommend::History::new(
+        state.db.progress_movies(base).await?,
+        state.db.list_favorites(base).await?,
+        state
+            .downloads
+            .list()
+            .into_iter()
+            .map(|d| d.movie)
+            .collect(),
+    ))
+}
+
+#[tauri::command]
+pub async fn get_featured(state: State<'_, AppState>) -> AppResult<Vec<FeaturedItem>> {
+    let history = history(&state).await?;
+    Ok(state.recommender.featured(&state.yts, &history).await)
+}
+
+#[tauri::command]
+pub async fn get_home_profile(state: State<'_, AppState>) -> AppResult<HomeProfile> {
+    let history = history(&state).await?;
+    Ok(state.recommender.home_profile(&state.yts, &history).await)
 }
 
 #[tauri::command]
@@ -512,12 +540,66 @@ pub async fn get_storage_usage(state: State<'_, AppState>) -> AppResult<StorageU
         cache_dir_available: crate::settings::dir_available(&configured_cache),
         downloads_dir_available: downloads.dir_available,
         downloads_outside_dir: downloads.outside_dir,
+        default_downloads_dir: state.paths.library_dir.to_string_lossy().into_owned(),
+        default_cache_dir: state.paths.cache_dir.to_string_lossy().into_owned(),
     })
 }
 
 #[tauri::command]
 pub async fn clear_cache(state: State<'_, AppState>) -> AppResult<ClearCacheResult> {
     state.cache.clear().await
+}
+
+// ---------------------------------------------------------------------------
+// Trailer
+// ---------------------------------------------------------------------------
+
+const TRAILER_WINDOW: &str = "trailer";
+
+/// Plan B for the trailer: a separate window with the local `/trailer/<code>` page (see
+/// `stream.rs`: the embed needs a `Referer`, which this page provides). Reuses the window
+/// if it is already open. The window has no IPC access (no capability lists it).
+#[tauri::command]
+pub async fn open_trailer_window(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    yt_trailer_code: String,
+    title: String,
+) -> AppResult<()> {
+    let code = yt_trailer_code.trim();
+    if !crate::stream::is_valid_yt_code(code) {
+        return Err(AppError::InvalidInput(format!(
+            "invalid trailer code {code:?}"
+        )));
+    }
+    let title: String = title.trim().chars().take(200).collect();
+    let url = crate::stream::trailer_url(local_base(&state), code, &title);
+    let parsed =
+        url::Url::parse(&url).map_err(|e| AppError::Internal(format!("trailer URL {url}: {e}")))?;
+    let window_title = if title.is_empty() {
+        "Tráiler".to_owned()
+    } else {
+        format!("{title} · Tráiler")
+    };
+    tracing::info!(%code, "opening trailer window");
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window(TRAILER_WINDOW) {
+        window
+            .navigate(parsed)
+            .and_then(|()| window.set_title(&window_title))
+            .and_then(|()| window.set_focus())
+            .map_err(|e| AppError::Internal(format!("trailer window: {e}")))?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(&app, TRAILER_WINDOW, tauri::WebviewUrl::External(parsed))
+        .title(window_title)
+        .inner_size(1280.0, 720.0)
+        .min_inner_size(480.0, 270.0)
+        .center()
+        .background_color(tauri::window::Color(0, 0, 0, 255))
+        .build()
+        .map_err(|e| AppError::Internal(format!("trailer window: {e}")))?;
+    Ok(())
 }
 
 #[cfg(test)]

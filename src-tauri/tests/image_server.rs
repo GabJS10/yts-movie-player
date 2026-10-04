@@ -131,3 +131,31 @@ async fn unknown_hash_is_not_found() {
     let unknown = format!("{}{}", &base[..base.len() - 32], "0".repeat(32));
     assert_eq!(reqwest::get(&unknown).await.unwrap().status(), 404);
 }
+
+#[tokio::test]
+async fn serves_the_trailer_page_with_its_own_origin_as_referrer() {
+    let h = start().await;
+    let base = h.images.local_base().to_owned();
+    let url = stream::trailer_url(&base, "9ix7TUGVYIo", "Matrix <4>");
+    let resp = reqwest::get(&url).await.unwrap();
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.headers()["content-type"], "text/html; charset=utf-8");
+    assert_eq!(
+        resp.headers()["referrer-policy"],
+        "strict-origin-when-cross-origin"
+    );
+    let html = resp.text().await.unwrap();
+    let origin: String = url::form_urlencoded::byte_serialize(base.as_bytes()).collect();
+    assert!(html.contains(&format!(
+        "youtube-nocookie.com/embed/9ix7TUGVYIo?autoplay=1&amp;rel=0&amp;playsinline=1&amp;origin={origin}"
+    )), "{html}");
+    assert!(html.contains("<title>Matrix &lt;4&gt;</title>"));
+
+    for bad in ["x", "has%20space%20in", "..%2F..%2Fetc"] {
+        let status = reqwest::get(format!("{base}/trailer/{bad}"))
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, 404, "{bad}");
+    }
+}

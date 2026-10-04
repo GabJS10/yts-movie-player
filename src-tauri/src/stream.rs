@@ -1,13 +1,20 @@
 //! Local HTTP server on 127.0.0.1 (random port). Serves cached images (`/img/<hash>`) and
 //! torrent files (`/stream/<infohash>/<fileIdx>`, with Range support) and converted
-//! subtitles (`/subs/<id>.vtt`).
+//! subtitles (`/subs/<id>.vtt`), plus the trailer page (`/trailer/<ytTrailerCode>`).
+//!
+//! Trailer: YouTube refuses an embed without a `Referer` (error 153, "Video player
+//! configuration error"). Checked in WebKit on 2026-10-04: the embed loaded straight in a
+//! window, or in an iframe with `referrerpolicy="no-referrer"`, fails with 153; the same
+//! iframe inside a page served from `http://127.0.0.1:<port>` (which sends that origin as
+//! `Referer`) plays. `tauri://localhost` sends no usable `Referer`, so the trailer window
+//! loads this page instead of the embed URL.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -59,6 +66,7 @@ pub fn router(state: ServerState) -> Router {
         .route("/img/{hash}", get(image))
         .route("/stream/{infohash}/{file_idx}", get(stream))
         .route("/subs/{file}", get(subtitle))
+        .route("/trailer/{code}", get(trailer))
         .layer(cors)
         .with_state(state)
 }
@@ -93,6 +101,99 @@ async fn image(State(state): State<ServerState>, Path(hash): Path<String>) -> Re
             (status, e.to_string()).into_response()
         }
     }
+}
+
+/// A YouTube video id: 6–20 of `[A-Za-z0-9_-]` (they are 11 today).
+pub fn is_valid_yt_code(code: &str) -> bool {
+    (6..=20).contains(&code.len())
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn escape_html(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '&' => "&amp;".to_owned(),
+            '<' => "&lt;".to_owned(),
+            '>' => "&gt;".to_owned(),
+            '"' => "&quot;".to_owned(),
+            '\'' => "&#39;".to_owned(),
+            c => c.to_string(),
+        })
+        .collect()
+}
+
+/// Full-window page with the `youtube-nocookie` embed. `origin` is this server's origin
+/// (`http://127.0.0.1:<port>`), sent by the iframe as `Referer`.
+pub fn trailer_page(code: &str, title: &str, origin: &str) -> String {
+    let src = format!(
+        "https://www.youtube-nocookie.com/embed/{code}?autoplay=1&rel=0&playsinline=1&origin={}",
+        url::form_urlencoded::byte_serialize(origin.as_bytes()).collect::<String>()
+    );
+    format!(
+        r#"<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>{title}</title>
+<style>html,body{{margin:0;height:100%;background:#000}}iframe{{border:0;width:100%;height:100%;display:block}}</style>
+</head>
+<body>
+<iframe src="{src}" title="{title}" referrerpolicy="strict-origin-when-cross-origin"
+ allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+</body>
+</html>
+"#,
+        title = escape_html(title),
+        src = escape_html(&src),
+    )
+}
+
+#[derive(serde::Deserialize)]
+struct TrailerQuery {
+    #[serde(default)]
+    title: String,
+}
+
+async fn trailer(
+    Path(code): Path<String>,
+    Query(q): Query<TrailerQuery>,
+    headers: HeaderMap,
+) -> Response {
+    if !is_valid_yt_code(&code) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    // Only our own loopback origin goes to YouTube as `origin`/`Referer`.
+    let host = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .filter(|h| h.starts_with("127.0.0.1:") || h.starts_with("localhost:"))
+        .unwrap_or("127.0.0.1");
+    let title = if q.title.trim().is_empty() {
+        "Tráiler".to_owned()
+    } else {
+        q.title.chars().take(200).collect()
+    };
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::REFERRER_POLICY, "strict-origin-when-cross-origin"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        trailer_page(&code, &title, &format!("http://{host}")),
+    )
+        .into_response()
+}
+
+/// Local URL of the trailer page (`open_trailer_window`).
+pub fn trailer_url(local_base: &str, code: &str, title: &str) -> String {
+    let title: String = url::form_urlencoded::byte_serialize(title.as_bytes()).collect();
+    format!(
+        "{}/trailer/{code}?title={title}",
+        local_base.trim_end_matches('/')
+    )
 }
 
 async fn subtitle(State(state): State<ServerState>, Path(file): Path<String>) -> Response {
@@ -166,4 +267,40 @@ async fn stream(
     response
         .body(body)
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn youtube_codes() {
+        assert!(is_valid_yt_code("9ix7TUGVYIo"));
+        assert!(is_valid_yt_code("a-b_c1"));
+        for bad in [
+            "",
+            "short",
+            "has space x",
+            "x\"><script",
+            "../../etc",
+            &"a".repeat(21),
+        ] {
+            assert!(!is_valid_yt_code(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn trailer_page_embeds_with_referrer_and_escapes_the_title() {
+        let page = trailer_page("9ix7TUGVYIo", "Tom & \"Jerry\" <3", "http://127.0.0.1:4321");
+        assert!(page.contains(
+            "https://www.youtube-nocookie.com/embed/9ix7TUGVYIo?autoplay=1&amp;rel=0&amp;playsinline=1&amp;origin=http%3A%2F%2F127.0.0.1%3A4321"
+        ));
+        assert!(page.contains(r#"referrerpolicy="strict-origin-when-cross-origin""#));
+        assert!(page.contains("<title>Tom &amp; &quot;Jerry&quot; &lt;3</title>"));
+        assert!(!page.contains("<3"));
+        assert_eq!(
+            trailer_url("http://127.0.0.1:4321/", "9ix7TUGVYIo", "Dune: Parte 2"),
+            "http://127.0.0.1:4321/trailer/9ix7TUGVYIo?title=Dune%3A+Parte+2"
+        );
+    }
 }

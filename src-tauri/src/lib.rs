@@ -6,6 +6,7 @@ pub mod error;
 pub mod external_player;
 pub mod images;
 pub mod paths;
+pub mod recommend;
 pub mod settings;
 pub mod state;
 pub mod stream;
@@ -175,6 +176,7 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         cache,
         subtitles,
         downloads,
+        recommender: recommend::Recommender::default(),
     })
 }
 
@@ -286,6 +288,8 @@ pub fn run() {
             commands::get_movie,
             commands::get_suggestions,
             commands::get_api_status,
+            commands::get_featured,
+            commands::get_home_profile,
             commands::start_stream,
             commands::stop_stream,
             commands::open_external_player,
@@ -312,6 +316,7 @@ pub fn run() {
             commands::open_download_folder,
             commands::move_downloads,
             commands::cancel_move_downloads,
+            commands::open_trailer_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

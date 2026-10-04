@@ -7,6 +7,7 @@ use crate::db::Db;
 use crate::downloads::DownloadManager;
 use crate::images::ImageStore;
 use crate::paths::AppPaths;
+use crate::recommend::Recommender;
 use crate::settings::SettingsStore;
 use crate::subtitles::SubtitlesClient;
 use crate::torrent::TorrentEngine;
@@ -25,4 +26,5 @@ pub struct AppState {
     pub cache: Arc<CacheManager>,
     pub subtitles: SubtitlesClient,
     pub downloads: Arc<DownloadManager>,
+    pub recommender: Recommender,
 }

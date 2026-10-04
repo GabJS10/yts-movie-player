@@ -289,9 +289,21 @@ pub struct PhaseInput {
     /// Time without peers or without download speed.
     pub idle_for: Duration,
     pub stall_after: Duration,
+    /// Long enough since `start_stream` (`noPeersAfter`) without ever connecting to a peer.
+    pub no_peers: bool,
 }
 
 pub fn compute_phase(i: &PhaseInput) -> StreamPhase {
+    let phase = base_phase(i);
+    // The torrent keeps trying; the front offers another version meanwhile.
+    if i.no_peers && !matches!(phase, StreamPhase::Ready | StreamPhase::Done) {
+        StreamPhase::NoPeers
+    } else {
+        phase
+    }
+}
+
+fn base_phase(i: &PhaseInput) -> StreamPhase {
     if i.resolving.is_none() && i.file_len > 0 && i.downloaded >= i.file_len {
         return StreamPhase::Done;
     }
@@ -385,6 +397,8 @@ pub struct EngineConfig {
     pub buffer_target_bytes: u64,
     pub stats_interval: Duration,
     pub stall_after: Duration,
+    /// `no_peers` phase after this long since `start_stream` without any peer.
+    pub no_peers_after: Duration,
     pub download_limit_bps: Option<NonZeroU32>,
     pub upload_limit_bps: Option<NonZeroU32>,
     /// Local HTTP server origin, e.g. `http://127.0.0.1:4321`.
@@ -408,6 +422,7 @@ impl EngineConfig {
             buffer_target_bytes: 8 * 1024 * 1024,
             stats_interval: Duration::from_secs(1),
             stall_after: Duration::from_secs(30),
+            no_peers_after: Duration::from_secs(60),
             download_limit_bps: None,
             upload_limit_bps: None,
             local_base,
@@ -572,6 +587,10 @@ struct Entry {
     readers: Arc<Readers>,
     stopped: AtomicBool,
     last_alive: Mutex<Instant>,
+    /// A peer was connected at some point (then `no_peers` never shows up).
+    ever_connected: AtomicBool,
+    /// Last `start_stream` that opened the stream (for `no_peers`).
+    stream_started: Mutex<Instant>,
     /// Serializes start/stop for this torrent: they apply in call order (React StrictMode
     /// fires start → stop → start back to back).
     control: Arc<tokio::sync::Mutex<()>>,
@@ -594,6 +613,8 @@ impl Entry {
             readers: Arc::new(Readers::default()),
             stopped: AtomicBool::new(false),
             last_alive: Mutex::new(Instant::now()),
+            ever_connected: AtomicBool::new(false),
+            stream_started: Mutex::new(Instant::now()),
             control: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
@@ -619,6 +640,15 @@ impl Entry {
         if let Ok(mut g) = self.resolving.lock() {
             *g = r;
         }
+    }
+
+    fn no_peers(&self, after: Duration) -> bool {
+        !self.ever_connected.load(Ordering::Relaxed)
+            && self
+                .stream_started
+                .lock()
+                .map(|t| t.elapsed() >= after)
+                .unwrap_or(false)
     }
 
     fn mark_alive(&self) {
@@ -883,7 +913,11 @@ impl TorrentEngine {
                 .await
                 .map_err(|e| torrent_err("resuming torrent", e))?;
         }
-        entry.stopped.store(false, Ordering::Relaxed);
+        if entry.stopped.swap(false, Ordering::Relaxed) {
+            if let Ok(mut t) = entry.stream_started.lock() {
+                *t = Instant::now();
+            }
+        }
         entry.mark_alive();
         if let Output::Cache(dir) = &entry.output {
             self.touch(dir);
@@ -1654,6 +1688,7 @@ impl TorrentEngine {
                     buffer_target: self.buffer_target_bytes(),
                     idle_for: entry.started.elapsed(),
                     stall_after: self.cfg.stall_after,
+                    no_peers: entry.no_peers(self.cfg.no_peers_after),
                 }),
                 peers: 0,
                 seeds: req.seeds,
@@ -1701,6 +1736,9 @@ impl TorrentEngine {
         if complete || (peers > 0 && down > 0) {
             entry.mark_alive();
         }
+        if peers > 0 {
+            entry.ever_connected.store(true, Ordering::Relaxed);
+        }
         if matches!(stats.state, TorrentStatsState::Error) {
             tracing::warn!(infohash = %req.infohash, error = ?stats.error, "torrent error");
         }
@@ -1714,6 +1752,7 @@ impl TorrentEngine {
             buffer_target: self.buffer_target_bytes(),
             idle_for: entry.idle_for(),
             stall_after: self.cfg.stall_after,
+            no_peers: entry.no_peers(self.cfg.no_peers_after),
         });
         // Reported for every active (not stopped) stream session.
         let window = piece_map_window(geo.len, position, PIECE_MAP_WINDOW);
@@ -2058,6 +2097,7 @@ mod tests {
             buffer_target: 500,
             idle_for: Duration::ZERO,
             stall_after: Duration::from_secs(30),
+            no_peers: false,
         }
     }
 
@@ -2122,6 +2162,51 @@ mod tests {
             compute_phase(&PhaseInput {
                 downloaded: 10_000,
                 idle_for: Duration::from_secs(99),
+                ..i
+            }),
+            StreamPhase::Done
+        );
+    }
+
+    #[test]
+    fn no_peers_unless_ready_or_done() {
+        let i = PhaseInput {
+            no_peers: true,
+            ..input()
+        };
+        for (resolving, peers, downloaded) in [
+            (Some(Resolving::Magnet), 0, 0),
+            (Some(Resolving::TorrentFile), 0, 0),
+            (None, 0, 0),
+            (None, 0, 1000),
+        ] {
+            let p = PhaseInput {
+                resolving,
+                peers,
+                downloaded,
+                ..i
+            };
+            assert_eq!(compute_phase(&p), StreamPhase::NoPeers, "{p:?}");
+        }
+        // Stalled turns into no_peers too.
+        assert_eq!(
+            compute_phase(&PhaseInput {
+                idle_for: Duration::from_secs(99),
+                ..i
+            }),
+            StreamPhase::NoPeers
+        );
+        // What is on disk is enough to play: not shown.
+        assert_eq!(
+            compute_phase(&PhaseInput {
+                buffered_ahead: 500,
+                ..i
+            }),
+            StreamPhase::Ready
+        );
+        assert_eq!(
+            compute_phase(&PhaseInput {
+                downloaded: 10_000,
                 ..i
             }),
             StreamPhase::Done

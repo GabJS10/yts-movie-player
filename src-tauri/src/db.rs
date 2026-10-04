@@ -356,6 +356,23 @@ impl Db {
             .collect())
     }
 
+    /// Every movie with progress (in progress and finished), most recent first.
+    pub async fn progress_movies(&self, local_base: &str) -> AppResult<Vec<MovieSummary>> {
+        let rows: Vec<String> = self
+            .call(|c| {
+                let mut stmt = c.prepare("SELECT movie FROM progress ORDER BY seq DESC")?;
+                let rows = stmt
+                    .query_map([], |r| r.get(0))?
+                    .collect::<Result<_, _>>()?;
+                Ok(rows)
+            })
+            .await?;
+        Ok(rows
+            .iter()
+            .filter_map(|json| load_movie(json, local_base))
+            .collect())
+    }
+
     pub async fn remove_progress(&self, movie_id: u64) -> AppResult<()> {
         self.call(move |c| {
             c.execute(
