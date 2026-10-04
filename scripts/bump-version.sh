@@ -12,6 +12,8 @@ current() {
 
 if [ "${1:-}" = "--check" ]; then
   want="${2#v}"
+  # A prerelease tag (v1.0.0-rc.1) is a dry run of the x.y.z packages.
+  want="${want%%-*}"
   bad=0
   for v in $(current); do [ "$v" = "$want" ] || bad=1; done
   if [ $bad -ne 0 ]; then

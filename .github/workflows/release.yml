@@ -43,6 +43,9 @@ jobs:
           workspaces: src-tauri
           key: release
       - run: npm ci
+      # Keep build-machine paths out of the binary (panic locations, tracing metadata).
+      - name: Remap source paths
+        run: echo "RUSTFLAGS=--remap-path-prefix=$HOME/.cargo/registry/src=/cargo/registry --remap-path-prefix=$HOME/.cargo/git=/cargo/git --remap-path-prefix=$HOME/.rustup=/rustup --remap-path-prefix=$GITHUB_WORKSPACE=/build" >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,7 +54,7 @@ jobs:
           releaseName: "YTS Player ${{ env.TAG }}"
           releaseBody: "Ver CHANGELOG.md. Paquetes para Linux: .deb (Debian/Ubuntu/Mint), .rpm (Fedora/openSUSE) y AppImage (cualquier distro)."
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(env.TAG, '-') }}
           args: --bundles deb,rpm,appimage
       # Test tools for the smoke jobs, built here so the clean containers stay clean.
       - name: Build the E2E seeder and tauri-driver
@@ -62,6 +65,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/smoke"
           cp target/debug/examples/e2e_seeder "$RUNNER_TEMP/tools/bin/tauri-driver" "$RUNNER_TEMP/smoke/"
           cp target/release/bundle/deb/*.deb target/release/bundle/appimage/*.AppImage "$RUNNER_TEMP/smoke/"
+      - name: No build-machine paths in the release binary
+        run: |
+          n=$(strings src-tauri/target/release/yts-player | grep -c "$HOME/" || true)
+          echo "paths with $HOME: $n"
+          test "$n" -eq 0
       - uses: actions/upload-artifact@v4
         with:
           name: smoke
