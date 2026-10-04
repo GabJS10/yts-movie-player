@@ -3,6 +3,8 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 type Props = {
   labelledBy: string;
   testId?: string;
+  /** Classes for the dialog box instead of the default `.modal` (e.g. the wide black trailer). */
+  className?: string;
   describedBy?: string;
   /** Esc and a click on the backdrop. */
   onClose: () => void;
@@ -13,7 +15,7 @@ type Props = {
  * Dialog over an 82 % black backdrop (DESIGN.md). Focus goes to the element marked `data-autofocus`
  * (else the first button), Tab stays inside, and focus returns to the opener on close.
  */
-export function Modal({ labelledBy, describedBy, onClose, children, testId }: Props) {
+export function Modal({ labelledBy, describedBy, onClose, children, testId, className = "modal" }: Props) {
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export function Modal({ labelledBy, describedBy, onClose, children, testId }: Pr
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
         ref={box}
-        className="modal"
+        className={className}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}

@@ -15,9 +15,18 @@ export type MockOptions = {
   tickMs: number;
   /** Settings patch applied before the first render (e.g. {"openSubtitlesApiKey":"quota"}). */
   settings: SettingsPatch | null;
+  /** Trailer page: real YouTube embed, "fake" (ready/playing without internet) or a YouTube error code. */
+  trailer: "youtube" | "fake" | number;
 };
 
-export const MOCK_KEYS = ["mock:latency", "mock:fail", "mock:offline", "mock:tick", "mock:settings"] as const;
+export const MOCK_KEYS = [
+  "mock:latency",
+  "mock:fail",
+  "mock:offline",
+  "mock:tick",
+  "mock:settings",
+  "mock:trailer",
+] as const;
 
 /** `add_favorite,start_stream=no_peers` → add_favorite: db, start_stream: no_peers. */
 export function parseFail(raw: string | null): Map<string, ErrorCode> {
@@ -51,12 +60,15 @@ export function readMockOptions(search: string, storage: Pick<Storage, "getItem"
     }
   }
   const latency = num(get("mock:latency"));
+  const trailerRaw = get("mock:trailer");
+  const trailerCode = num(trailerRaw);
   return {
     latencyMs: latency !== null && latency >= 0 ? latency : null,
     fail: parseFail(get("mock:fail")),
     offline: ["1", "true"].includes(get("mock:offline") ?? ""),
     tickMs: Math.max(0, num(get("mock:tick")) ?? 1000),
     settings,
+    trailer: trailerRaw === "fake" ? "fake" : trailerCode !== null ? trailerCode : "youtube",
   };
 }
 

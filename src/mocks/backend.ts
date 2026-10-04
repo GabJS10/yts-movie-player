@@ -23,7 +23,10 @@ import type {
 import catalog from "./catalog.json";
 
 // maxSeeds is derived from the torrents, not stored.
-type CatalogMovie = Omit<MovieDetail, "isFavorite" | "progress" | "download" | "maxSeeds" | "offline"> & {
+type CatalogMovie = Omit<
+  MovieDetail,
+  "isFavorite" | "progress" | "download" | "maxSeeds" | "offline" | "trailerUrl"
+> & {
   /** Position in the API's download_count order (mock-only sort key). */
   downloadRank: number;
   /** date_uploaded_unix (mock-only sort key). */
@@ -140,6 +143,21 @@ export type MockBackend = {
    * the saved copy (offline: true) of downloaded movies; only finished downloads play.
    */
   setOffline: (offline: boolean) => void;
+};
+
+/**
+ * The mock's /trailer page (src/mocks/trailer.html, served by Vite in dev). `trailerMode` "fake" posts
+ * ready/playing without YouTube (tests, e2e without internet); a number makes it post that error.
+ */
+let trailerMode: "youtube" | "fake" | number = "youtube";
+export const setMockTrailerMode = (mode: typeof trailerMode) => {
+  trailerMode = mode;
+};
+const trailerPage = (code: string, title: string) => {
+  const q = new URLSearchParams({ code, title });
+  if (trailerMode === "fake") q.set("fake", "1");
+  else if (typeof trailerMode === "number") q.set("fail", String(trailerMode));
+  return `/src/mocks/trailer.html?${q.toString()}`;
 };
 
 export function createMockBackend(): MockBackend {
@@ -310,6 +328,7 @@ export function createMockBackend(): MockBackend {
     progress: progress.get(m.id) ?? null,
     download: downloadOf(m.id),
     offline: false,
+    trailerUrl: m.ytTrailerCode ? trailerPage(m.ytTrailerCode, m.title) : null,
   });
   // A finished version first, then whichever is in progress.
   const downloadOf = (movieId: number) => {

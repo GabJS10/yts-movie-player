@@ -20,6 +20,7 @@ Cada opción se puede pasar en la URL de la primera carga (se lee una vez al arr
 | `mock:fail` | `cmd[=code],…` | Esos comandos rechazan con ese `ErrorCode` (por defecto `db`). Ej.: `get_movie=network`, `start_stream=no_peers,add_favorite`. |
 | `mock:offline` | `1` | Sin red: el catálogo falla con `network`; las películas descargadas abren su copia guardada y se reproducen desde la biblioteca. |
 | `mock:tick` | ms (`0` = nunca) | Paso de la simulación (búfer del stream, descargas, mover). Por defecto 1000. Con `0` se avanza a mano. |
+| `mock:trailer` | `fake` \| código | Página del tráiler: `fake` responde `ready`/`playing` sin YouTube (sin internet); un número (p. ej. `153`) manda ese error y dispara la cadena (ventana → navegador). Sin la clave: el embed real de YouTube. |
 | `mock:settings` | JSON | Parche de ajustes antes del primer render. Ej.: `{"openSubtitlesApiKey":"quota"}`, `{"openSubtitlesApiKey":null}`. |
 
 Ejemplo: `http://localhost:1420/movie/1632?mock:latency=0&mock:fail=start_stream=no_peers`.
@@ -44,7 +45,8 @@ En la consola (y desde `page.evaluate`) está `window.__ytsMock`:
 - **Subtítulos:**
   - Clave `invalid` da `subtitles_auth`; clave `quota` da cupo agotado.
   - The Shawshank Redemption no tiene subtítulos en español.
-- **Versiones con menos de 5 seeds:** se quedan en `stalled`.
+- **Versiones con 3–4 seeds:** se quedan en `stalled`. **Con 2 o menos** (p. ej. Captain Marvel 3D, id 12176) nunca conectan y a los 10 pasos (`NO_PEERS_TICKS`; 60 s en la app real) pasan a `no_peers`.
+- **Banner:** `get_featured` del mock es estable en la sesión: sugerencias de Spider-Verse (último visto), de Mi lista, un género y tendencias. Para el banner de siempre: `mock:fail=get_featured`.
 - **Carpetas:**
   - "Cambiar…" elige `/media/usb/Películas`.
   - Una ruta con `sin-permiso` se rechaza; con `desconectado` sale como no disponible; con `lleno` no se pueden mover las descargas de más de 2 GB.
@@ -66,9 +68,12 @@ En la consola (y desde `page.evaluate`) está `window.__ytsMock`:
 |---|---|
 | `hero` | Banner destacado. |
 | `hero-title`, `hero-play`, `hero-info`, `hero-favorite` | Título, Reproducir, Más info y ♥ del banner. |
-| `hero-prev`, `hero-next`, `hero-dot` (`data-index`), `hero-reason` | Controles y motivo del banner rotativo (fase 7, en curso). |
+| `hero-prev`, `hero-next`, `hero-pause` | Controles del banner rotativo (`hero-pause` lleva `aria-pressed`; oculto con `prefers-reduced-motion`). |
+| `hero-dot` | Punto de cada destacada; `data-index` y `aria-current="true"` en la actual. El `hero` lleva `data-index` de la actual. |
+| `hero-reason` | Motivo ("Porque viste X", "Para ti: Acción"…). Sin recomendaciones no aparece (banner de siempre). |
 | `movie-row` | Fila de películas; `data-title` = título visible de la fila. |
 | `movie-card` | Tarjeta (enlace a la Ficha); `data-movie-id`. |
+| `card-in-list` | Corazón verde de la tarjeta si la película está en Mi lista. |
 
 ### Buscar
 | id | Elemento |
@@ -85,7 +90,8 @@ En la consola (y desde `page.evaluate`) está `window.__ytsMock`:
 | `movie-restart` | "Desde el principio" (solo con progreso). |
 | `movie-favorite` | Mi lista (`aria-pressed`). |
 | `movie-download` | Descargar; `data-state` = `none` (botón) o el `DownloadState` (enlace a Descargas). |
-| `movie-trailer` | Tráiler (fase 7, en curso). |
+| `movie-trailer` | Tráiler (solo con `ytTrailerCode` y con red). |
+| `trailer-dialog`, `trailer-frame`, `trailer-youtube`, `trailer-close` | Modal del tráiler; `trailer-frame` lleva `data-phase` (`loading`, `ok`). |
 | `version-row` | Fila de la tabla de versiones (`role="radio"`, `aria-checked`); `data-infohash`. |
 
 ### Reproductor (`/play/:id`)
@@ -97,6 +103,7 @@ En la consola (y desde `page.evaluate`) está `window.__ytsMock`:
 | `player-back-10`, `player-forward-10`, `player-fullscreen`, `player-back` | −10 s, +10 s, pantalla completa y salir. |
 | `clock` | Tiempo actual / total. |
 | `phase` | Fase del arranque en la pantalla de búfer (`connecting`, `buffering`…). |
+| `no-peers`, `no-peers-alternative`, `no-peers-wait`, `no-peers-back` | Pantalla `no_peers`: otra versión con más seeds, seguir esperando, volver. |
 | `piece-map`, `subtitles`, `subtitle-notice`, `quota-line` | Mapa de piezas, capa de subtítulos y avisos de subtítulos. |
 
 ### Descargas (`/downloads`)
@@ -118,3 +125,4 @@ En la consola (y desde `page.evaluate`) está `window.__ytsMock`:
 | id | Elemento |
 |---|---|
 | `error-state` | Bloque de error con acción; `data-code` = `ErrorCode`. |
+| `error-retry`, `error-link`, `error-back` | Reintentar (si sirve para ese código), ir a donde se arregla (Ajustes, Descargas, Inicio) y volver (en el reproductor: "Volver a la ficha"). |

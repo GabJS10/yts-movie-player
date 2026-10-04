@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useDownloads, useMovie, useStartDownload, useSuggestions, useTorrentPrefs } from "../api/queries";
 import type { Download, MovieDetail, MovieSummary, Torrent } from "../api/types";
 import { ErrorState } from "../components/ErrorState";
@@ -8,6 +8,7 @@ import { Icon } from "../components/Icon";
 import { MovieMeta } from "../components/MovieMeta";
 import { Poster } from "../components/Poster";
 import { StaticMovieRow } from "../components/MovieRow";
+import { TrailerModal } from "../components/TrailerModal";
 import { VersionsTable } from "../components/VersionsTable";
 import { downloadForMovie, isActive, roundPercent } from "../lib/downloads";
 import { genreLabel } from "../lib/genres";
@@ -81,6 +82,10 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
     undefined;
   const resume = movie.progress && !movie.progress.finished ? movie.progress : null;
   const summary = useMemo(() => toSummary(movie), [movie]);
+  // The trailer needs the network; a saved copy (offline) has none to show.
+  const offline = useConnectivity((s) => s.offline) || movie.offline;
+  const [trailerOpen, setTrailerOpen] = useState(false);
+  const closeTrailer = useCallback(() => setTrailerOpen(false), []);
   // Sharp still first; the blurred background next; the poster (blurred further) as a last resort.
   const still = movie.screenshotUrls[0] ?? movie.backgroundUrl;
   const art = still ?? movie.coverLargeUrl ?? movie.coverUrl;
@@ -154,6 +159,17 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
             )}
             <FavoriteButton movie={summary} isFavorite={movie.isFavorite} testId="movie-favorite" />
             <DownloadButton movie={summary} download={download} torrent={chosen} />
+            {movie.ytTrailerCode && !offline && (
+              <button
+                type="button"
+                className="btn btn-line"
+                data-testid="movie-trailer"
+                onClick={() => setTrailerOpen(true)}
+              >
+                <Icon name="film" size={22} />
+                Tráiler
+              </button>
+            )}
           </div>
           {movie.offline && (
             <p className="-mt-3 mb-5 flex items-center gap-2 text-[13.5px] text-muted" role="status">
@@ -197,6 +213,14 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
           )}
         </section>
       </div>
+      {trailerOpen && movie.ytTrailerCode && (
+        <TrailerModal
+          title={movie.title}
+          ytTrailerCode={movie.ytTrailerCode}
+          src={movie.trailerUrl}
+          onClose={closeTrailer}
+        />
+      )}
     </article>
   );
 }

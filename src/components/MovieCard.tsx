@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useFavorites } from "../api/queries";
 import type { MovieSummary, Quality } from "../api/types";
 import { formatRating, formatRuntime } from "../lib/format";
 import { qualityRank } from "../lib/versions";
@@ -10,6 +11,8 @@ import { SwarmSignal } from "./SwarmSignal";
 export function MovieCard({ movie }: { movie: MovieSummary }) {
   const order = (q: Quality) => (q === "3D" ? 99 : qualityRank(q));
   const qualities = [...movie.qualities].sort((a, b) => order(a) - order(b));
+  // Shared, cached list: every card reads the same query.
+  const inList = useFavorites().data?.some((f) => f.id === movie.id) ?? false;
   return (
     <Link
       to="/movie/$movieId"
@@ -21,6 +24,16 @@ export function MovieCard({ movie }: { movie: MovieSummary }) {
       data-movie-id={movie.id}
     >
       <Poster src={movie.coverUrl} title={movie.title} />
+      {inList && (
+        <span
+          className="absolute top-2 right-2 grid size-[22px] place-items-center rounded-full bg-[rgba(12,12,12,.75)] text-green"
+          title="En Mi lista"
+          aria-hidden="true"
+          data-testid="card-in-list"
+        >
+          <Icon name="heart-fill" size={13} />
+        </span>
+      )}
       <div className="card-info" aria-hidden="true">
         <h3 className="m-0 mb-1 line-clamp-2 text-sm leading-tight font-[750]">{movie.title}</h3>
         <div className="mb-2 flex items-center gap-2 text-xs text-text-2 tnum">

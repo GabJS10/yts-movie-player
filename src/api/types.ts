@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.12); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.12.1); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -79,6 +79,8 @@ export type MovieDetail = MovieSummary & {
   language: string;
   mpaRating: string | null;
   ytTrailerCode: string | null;
+  /** Local trailer page (http://127.0.0.1:<port>/trailer/<code>?title=…), session-only; null without a trailer. */
+  trailerUrl: string | null;
   cast: CastMember[];
   /** Sharp 1280 px stills; [] if none. Hero and movie page use [0] ?? backgroundUrl (which is small and blurred). */
   screenshotUrls: string[];
@@ -122,6 +124,13 @@ export type ApiEndpointStatus = {
   role: "active" | "fallback";
   latencyMs: number | null;
   ok: boolean;
+};
+
+/** postMessage from the /trailer page to its parent (and opener). `code`: YouTube's, only on "error". */
+export type TrailerMessage = {
+  source: "yts-trailer";
+  event: "ready" | "playing" | "ended" | "error";
+  code?: number;
 };
 
 // ───────── Recommendations ─────────
