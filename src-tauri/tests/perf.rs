@@ -2,8 +2,14 @@
 //! downloads and 1 stream at the same time, and background tasks left after the shutdown.
 //!
 //! ```text
+//! cargo build --release --example e2e_seeder
 //! cargo test --release --test perf -- --ignored --nocapture
 //! ```
+//!
+//! Measured on 2026-10-04 (release, 4 × 96 MiB downloads + 1 stream, 12 MiB/s total limit):
+//! RSS 6 MiB before → 22.6 MiB max; 43 % of one core on average (piece hashing at ~10
+//! MiB/s plus the player reading the stream as fast as it arrives); shutdown 1.4 s; 0
+//! background tasks left.
 //!
 //! The seeders are separate processes (`examples/e2e_seeder`), so only the app side
 //! (engine, download manager, local HTTP server, DB) is measured.
