@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>YTS Player</title>
+  <!--
+    App icon (design: frontend, DESIGN.md "The Release Sheet After Dark").
+    The five-bar swarm signal, tallest to shortest, reads as a play button: "know whether it will stream
+    before you press play". Flat: the Ground grey with a hairline, YTS Green bars. Built to stay legible
+    at 32 px (five solid bars, wide gaps, no text). Source for `npx tauri icon design/icon/app-icon.svg`.
+  -->
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="#171717"/>
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="none" stroke="#333333" stroke-width="8"/>
+  <g fill="#6ac045">
+    <rect x="224" y="212" width="92" height="600" rx="22"/>
+    <rect x="354" y="277" width="92" height="470" rx="22"/>
+    <rect x="484" y="342" width="92" height="340" rx="22"/>
+    <rect x="614" y="405" width="92" height="214" rx="22"/>
+    <rect x="744" y="466" width="92" height="92" rx="22"/>
+  </g>
+</svg>
