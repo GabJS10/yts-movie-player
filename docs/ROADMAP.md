@@ -144,21 +144,27 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 
 ## Fase 5: Subtítulos
 
-**Objetivo:** subtítulos en español que se cargan solos y quedan sincronizados.
+**Objetivo:** subtítulos en español que se cargan solos y quedan sincronizados, más la opción de cargar un `.srt` propio. Contrato: IPC v0.7.
 
 - **backend:**
-  - `subtitles.rs`: cliente REST de OpenSubtitles con la API key de Ajustes.
-  - Búsqueda por IMDb, ordenada por coincidencia con el release de YTS y por número de descargas.
-  - Descarga, detección de encoding (latin-1/utf-8) y conversión SRT→VTT, servida en `/subs/<id>.vtt`.
-  - Comandos `search_subtitles`, `load_subtitle` y `load_subtitle_file`.
-  - Errores `subtitles_auth` y `subtitles_quota`.
+  - `subtitles.rs`: cliente REST de OpenSubtitles (`https://api.opensubtitles.com/api/v1`, cabeceras `Api-Key` y `User-Agent: YTSPlayer v<versión>`): `GET /subtitles`, `POST /download` y, si hay usuario y contraseña en Ajustes, `POST /login` con el token guardado en memoria durante la sesión (se invalida al cambiar las credenciales). Verificar las cifras reales de cupo sin cuenta y con cuenta gratuita y anotarlas.
+  - Búsqueda por `imdbCode` + idioma. Orden: coincidencia con el release de YTS (calidad y fuente del infohash: `1080p`, `BluRay`/`WEB`…), luego al final los `hearingImpaired` y `aiTranslated` (salvo que no haya otros), luego más descargados.
+  - Conversión SRT→VTT: BOM, latin-1/windows-1252 → UTF-8, `\r\n`, tiempos con coma, numeración rota, líneas vacías extra, etiquetas `<i>`/`<b>` (se conservan) y `{\an8}` (se quitan).
+  - Caché en disco `<datos>/subs/<fileId>.vtt` (en la ubicación por defecto, como la DB): volver a cargar un subtítulo no gasta cupo. Servido en `/subs/<id>.vtt` **con cabeceras CORS** para el origen de la WebView.
+  - Comandos `search_subtitles`, `load_subtitle`, `load_subtitle_file` (`.srt`/`.vtt` desde una ruta) y `get_subtitles_status`.
+  - Plugin `tauri-plugin-dialog` (y su permiso de abrir archivo en `capabilities/`) para "Cargar archivo…".
+  - Errores `subtitles_auth` y `subtitles_quota` (con la hora de renovación). Las credenciales y la key nunca aparecen en los logs.
 - **frontend:**
-  - Menú de subtítulos del reproductor (como en el prototipo), carga automática según `autoSubtitles` y `subtitleLang`, ajuste del retraso y `.srt` arrastrado al reproductor.
-  - Campo de la API key en Ajustes y mensaje claro cuando falta.
+  - **Carga automática:** con `autoSubtitles` y key configurada, al empezar a reproducir se busca en `subtitleLang` y se carga el primer resultado. Si no hay nada en ese idioma, aviso discreto y oferta de inglés.
+  - **Capa propia de subtítulos:** el `<track>` se carga en modo `hidden` y el reproductor dibuja los `cue` activos en su propia capa (tamaño y estilo del diseño, sombra legible, sube cuando aparecen los controles). El retraso se aplica al elegir el `cue` (tiempo del video − retraso), sin depender de cómo dibuja WebKitGTK las pistas.
+  - Menú de subtítulos del reproductor (como en el prototipo): desactivados, opciones (marca en las que coinciden con el release), "Cargar archivo…" y retraso ±0,1 s (atajos `G`/`H`; se recuerda por película durante la sesión).
+  - Soltar un `.srt` sobre el reproductor lo carga (`onDragDropEvent` de Tauri).
+  - Ajustes → Subtítulos (deja de ser "Próximamente"): API key (oculta), usuario y contraseña opcionales, botón **Probar** (`get_subtitles_status`: válida, con sesión, cupo restante), idioma y carga automática. Sin key: mensaje claro con cómo conseguirla.
+  - Errores: sin key → enlace a Ajustes; cupo agotado → "se renueva a las HH:MM", y sigue disponible cargar un archivo.
 - **Tests:**
-  - Backend: SRT→VTT con casos difíciles (BOM, latin-1, saltos `\r\n`, tiempos con coma), ranking y wiremock de OpenSubtitles.
-  - Frontend: selección automática, desplazamiento de los `cue` por el retraso y estado sin API key.
-- **Cierre:** al reproducir aparecen solos los subtítulos en español y sincronizados, y se puede cargar un `.srt` manual. Tag `fase-5`.
+  - Backend: SRT→VTT con los casos difíciles (fixtures reales), ranking, wiremock de OpenSubtitles (búsqueda, descarga, login, 401 → `subtitles_auth`, 406/429 → `subtitles_quota`) y que la caché en disco evita la segunda descarga.
+  - Frontend: selección automática y caída a inglés, cue activo según el retraso, menú y atajos, estado sin key, error de cupo y carga por archivo.
+- **Cierre:** al reproducir aparecen solos los subtítulos en español y sincronizados, el retraso funciona, se puede cargar un `.srt` manual y sin key la app explica qué hacer. Tag `fase-5`.
 
 ## Fase 6: Descargas, caché y Ajustes completos
 

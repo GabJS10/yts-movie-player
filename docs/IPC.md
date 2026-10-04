@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.6 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.7 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -181,6 +181,7 @@ type StreamSession = {
 | `search_subtitles` | `{ movieId: number, lang: string, infohash?: string }` | `SubtitleOption[]` |
 | `load_subtitle` | `{ subtitleId: string }` | `SubtitleTrack` |
 | `load_subtitle_file` | `{ path: string }` | `SubtitleTrack` |
+| `get_subtitles_status` | — | `SubtitlesStatus` |
 
 ```ts
 type SubtitleOption = {
@@ -190,6 +191,7 @@ type SubtitleOption = {
   downloads: number;
   hearingImpaired: boolean;
   matchesRelease: boolean;         // coincide con el release de YTS del infohash dado
+  aiTranslated: boolean;           // traducido por IA o por máquina
 };
 
 type SubtitleTrack = {
@@ -197,9 +199,21 @@ type SubtitleTrack = {
   lang: string | null;
   label: string;
 };
+
+type SubtitlesStatus = {
+  configured: boolean;             // hay API key
+  loggedIn: boolean;               // hay usuario y contraseña y el login funcionó
+  remainingDownloads: number | null; // null si OpenSubtitles no lo informa (sin login)
+  resetAt: string | null;          // ISO 8601: cuándo se renueva el cupo (último valor conocido)
+};
 ```
 
-- Los resultados se ordenan primero por `matchesRelease` y después por `downloads`, de mayor a menor.
+- Los resultados se ordenan primero por `matchesRelease`, después dejando al final los `hearingImpaired` y `aiTranslated` (salvo que no haya otros), y por último por `downloads`, de mayor a menor.
+- Si no hay API key, `search_subtitles` y `load_subtitle` fallan con `subtitles_auth`; `load_subtitle_file` funciona siempre.
+- `load_subtitle` primero busca el `.vtt` en la caché de disco (`<datos>/subs/<fileId>.vtt`): si ya está, no llama a la API ni gasta cupo.
+- `subtitles_quota`: el `message` lleva la hora de renovación; el front la obtiene de forma estructurada con `get_subtitles_status` (`resetAt`).
+- `get_subtitles_status` valida la API key (y hace login si hay credenciales); con la key inválida falla con `subtitles_auth`. Es el botón "Probar" de Ajustes.
+- `load_subtitle_file` acepta `.srt` y `.vtt`; la ruta llega del diálogo de archivo o del drag & drop de Tauri (`onDragDropEvent`, que da rutas reales).
 - La búsqueda usa el `imdbCode` de la película: el backend lo obtiene a partir de `movieId`.
 - El retraso de los subtítulos lo aplica el front, desplazando los `cue`. No pasa por IPC.
 
@@ -278,6 +292,8 @@ type Settings = {
   apiBaseUrls: string[];           // en orden de preferencia
   // Subtítulos
   openSubtitlesApiKey: string | null;
+  openSubtitlesUsername: string | null; // opcional: con cuenta, más cupo diario
+  openSubtitlesPassword: string | null;
   subtitleLang: string;            // "es"
   autoSubtitles: boolean;
   // Reproducción
@@ -300,7 +316,7 @@ type StorageUsage = { cacheBytes: number; cacheLimitBytes: number; libraryBytes:
 type ClearCacheResult = { freedBytes: number };
 
 // Todas las claves son opcionales. Clave ausente = no tocar.
-// En los campos que admiten null (openSubtitlesApiKey, downLimitKbps, upLimitKbps, listenPort),
+// En los campos que admiten null (openSubtitlesApiKey, openSubtitlesUsername, openSubtitlesPassword, downLimitKbps, upLimitKbps, listenPort),
 // enviar null = borrar el valor (sin key, sin límite, puerto automático).
 // En Rust: Option<Option<T>> (p. ej. con serde_with::rust::double_option).
 type SettingsPatch = Partial<Settings>;
@@ -308,7 +324,7 @@ type SettingsPatch = Partial<Settings>;
 
 - `update_settings` valida los datos y devuelve los ajustes completos ya aplicados. Los límites de velocidad y el puerto se aplican en caliente, sin reiniciar la app.
 - `dataDir` es la excepción: el cambio se guarda, pero **se aplica al reiniciar la app**, y lo que hay en `cache/` y `library/` no se mueve solo. La UI tiene que avisarlo ("Se aplicará al reiniciar; las descargas existentes se quedan en la carpeta anterior").
-- `openSubtitlesApiKey` solo se guarda en local (SQLite) y no se escribe nunca en los logs.
+- `openSubtitlesApiKey`, `openSubtitlesUsername` y `openSubtitlesPassword` solo se guardan en local (SQLite) y no se escriben nunca en los logs. Cambiarlos invalida el token de sesión de OpenSubtitles.
 
 ### Tráiler
 
@@ -385,3 +401,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.4** (2026-10-03): `MovieSummary.maxSeeds` y `MovieDetail.screenshotUrls`.
 - **v0.5** (2026-10-03): `TorrentStats.seeds` = seeds de YTS (estático); pieceMap "3" reservado y sin emitir; `start_stream` usa el `.torrent` de YTS y cae al magnet si falla (la fase `metadata` solo aparece en ese caso).
 - **v0.6** (2026-10-03): `pieceMap` se muestrea sobre una ventana de 64 MB desde la posición de lectura; nuevo `TorrentStats.pieceMapWindow`.
+- **v0.7** (2026-10-04): subtítulos. `SubtitleOption.aiTranslated`, comando `get_subtitles_status` (tipo `SubtitlesStatus`), credenciales opcionales `openSubtitlesUsername`/`openSubtitlesPassword` en `Settings`, caché de `.vtt` en disco y reglas de orden. Sin cambios que rompan.
