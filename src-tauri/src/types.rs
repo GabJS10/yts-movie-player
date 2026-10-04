@@ -23,6 +23,19 @@ pub enum Quality {
     ThreeD,
 }
 
+impl Quality {
+    /// The IPC/YTS label: "1080p", "3D"…
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::P480 => "480p",
+            Self::P720 => "720p",
+            Self::P1080 => "1080p",
+            Self::P2160 => "2160p",
+            Self::ThreeD => "3D",
+        }
+    }
+}
+
 /// Quality filter accepted by `list_movies` (YTS also allows `1080p.x265` there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QualityFilter {
@@ -132,6 +145,9 @@ pub struct MovieDetail {
     pub is_favorite: bool,
     pub progress: Option<Progress>,
     pub download: Option<Download>,
+    /// From the copy saved when downloading (no network). Missing in older copies.
+    #[serde(default)]
+    pub offline: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -825,6 +841,7 @@ mod tests {
             is_favorite: false,
             progress: Some(progress()),
             download: None,
+            offline: false,
         };
         let mut expected = summary_json();
         let extra = json!({
@@ -837,7 +854,8 @@ mod tests {
             "torrents": [],
             "isFavorite": false,
             "progress": progress_json(),
-            "download": null
+            "download": null,
+            "offline": false
         });
         expected
             .as_object_mut()

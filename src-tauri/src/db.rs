@@ -14,7 +14,7 @@ use url::Url;
 
 use crate::error::{AppError, AppResult};
 use crate::images::ImageStore;
-use crate::types::{ContinueItem, MovieSummary, Progress};
+use crate::types::{CastMember, ContinueItem, MovieDetail, MovieSummary, Progress};
 
 pub const DB_FILE: &str = "yts-player.db";
 
@@ -22,7 +22,7 @@ pub const DB_FILE: &str = "yts-player.db";
 pub const FINISHED_RATIO: f64 = 0.92;
 
 /// Migration `i` takes the schema from version `i` to `i + 1`. Append only, never edit.
-pub const MIGRATIONS: &[&str] = &[MIGRATION_1];
+pub const MIGRATIONS: &[&str] = &[MIGRATION_1, MIGRATION_2];
 
 const MIGRATION_1: &str = "
 CREATE TABLE favorites (
@@ -63,6 +63,89 @@ CREATE TABLE downloads (
     added_at    TEXT NOT NULL
 );
 ";
+
+/// Phase 6: what a download needs to survive a restart without network.
+const MIGRATION_2: &str = "
+ALTER TABLE downloads ADD COLUMN title TEXT NOT NULL DEFAULT '';
+ALTER TABLE downloads ADD COLUMN torrent_url TEXT;
+ALTER TABLE downloads ADD COLUMN torrent BLOB;              -- .torrent bytes
+ALTER TABLE downloads ADD COLUMN rel_path TEXT;             -- video path inside `path`
+ALTER TABLE downloads ADD COLUMN downloaded_bytes INTEGER NOT NULL DEFAULT 0;
+-- MovieDetail JSON saved when downloading (local URLs without origin), for offline use.
+CREATE TABLE movie_details (
+    movie_id   INTEGER PRIMARY KEY,
+    detail     TEXT NOT NULL,
+    saved_at   TEXT NOT NULL
+);
+";
+
+/// A row of `downloads`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DownloadRow {
+    pub infohash: String,
+    pub movie_id: u64,
+    /// Stored summary (local URLs without origin).
+    pub movie: MovieSummary,
+    pub quality: String,
+    pub video_codec: String,
+    /// "active" | "paused" | "done" | "error".
+    pub state: String,
+    pub size_bytes: u64,
+    /// Library folder (absolute).
+    pub path: String,
+    pub error: Option<String>,
+    pub added_at: String,
+    pub title: String,
+    pub torrent_url: Option<String>,
+    pub torrent: Option<Vec<u8>>,
+    pub rel_path: Option<String>,
+    pub downloaded_bytes: u64,
+}
+
+const DOWNLOAD_COLUMNS: &str = "infohash, movie_id, movie, quality, video_codec, state, \
+     size_bytes, path, error, added_at, title, torrent_url, torrent, rel_path, downloaded_bytes";
+
+fn download_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(DownloadRow, String)> {
+    let movie_json: String = r.get(2)?;
+    Ok((
+        DownloadRow {
+            infohash: r.get(0)?,
+            movie_id: r.get::<_, i64>(1)? as u64,
+            movie: placeholder_movie(),
+            quality: r.get(3)?,
+            video_codec: r.get(4)?,
+            state: r.get(5)?,
+            size_bytes: r.get::<_, i64>(6)?.max(0) as u64,
+            path: r.get::<_, Option<String>>(7)?.unwrap_or_default(),
+            error: r.get(8)?,
+            added_at: r.get(9)?,
+            title: r.get(10)?,
+            torrent_url: r.get(11)?,
+            torrent: r.get(12)?,
+            rel_path: r.get(13)?,
+            downloaded_bytes: r.get::<_, i64>(14)?.max(0) as u64,
+        },
+        movie_json,
+    ))
+}
+
+fn placeholder_movie() -> MovieSummary {
+    MovieSummary {
+        id: 0,
+        imdb_code: String::new(),
+        title: String::new(),
+        year: 0,
+        rating: 0.0,
+        runtime_min: 0,
+        genres: Vec::new(),
+        cover_url: None,
+        cover_large_url: None,
+        background_url: None,
+        qualities: Vec::new(),
+        has_x264: false,
+        max_seeds: 0,
+    }
+}
 
 /// ISO 8601 UTC with milliseconds, e.g. `2026-10-03T12:00:00.123Z`.
 const NOW: &str = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
@@ -284,6 +367,193 @@ impl Db {
         .await
     }
 
+    // -- Downloads ------------------------------------------------------------------------
+
+    /// Inserts or replaces a download (the movie is stored without the local origin).
+    pub async fn put_download(&self, images: &ImageStore, row: &DownloadRow) -> AppResult<()> {
+        let (json, imgs) = stored(images, &row.movie)?;
+        let row = row.clone();
+        self.call(move |c| {
+            let tx = c.transaction()?;
+            save_images(&tx, &imgs)?;
+            tx.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO downloads ({DOWNLOAD_COLUMNS})
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"
+                ),
+                params![
+                    row.infohash,
+                    row.movie_id as i64,
+                    json,
+                    row.quality,
+                    row.video_codec,
+                    row.state,
+                    row.size_bytes as i64,
+                    row.path,
+                    row.error,
+                    row.added_at,
+                    row.title,
+                    row.torrent_url,
+                    row.torrent,
+                    row.rel_path,
+                    row.downloaded_bytes as i64,
+                ],
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Updates the fields that change while downloading.
+    pub async fn update_download(
+        &self,
+        infohash: &str,
+        state: &str,
+        error: Option<String>,
+        size_bytes: u64,
+        downloaded_bytes: u64,
+    ) -> AppResult<()> {
+        let (infohash, state) = (infohash.to_owned(), state.to_owned());
+        self.call(move |c| {
+            c.execute(
+                "UPDATE downloads SET state = ?2, error = ?3, size_bytes = ?4, downloaded_bytes = ?5
+                 WHERE infohash = ?1",
+                params![infohash, state, error, size_bytes as i64, downloaded_bytes as i64],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Saves what the torrent resolved: `.torrent` bytes, video path and size.
+    pub async fn set_download_torrent(
+        &self,
+        infohash: &str,
+        torrent: Vec<u8>,
+        rel_path: String,
+        size_bytes: u64,
+    ) -> AppResult<()> {
+        let infohash = infohash.to_owned();
+        self.call(move |c| {
+            c.execute(
+                "UPDATE downloads SET torrent = ?2, rel_path = ?3, size_bytes = ?4
+                 WHERE infohash = ?1",
+                params![infohash, torrent, rel_path, size_bytes as i64],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Every download, oldest first, with the current local origin on its movie.
+    pub async fn list_downloads(&self, local_base: &str) -> AppResult<Vec<DownloadRow>> {
+        let rows: Vec<(DownloadRow, String)> = self
+            .call(|c| {
+                let mut stmt = c.prepare(&format!(
+                    "SELECT {DOWNLOAD_COLUMNS} FROM downloads ORDER BY added_at, rowid"
+                ))?;
+                let rows = stmt
+                    .query_map([], download_from_row)?
+                    .collect::<Result<_, _>>()?;
+                Ok(rows)
+            })
+            .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(mut row, json)| {
+                row.movie = load_movie(&json, local_base)?;
+                Some(row)
+            })
+            .collect())
+    }
+
+    /// Deletes the download and, if it was the movie's last one, its saved detail.
+    pub async fn remove_download(&self, infohash: &str) -> AppResult<()> {
+        let infohash = infohash.to_owned();
+        self.call(move |c| {
+            let tx = c.transaction()?;
+            let movie_id: Option<i64> = tx
+                .query_row(
+                    "SELECT movie_id FROM downloads WHERE infohash = ?1",
+                    [&infohash],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            tx.execute("DELETE FROM downloads WHERE infohash = ?1", [&infohash])?;
+            if let Some(id) = movie_id {
+                tx.execute(
+                    "DELETE FROM movie_details WHERE movie_id = ?1
+                     AND NOT EXISTS (SELECT 1 FROM downloads WHERE movie_id = ?1)",
+                    [id],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    // -- Offline movie details ------------------------------------------------------------
+
+    pub async fn put_movie_detail(
+        &self,
+        images: &ImageStore,
+        detail: &MovieDetail,
+    ) -> AppResult<()> {
+        let stored_detail = detail_to_stored(detail);
+        let imgs: Vec<(String, String)> = detail_image_paths(&stored_detail)
+            .filter_map(|p| {
+                let hash = p.strip_prefix("/img/")?;
+                Some((hash.to_owned(), images.remote_url(hash)?))
+            })
+            .collect();
+        let json = serde_json::to_string(&stored_detail)
+            .map_err(|e| AppError::Internal(format!("serializing movie detail: {e}")))?;
+        let id = detail.summary_fields.id;
+        self.call(move |c| {
+            let tx = c.transaction()?;
+            save_images(&tx, &imgs)?;
+            tx.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO movie_details (movie_id, detail, saved_at)
+                     VALUES (?1, ?2, {NOW})"
+                ),
+                params![id as i64, json],
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// The saved detail (current local origin, user fields cleared), if any.
+    pub async fn movie_detail(
+        &self,
+        movie_id: u64,
+        local_base: &str,
+    ) -> AppResult<Option<MovieDetail>> {
+        let json: Option<String> = self
+            .call(move |c| {
+                Ok(c.query_row(
+                    "SELECT detail FROM movie_details WHERE movie_id = ?1",
+                    [movie_id as i64],
+                    |r| r.get(0),
+                )
+                .optional()?)
+            })
+            .await?;
+        Ok(
+            json.and_then(|j| match serde_json::from_str::<MovieDetail>(&j) {
+                Ok(d) => Some(detail_from_stored(d, local_base)),
+                Err(e) => {
+                    tracing::warn!(movie_id, error = %e, "unreadable saved movie detail");
+                    None
+                }
+            }),
+        )
+    }
+
     // -- Settings (raw rows; the logic lives in `settings.rs`) --------------------------
 
     pub async fn settings_rows(&self) -> AppResult<Vec<(String, String)>> {
@@ -401,6 +671,66 @@ pub fn from_stored(movie: MovieSummary, local_base: &str) -> MovieSummary {
     }
 }
 
+fn strip_opt(u: &Option<String>) -> Option<String> {
+    u.as_deref().and_then(strip_local_origin)
+}
+
+/// The detail as stored: local URLs without origin and no per-user fields (favorite,
+/// progress and download are read live).
+pub fn detail_to_stored(d: &MovieDetail) -> MovieDetail {
+    MovieDetail {
+        summary_fields: to_stored(&d.summary_fields),
+        screenshot_urls: d
+            .screenshot_urls
+            .iter()
+            .filter_map(|u| strip_local_origin(u))
+            .collect(),
+        cast: d
+            .cast
+            .iter()
+            .map(|c| CastMember {
+                image_url: strip_opt(&c.image_url),
+                ..c.clone()
+            })
+            .collect(),
+        is_favorite: false,
+        progress: None,
+        download: None,
+        offline: false,
+        ..d.clone()
+    }
+}
+
+pub fn detail_from_stored(d: MovieDetail, local_base: &str) -> MovieDetail {
+    let base = local_base.trim_end_matches('/');
+    MovieDetail {
+        summary_fields: from_stored(d.summary_fields.clone(), local_base),
+        screenshot_urls: d
+            .screenshot_urls
+            .iter()
+            .map(|p| format!("{base}{p}"))
+            .collect(),
+        cast: d
+            .cast
+            .iter()
+            .map(|c| CastMember {
+                image_url: c.image_url.as_ref().map(|p| format!("{base}{p}")),
+                ..c.clone()
+            })
+            .collect(),
+        ..d
+    }
+}
+
+fn detail_image_paths(d: &MovieDetail) -> impl Iterator<Item = &String> {
+    let s = &d.summary_fields;
+    [&s.cover_url, &s.cover_large_url, &s.background_url]
+        .into_iter()
+        .flatten()
+        .chain(d.screenshot_urls.iter())
+        .chain(d.cast.iter().filter_map(|c| c.image_url.as_ref()))
+}
+
 /// JSON to store plus the `hash → remote URL` pairs its images need after a restart.
 fn stored(images: &ImageStore, movie: &MovieSummary) -> AppResult<(String, Vec<(String, String)>)> {
     let movie = to_stored(movie);
@@ -485,7 +815,14 @@ mod tests {
         assert_eq!(version as usize, MIGRATIONS.len());
         assert_eq!(
             tables(&conn),
-            ["downloads", "favorites", "images", "progress", "settings"]
+            [
+                "downloads",
+                "favorites",
+                "images",
+                "movie_details",
+                "progress",
+                "settings"
+            ]
         );
         // Reopening is a no-op.
         drop(conn);
@@ -699,5 +1036,148 @@ mod tests {
             db.settings_rows().await.unwrap(),
             [("subtitleLang".to_owned(), "\"en\"".to_owned())]
         );
+    }
+
+    fn download_row(infohash: &str, movie_id: u64, imgs: &ImageStore) -> DownloadRow {
+        DownloadRow {
+            infohash: infohash.into(),
+            movie_id,
+            movie: movie(movie_id, imgs),
+            quality: "1080p".into(),
+            video_codec: "x264".into(),
+            state: "active".into(),
+            size_bytes: 1000,
+            path: format!("/lib/Movie {movie_id} (2021) [1080p]"),
+            error: None,
+            added_at: format!("2026-10-04T12:00:0{movie_id}.000Z"),
+            title: format!("Movie {movie_id}"),
+            torrent_url: Some("https://yts.gg/torrent/download/X".into()),
+            torrent: None,
+            rel_path: None,
+            downloaded_bytes: 0,
+        }
+    }
+
+    fn detail(id: u64, imgs: &ImageStore) -> MovieDetail {
+        MovieDetail {
+            summary_fields: movie(id, imgs),
+            summary: "Plot".into(),
+            language: "en".into(),
+            mpa_rating: Some("R".into()),
+            yt_trailer_code: Some("abc".into()),
+            screenshot_urls: vec![imgs.local_url(Some(REMOTE)).unwrap()],
+            cast: vec![CastMember {
+                name: "Actor".into(),
+                character: None,
+                image_url: imgs.local_url(Some(REMOTE)),
+            }],
+            torrents: vec![],
+            is_favorite: true,
+            progress: None,
+            download: None,
+            offline: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn downloads_crud_survives_reopening() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(DB_FILE);
+        let (_tmp, imgs) = images();
+        {
+            let db = Db::open(&path).unwrap();
+            db.put_download(&imgs, &download_row("aa", 1, &imgs))
+                .await
+                .unwrap();
+            db.put_download(&imgs, &download_row("bb", 2, &imgs))
+                .await
+                .unwrap();
+            db.set_download_torrent("aa", vec![1, 2, 3], "Movie.mp4".into(), 900)
+                .await
+                .unwrap();
+            db.update_download("aa", "paused", None, 900, 450)
+                .await
+                .unwrap();
+            db.update_download("bb", "error", Some("boom".into()), 1000, 0)
+                .await
+                .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        let rows = db.list_downloads("http://127.0.0.1:7777").await.unwrap();
+        assert_eq!(rows.len(), 2);
+        let a = &rows[0];
+        assert_eq!(a.infohash, "aa");
+        assert_eq!(a.state, "paused");
+        assert_eq!(a.torrent.as_deref(), Some(&[1u8, 2, 3][..]));
+        assert_eq!(a.rel_path.as_deref(), Some("Movie.mp4"));
+        assert_eq!((a.size_bytes, a.downloaded_bytes), (900, 450));
+        assert!(a
+            .movie
+            .cover_url
+            .as_deref()
+            .unwrap()
+            .starts_with("http://127.0.0.1:7777/img/"));
+        assert_eq!(rows[1].error.as_deref(), Some("boom"));
+
+        db.remove_download("aa").await.unwrap();
+        db.remove_download("zz").await.unwrap(); // unknown: no-op
+        assert_eq!(db.list_downloads(BASE).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn movie_detail_copy_for_offline_use() {
+        let db = Db::open_in_memory().unwrap();
+        let (_tmp, imgs) = images();
+        assert_eq!(db.movie_detail(1, BASE).await.unwrap(), None);
+        db.put_movie_detail(&imgs, &detail(1, &imgs)).await.unwrap();
+        db.put_download(&imgs, &download_row("aa", 1, &imgs))
+            .await
+            .unwrap();
+        db.put_download(&imgs, &download_row("bb", 1, &imgs))
+            .await
+            .unwrap();
+
+        // Read back on another port: local URLs follow, user fields are not stored.
+        let base = "http://127.0.0.1:5555";
+        let d = db.movie_detail(1, base).await.unwrap().unwrap();
+        let hash = ImageStore::hash_of(REMOTE);
+        let local = format!("{base}/img/{hash}");
+        assert_eq!(d.summary_fields.cover_url.as_deref(), Some(local.as_str()));
+        assert_eq!(d.screenshot_urls, std::slice::from_ref(&local));
+        assert_eq!(d.cast[0].image_url.as_deref(), Some(local.as_str()));
+        assert!(!d.is_favorite && !d.offline);
+        assert_eq!(d.summary, "Plot");
+        assert!(db
+            .images()
+            .await
+            .unwrap()
+            .contains(&(hash, REMOTE.to_owned())));
+
+        // Kept while another download of the movie remains.
+        db.remove_download("aa").await.unwrap();
+        assert!(db.movie_detail(1, base).await.unwrap().is_some());
+        db.remove_download("bb").await.unwrap();
+        assert_eq!(db.movie_detail(1, base).await.unwrap(), None);
+    }
+
+    #[test]
+    fn migration_2_keeps_phase_1_download_rows() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, &MIGRATIONS[..1]).unwrap();
+        conn.execute(
+            "INSERT INTO downloads (infohash, movie_id, movie, quality, video_codec, state, added_at)
+             VALUES ('aa', 1, '{}', '1080p', 'x264', 'active', 'now')",
+            [],
+        )
+        .unwrap();
+        migrate(&mut conn, MIGRATIONS).unwrap();
+        let (title, downloaded): (String, i64) = conn
+            .query_row(
+                "SELECT title, downloaded_bytes FROM downloads WHERE infohash = 'aa'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((title.as_str(), downloaded), ("", 0));
     }
 }

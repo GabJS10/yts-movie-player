@@ -43,6 +43,14 @@ libc = "0.2.190"
 tauri-plugin-dialog = "2"
 
 
+# Smaller debug builds (target/ was 37 GB): line tables only for our crate (backtraces
+# keep file:line), no debug info for dependencies.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1

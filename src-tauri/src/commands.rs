@@ -1,18 +1,20 @@
 //! `#[tauri::command]` handlers. Thin layer: validate input, delegate to modules,
 //! return `AppResult<T>`. Every command must match `docs/IPC.md`.
 
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 
+use crate::downloads::TorrentInfo;
 use crate::error::{AppError, AppResult};
 use crate::external_player::{self, player_kind, subtitle_request};
 use crate::images::ImageStore;
 use crate::state::AppState;
 use crate::subtitles::{Credentials, Release};
-use crate::torrent::StreamRequest;
+use crate::torrent::{kbps_to_bps, StreamRequest};
 use crate::types::{
-    ApiEndpointStatus, ClearCacheResult, ContinueItem, ExternalPlayerResult, ListMoviesParams,
-    MovieDetail, MoviePage, MovieSummary, Progress, Settings, SettingsPatch, StorageUsage,
-    StreamSession, SubtitleOption, SubtitleTrack, SubtitlesStatus,
+    ApiEndpointStatus, ClearCacheResult, ContinueItem, Download, ExternalPlayerResult,
+    ListMoviesParams, MovieDetail, MoviePage, MovieSummary, Progress, Settings, SettingsPatch,
+    StorageUsage, StreamSession, SubtitleOption, SubtitleTrack, SubtitlesStatus,
 };
 
 // ---------------------------------------------------------------------------
@@ -31,9 +33,35 @@ pub async fn list_movies(
 #[tauri::command]
 pub async fn get_movie(state: State<'_, AppState>, movie_id: u64) -> AppResult<MovieDetail> {
     tracing::debug!(movie_id, "get_movie");
-    let mut detail = state.yts.get_movie(movie_id).await?;
+    let download = state.downloads.for_movie(movie_id);
+    let mut detail = match state.yts.get_movie(movie_id).await {
+        Ok(detail) => {
+            if download.is_some() {
+                // Keep the offline copy fresh.
+                if let Err(e) = state.db.put_movie_detail(&state.images, &detail).await {
+                    tracing::warn!(movie_id, error = %e, "could not refresh the offline copy");
+                }
+            }
+            detail
+        }
+        // No network: the copy saved when downloading, if any.
+        Err(e @ (AppError::Network(_) | AppError::ApiUnavailable(_))) => {
+            match state.db.movie_detail(movie_id, local_base(&state)).await? {
+                Some(copy) => {
+                    tracing::info!(movie_id, "offline: using the saved movie detail");
+                    MovieDetail {
+                        offline: true,
+                        ..copy
+                    }
+                }
+                None => return Err(e),
+            }
+        }
+        Err(e) => return Err(e),
+    };
     detail.is_favorite = state.db.is_favorite(movie_id).await?;
     detail.progress = state.db.get_progress(movie_id).await?;
+    detail.download = download;
     Ok(detail)
 }
 
@@ -69,18 +97,28 @@ pub async fn start_stream(
     infohash: String,
 ) -> AppResult<StreamSession> {
     tracing::debug!(movie_id, %infohash, "start_stream");
-    let torrent = state.yts.torrent_ref(movie_id, &infohash).await?;
-    let mut session = state
-        .torrents
-        .start_stream(StreamRequest {
-            movie_id,
-            infohash,
-            title: torrent.title,
-            torrent_url: torrent.torrent_url,
-            video_codec: torrent.video_codec,
-            seeds: torrent.seeds,
-        })
-        .await?;
+    let network = state.downloads.library_stream(&infohash).is_none();
+    let mut session = if let Some(local) = state.downloads.library_stream(&infohash) {
+        // Finished download: straight from `library/`, no torrent and no network.
+        state.torrents.serve_local(local).await?
+    } else {
+        // A download in progress is already known: no need to ask YTS (works offline).
+        let req = match state.downloads.stream_request(&infohash) {
+            Some(req) => req,
+            None => {
+                let torrent = state.yts.torrent_ref(movie_id, &infohash).await?;
+                StreamRequest {
+                    movie_id,
+                    infohash,
+                    title: torrent.title,
+                    torrent_url: torrent.torrent_url,
+                    video_codec: torrent.video_codec,
+                    seeds: torrent.seeds,
+                }
+            }
+        };
+        state.torrents.start_stream(req).await?
+    };
     let progress = state.db.get_progress(movie_id).await?;
     session.resume_at_s = resume_at(progress.as_ref());
     if let (Some(at), Some(p)) = (session.resume_at_s, &progress) {
@@ -88,8 +126,10 @@ pub async fn start_stream(
             .torrents
             .hint_start_fraction(&session.infohash, at / p.duration_s);
     }
-    // Make room for the new stream (it is protected while open).
-    state.cache.enforce_soon();
+    if network {
+        // Make room for the new stream (it is protected while open).
+        state.cache.enforce_soon();
+    }
     Ok(session)
 }
 
@@ -206,6 +246,79 @@ pub async fn remove_progress(state: State<'_, AppState>, movie_id: u64) -> AppRe
 }
 
 // ---------------------------------------------------------------------------
+// Downloads
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn start_download(
+    state: State<'_, AppState>,
+    movie: MovieSummary,
+    infohash: String,
+) -> AppResult<Download> {
+    tracing::debug!(movie_id = movie.id, %infohash, "start_download");
+    if let Some(existing) = state.downloads.get(&infohash) {
+        return Ok(existing);
+    }
+    let detail = state.yts.get_movie(movie.id).await?;
+    let torrent = detail
+        .torrents
+        .iter()
+        .find(|t| t.infohash.eq_ignore_ascii_case(infohash.trim()))
+        .ok_or_else(|| AppError::NotFound(format!("torrent {infohash} of movie {}", movie.id)))?
+        .clone();
+    let r = state.yts.torrent_ref(movie.id, &infohash).await?;
+    let info = TorrentInfo {
+        infohash: torrent.infohash,
+        quality: torrent.quality,
+        video_codec: torrent.video_codec,
+        size_bytes: torrent.size_bytes,
+        title: r.title,
+        torrent_url: r.torrent_url,
+        seeds: r.seeds,
+    };
+    state.downloads.start(movie, &detail, info).await
+}
+
+#[tauri::command]
+pub async fn list_downloads(state: State<'_, AppState>) -> AppResult<Vec<Download>> {
+    Ok(state.downloads.list())
+}
+
+#[tauri::command]
+pub async fn pause_download(state: State<'_, AppState>, infohash: String) -> AppResult<Download> {
+    tracing::debug!(%infohash, "pause_download");
+    state.downloads.pause(&infohash).await
+}
+
+#[tauri::command]
+pub async fn resume_download(state: State<'_, AppState>, infohash: String) -> AppResult<Download> {
+    tracing::debug!(%infohash, "resume_download");
+    state.downloads.resume(&infohash).await
+}
+
+#[tauri::command]
+pub async fn remove_download(
+    state: State<'_, AppState>,
+    infohash: String,
+    delete_files: bool,
+) -> AppResult<()> {
+    tracing::debug!(%infohash, delete_files, "remove_download");
+    state.downloads.remove(&infohash, delete_files).await
+}
+
+#[tauri::command]
+pub async fn open_download_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    infohash: String,
+) -> AppResult<()> {
+    let folder = state.downloads.folder(&infohash)?;
+    app.opener()
+        .open_path(folder.to_string_lossy(), None::<&str>)
+        .map_err(|e| AppError::Internal(format!("opening {}: {e}", folder.display())))
+}
+
+// ---------------------------------------------------------------------------
 // Settings and storage
 // ---------------------------------------------------------------------------
 
@@ -214,10 +327,10 @@ pub async fn get_settings(state: State<'_, AppState>) -> AppResult<Settings> {
     Ok(state.settings.get())
 }
 
-/// Applied now: `apiBaseUrls`, `bufferTargetBytes`, `cacheLimitBytes` (and the ones read
-/// on use: `externalPlayer`; `preferredQuality`/`preferX264` are used by the front).
-/// Stored only until phase 6: speed limits, `listenPort`, `seedAfterDownload`.
-/// `dataDir`: on the next start.
+/// Applied now: `apiBaseUrls`, `bufferTargetBytes`, `cacheLimitBytes`, speed limits,
+/// `seedAfterDownload` (and the ones read on use: `externalPlayer`;
+/// `preferredQuality`/`preferX264` are used by the front).
+/// On the next start: `listenPort`, `dataDir`.
 #[tauri::command]
 pub async fn update_settings(
     state: State<'_, AppState>,
@@ -241,6 +354,23 @@ pub async fn update_settings(
     let creds = subtitle_credentials(&after);
     if subtitle_credentials(&before) != creds {
         state.subtitles.set_credentials(creds).await;
+    }
+    if (before.down_limit_kbps, before.up_limit_kbps)
+        != (after.down_limit_kbps, after.up_limit_kbps)
+    {
+        state.torrents.set_rate_limits(
+            kbps_to_bps(after.down_limit_kbps),
+            kbps_to_bps(after.up_limit_kbps),
+        );
+    }
+    if before.seed_after_download != after.seed_after_download {
+        state
+            .downloads
+            .set_seed_after_download(after.seed_after_download)
+            .await;
+    }
+    if before.listen_port != after.listen_port {
+        tracing::info!(listen_port = ?after.listen_port, "listenPort changed, applies on restart");
     }
     if before.data_dir != after.data_dir {
         tracing::info!(data_dir = %after.data_dir, "dataDir changed, applies on restart");

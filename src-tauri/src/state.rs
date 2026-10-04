@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::cache::CacheManager;
 use crate::db::Db;
+use crate::downloads::DownloadManager;
 use crate::images::ImageStore;
 use crate::paths::AppPaths;
 use crate::settings::SettingsStore;
@@ -23,4 +24,5 @@ pub struct AppState {
     pub torrents: Arc<TorrentEngine>,
     pub cache: Arc<CacheManager>,
     pub subtitles: SubtitlesClient,
+    pub downloads: Arc<DownloadManager>,
 }

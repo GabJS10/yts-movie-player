@@ -3,6 +3,11 @@
 //!
 //! Adding a torrent: the `.torrent` from YTS is preferred (no metadata wait); if it can't
 //! be downloaded quickly we fall back to a magnet. Only the largest video file is selected.
+//!
+//! The same torrent can be a stream, a download or both. Streams live in
+//! `cache/<infohash>/`; downloads in their `library/` folder. A torrent runs while a stream
+//! is open or its download wants it running (see [`TorrentEngine::reconcile`]). Finished
+//! downloads are played straight from disk ([`TorrentEngine::serve_local`]).
 
 use std::collections::{HashMap, HashSet};
 use std::io::SeekFrom;
@@ -369,6 +374,7 @@ pub struct EngineConfig {
     pub stats_interval: Duration,
     pub stall_after: Duration,
     pub download_limit_bps: Option<NonZeroU32>,
+    pub upload_limit_bps: Option<NonZeroU32>,
     /// Local HTTP server origin, e.g. `http://127.0.0.1:4321`.
     pub local_base: String,
 }
@@ -390,6 +396,7 @@ impl EngineConfig {
             stats_interval: Duration::from_secs(1),
             stall_after: Duration::from_secs(30),
             download_limit_bps: None,
+            upload_limit_bps: None,
             local_base,
         }
     }
@@ -406,10 +413,73 @@ pub struct StreamRequest {
     pub seeds: u32,
 }
 
+/// A download as the engine sees it: where it goes and whether it should run.
+#[derive(Debug, Clone)]
+pub struct DownloadRequest {
+    pub stream: StreamRequest,
+    /// `library/<Title (year) [quality]>/`.
+    pub folder: PathBuf,
+    /// Known `.torrent` (saved in the DB): no download, no metadata wait, works offline.
+    pub torrent_bytes: Option<Bytes>,
+    pub run: bool,
+}
+
+/// What [`TorrentEngine::add_download`] resolved.
+#[derive(Debug, Clone)]
+pub struct DownloadTorrent {
+    /// Video path relative to the torrent folder (`cache/<infohash>/` or the library one).
+    pub rel_path: PathBuf,
+    pub file_len: u64,
+    pub torrent_bytes: Bytes,
+    /// Still in `cache/` (it was being streamed): waiting for [`TorrentEngine::promote`].
+    pub in_cache: bool,
+}
+
+/// Live numbers of a download (see [`TorrentEngine::download_stats`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DownloadStats {
+    /// Metadata known and torrent added (else still resolving: "queued").
+    pub resolved: bool,
+    pub file_len: u64,
+    pub downloaded: u64,
+    pub down_bps: u64,
+    pub peers: u32,
+    pub stalled: bool,
+    pub error: Option<String>,
+}
+
+/// A finished download played from disk (`source: "library"`).
+#[derive(Debug, Clone)]
+pub struct LocalStream {
+    pub infohash: String,
+    pub movie_id: u64,
+    pub path: PathBuf,
+    pub video_codec: VideoCodec,
+}
+
+/// File index used in the URL of library streams (they don't go through the torrent).
+pub const LOCAL_FILE_IDX: usize = 0;
+
+struct LocalFile {
+    movie_id: u64,
+    path: PathBuf,
+    len: u64,
+    name: String,
+    readers: Arc<Readers>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Output {
+    /// `cache/<infohash>/`.
+    Cache,
+    Library(PathBuf),
+}
+
 struct Active {
     handle: Arc<ManagedTorrent>,
     file_idx: usize,
     file_name: String,
+    rel_path: PathBuf,
     geo: FileGeometry,
 }
 
@@ -466,6 +536,10 @@ impl Readers {
 
 struct Entry {
     req: StreamRequest,
+    output: Output,
+    torrent_bytes: Option<Bytes>,
+    /// `None`: only a stream. `Some(run)`: also a download that wants to run or not.
+    download: Mutex<Option<bool>>,
     started: Instant,
     resolving: Mutex<Option<Resolving>>,
     active: OnceCell<Active>,
@@ -479,8 +553,15 @@ struct Entry {
 
 impl Entry {
     fn new(req: StreamRequest) -> Self {
+        Self::with_output(req, Output::Cache, None)
+    }
+
+    fn with_output(req: StreamRequest, output: Output, torrent_bytes: Option<Bytes>) -> Self {
         Self {
             req,
+            output,
+            torrent_bytes,
+            download: Mutex::new(None),
             started: Instant::now(),
             resolving: Mutex::new(None),
             active: OnceCell::new(),
@@ -489,6 +570,23 @@ impl Entry {
             last_alive: Mutex::new(Instant::now()),
             control: Arc::new(tokio::sync::Mutex::new(())),
         }
+    }
+
+    fn download(&self) -> Option<bool> {
+        self.download.lock().ok().and_then(|g| *g)
+    }
+
+    fn set_download(&self, run: Option<bool>) {
+        if let Ok(mut g) = self.download.lock() {
+            *g = run;
+        }
+    }
+
+    /// An open stream, a reader (e.g. VLC) or a download: the cache must not touch it.
+    fn in_use(&self) -> bool {
+        !self.stopped.load(Ordering::Relaxed)
+            || self.readers.has_open()
+            || self.download().is_some()
     }
 
     fn set_resolving(&self, r: Option<Resolving>) {
@@ -521,6 +619,8 @@ pub struct TorrentEngine {
     stats_tx: broadcast::Sender<TorrentStats>,
     /// `bufferTargetBytes` setting, changeable at runtime.
     buffer_target: AtomicU64,
+    /// Finished downloads served from disk, by infohash.
+    local: Mutex<HashMap<String, LocalFile>>,
 }
 
 fn torrent_err(context: &str, e: impl std::fmt::Display) -> AppError {
@@ -549,7 +649,7 @@ impl TorrentEngine {
             disable_local_service_discovery: !cfg.dht,
             ratelimits: LimitsConfig {
                 download_bps: cfg.download_limit_bps,
-                upload_bps: None,
+                upload_bps: cfg.upload_limit_bps,
             },
             ..Default::default()
         };
@@ -573,6 +673,7 @@ impl TorrentEngine {
             entries: Mutex::new(HashMap::new()),
             stats_tx,
             buffer_target: AtomicU64::new(cfg_buffer_target),
+            local: Mutex::new(HashMap::new()),
         });
         spawn_stats_loop(Arc::downgrade(&engine), engine.cfg.stats_interval);
         Ok(engine)
@@ -625,14 +726,15 @@ impl TorrentEngine {
     }
 
     /// Infohashes the cache must not touch: streams not stopped (including ones still
-    /// starting) and any torrent with an open reader (e.g. an external player).
+    /// starting), any torrent with an open reader (e.g. an external player) and downloads
+    /// still waiting in `cache/` to be moved to `library/`.
     pub fn in_use(&self) -> HashSet<String> {
         let Ok(entries) = self.entries.lock() else {
             return HashSet::new();
         };
         entries
             .iter()
-            .filter(|(_, e)| !e.stopped.load(Ordering::Relaxed) || e.readers.has_open())
+            .filter(|(_, e)| e.in_use())
             .map(|(h, _)| h.clone())
             .collect()
     }
@@ -650,7 +752,7 @@ impl TorrentEngine {
             None => None,
         };
         if let Some(e) = &entry {
-            if !e.stopped.load(Ordering::Relaxed) || e.readers.has_open() {
+            if e.in_use() {
                 return Ok(false);
             }
             if let Ok(mut entries) = self.entries.lock() {
@@ -675,6 +777,11 @@ impl TorrentEngine {
         Ok(true)
     }
 
+    /// Stops the librqbit session (every torrent, the listener and the DHT).
+    pub async fn shutdown(&self) {
+        self.session.stop().await;
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<TorrentStats> {
         self.stats_tx.subscribe()
     }
@@ -695,39 +802,15 @@ impl TorrentEngine {
                 "invalid infohash {infohash:?}"
             )));
         }
-        let (entry, _control) = loop {
-            let entry = {
-                let mut entries = self
-                    .entries
-                    .lock()
-                    .map_err(|_| AppError::Internal("torrent entries lock poisoned".into()))?;
-                Arc::clone(entries.entry(infohash.clone()).or_insert_with(|| {
-                    Arc::new(Entry::new(StreamRequest {
-                        infohash: infohash.clone(),
-                        ..req.clone()
-                    }))
-                }))
-            };
-            let guard = Arc::clone(&entry.control).lock_owned().await;
-            // A previous start may have failed and dropped this entry while we waited.
-            if self
-                .entry(&infohash)
-                .is_some_and(|current| Arc::ptr_eq(&current, &entry))
-            {
-                break (entry, guard);
-            }
-        };
-
-        let active = match entry.active.get_or_try_init(|| self.resolve(&entry)).await {
-            Ok(active) => active,
-            Err(e) => {
-                entry.set_resolving(None);
-                if let Ok(mut entries) = self.entries.lock() {
-                    entries.remove(&infohash);
-                }
-                return Err(e);
-            }
-        };
+        let (entry, _control) = self
+            .lock_entry(&infohash, || {
+                Entry::new(StreamRequest {
+                    infohash: infohash.clone(),
+                    ..req.clone()
+                })
+            })
+            .await?;
+        let active = self.activate(&infohash, &entry).await?;
 
         if active.handle.is_paused() {
             self.session
@@ -737,7 +820,9 @@ impl TorrentEngine {
         }
         entry.stopped.store(false, Ordering::Relaxed);
         entry.mark_alive();
-        self.touch(&infohash);
+        if entry.output == Output::Cache {
+            self.touch(&infohash);
+        }
 
         Ok(StreamSession {
             infohash: infohash.clone(),
@@ -753,6 +838,386 @@ impl TorrentEngine {
         })
     }
 
+    /// The entry of `infohash` (created with `make` if missing) with its `control` lock.
+    async fn lock_entry(
+        &self,
+        infohash: &str,
+        make: impl Fn() -> Entry,
+    ) -> AppResult<(Arc<Entry>, tokio::sync::OwnedMutexGuard<()>)> {
+        loop {
+            let entry = {
+                let mut entries = self
+                    .entries
+                    .lock()
+                    .map_err(|_| AppError::Internal("torrent entries lock poisoned".into()))?;
+                Arc::clone(
+                    entries
+                        .entry(infohash.to_owned())
+                        .or_insert_with(|| Arc::new(make())),
+                )
+            };
+            let guard = Arc::clone(&entry.control).lock_owned().await;
+            // A previous start may have failed (or a promotion replaced the entry) while
+            // we waited.
+            if self
+                .entry(infohash)
+                .is_some_and(|current| Arc::ptr_eq(&current, &entry))
+            {
+                return Ok((entry, guard));
+            }
+        }
+    }
+
+    /// Resolves the entry's torrent once. A failure drops the entry.
+    async fn activate<'a>(&self, infohash: &str, entry: &'a Entry) -> AppResult<&'a Active> {
+        match entry.active.get_or_try_init(|| self.resolve(entry)).await {
+            Ok(active) => Ok(active),
+            Err(e) => {
+                entry.set_resolving(None);
+                if let Ok(mut entries) = self.entries.lock() {
+                    if entries
+                        .get(infohash)
+                        .is_some_and(|cur| std::ptr::eq(Arc::as_ptr(cur), entry))
+                    {
+                        entries.remove(infohash);
+                    }
+                }
+                Err(e)
+            }
+        }
+    }
+
+    // -- Downloads ------------------------------------------------------------------------
+
+    /// Adds a torrent as a download into `folder`, or marks the one already in the session.
+    /// A torrent that was being streamed stays in `cache/` (`in_cache`) until
+    /// [`Self::promote`] can move it without breaking the stream.
+    pub async fn add_download(&self, d: DownloadRequest) -> AppResult<DownloadTorrent> {
+        let infohash = d.stream.infohash.to_ascii_lowercase();
+        if !is_valid_infohash(&infohash) {
+            return Err(AppError::InvalidInput(format!(
+                "invalid infohash {infohash:?}"
+            )));
+        }
+        let (entry, _control) = self
+            .lock_entry(&infohash, || {
+                let e = Entry::with_output(
+                    StreamRequest {
+                        infohash: infohash.clone(),
+                        ..d.stream.clone()
+                    },
+                    Output::Library(d.folder.clone()),
+                    d.torrent_bytes.clone(),
+                );
+                // No stream yet.
+                e.stopped.store(true, Ordering::Relaxed);
+                e
+            })
+            .await?;
+        entry.set_download(Some(d.run));
+        let active = match self.activate(&infohash, &entry).await {
+            Ok(active) => active,
+            Err(e) => {
+                entry.set_download(None);
+                return Err(e);
+            }
+        };
+        self.reconcile(&entry).await?;
+        download_torrent(active, entry.output == Output::Cache)
+    }
+
+    /// Moves a download that was being streamed from `cache/<infohash>/` into `folder`
+    /// without downloading it again: out of the session first (librqbit closes the files),
+    /// move the video, then add it back pointing at `folder` (the pieces on disk are
+    /// checked, not downloaded). `Ok(false)` while a stream or a reader still uses it.
+    pub async fn promote(&self, infohash: &str, folder: &Path) -> AppResult<bool> {
+        let infohash = infohash.to_ascii_lowercase();
+        let old = self
+            .entry(&infohash)
+            .ok_or_else(|| AppError::NotFound(format!("no torrent {infohash}")))?;
+        let old_control = Arc::clone(&old.control).lock_owned().await;
+        if old.output != Output::Cache {
+            return Ok(true);
+        }
+        if !old.stopped.load(Ordering::Relaxed) || old.readers.has_open() {
+            return Ok(false);
+        }
+        let Some(active) = old.active.get() else {
+            return Ok(false);
+        };
+        let bytes = active
+            .handle
+            .with_metadata(|m| m.torrent_bytes.clone())
+            .map_err(|e| torrent_err("reading metadata", e))?;
+        let new = Arc::new(Entry::with_output(
+            old.req.clone(),
+            Output::Library(folder.to_path_buf()),
+            Some(bytes),
+        ));
+        new.stopped.store(true, Ordering::Relaxed);
+        new.set_download(Some(old.download().unwrap_or(true)));
+        // Whoever waits on the old entry finds it replaced and waits on the new one.
+        let _control = Arc::clone(&new.control).lock_owned().await;
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.insert(infohash.clone(), Arc::clone(&new));
+        }
+        drop(old_control);
+
+        let result = async {
+            let id = Id20::from_str(&infohash).map_err(|e| torrent_err("parsing infohash", e))?;
+            if self.session.get(TorrentIdOrHash::Hash(id)).is_some() {
+                self.session
+                    .delete(TorrentIdOrHash::Hash(id), false)
+                    .await
+                    .map_err(|e| torrent_err("removing torrent from session", e))?;
+            }
+            self.move_from_cache(&infohash, &active.rel_path, folder)
+                .await?;
+            self.activate(&infohash, &new).await?;
+            self.reconcile(&new).await
+        }
+        .await;
+        if result.is_err() {
+            if let Ok(mut entries) = self.entries.lock() {
+                if entries
+                    .get(&infohash)
+                    .is_some_and(|cur| Arc::ptr_eq(cur, &new))
+                {
+                    entries.remove(&infohash);
+                }
+            }
+        }
+        result.map(|()| {
+            tracing::info!(%infohash, folder = %folder.display(), "download moved to library");
+            true
+        })
+    }
+
+    /// Whether [`Self::promote`] would move the torrent now (no stream, no reader).
+    pub fn can_promote(&self, infohash: &str) -> bool {
+        self.entry(&infohash.to_ascii_lowercase()).is_some_and(|e| {
+            e.output == Output::Cache
+                && e.active.get().is_some()
+                && e.stopped.load(Ordering::Relaxed)
+                && !e.readers.has_open()
+        })
+    }
+
+    /// Moves everything in `cache/<infohash>/` into `folder` (merging) and deletes the
+    /// cache folder. Not only the video: its first and last pieces share bytes with the
+    /// neighbouring files, and without them those pieces would fail the check. The torrent
+    /// must not be in the session. Returns whether the video (`rel_path`) was there.
+    pub async fn move_from_cache(
+        &self,
+        infohash: &str,
+        rel_path: &Path,
+        folder: &Path,
+    ) -> AppResult<bool> {
+        let src_dir = self.torrent_dir(infohash);
+        let moved = tokio::fs::symlink_metadata(src_dir.join(rel_path))
+            .await
+            .is_ok();
+        if tokio::fs::symlink_metadata(&src_dir).await.is_ok() {
+            move_tree(&src_dir, folder).await?;
+        }
+        remove_path(&src_dir).await?;
+        Ok(moved)
+    }
+
+    /// Download state the torrent should follow: running or paused (a stream open on it
+    /// keeps it running until it stops).
+    pub async fn set_download_running(&self, infohash: &str, run: bool) -> AppResult<()> {
+        let Some(entry) = self.entry(&infohash.to_ascii_lowercase()) else {
+            return Ok(());
+        };
+        let _control = Arc::clone(&entry.control).lock_owned().await;
+        entry.set_download(Some(run));
+        self.reconcile(&entry).await
+    }
+
+    /// No longer a download (still in `cache/`): back to a plain stream, paused unless it
+    /// is open, and subject to the cache LRU again.
+    pub async fn unmark_download(&self, infohash: &str) -> AppResult<()> {
+        let Some(entry) = self.entry(&infohash.to_ascii_lowercase()) else {
+            return Ok(());
+        };
+        let _control = Arc::clone(&entry.control).lock_owned().await;
+        entry.set_download(None);
+        self.reconcile(&entry).await
+    }
+
+    /// Takes the torrent out of the session (closing its files) even if it is being
+    /// streamed, and forgets its library stream. Unknown infohash: no-op.
+    pub async fn remove_torrent(&self, infohash: &str) -> AppResult<()> {
+        let infohash = infohash.to_ascii_lowercase();
+        self.unregister_local(&infohash);
+        let entry = self.entry(&infohash);
+        let _control = match &entry {
+            Some(e) => Some(Arc::clone(&e.control).lock_owned().await),
+            None => None,
+        };
+        if let (Some(e), Ok(mut entries)) = (&entry, self.entries.lock()) {
+            if entries
+                .get(&infohash)
+                .is_some_and(|cur| Arc::ptr_eq(cur, e))
+            {
+                entries.remove(&infohash);
+            }
+        }
+        let id = Id20::from_str(&infohash).map_err(|e| torrent_err("parsing infohash", e))?;
+        if self.session.get(TorrentIdOrHash::Hash(id)).is_some() {
+            self.session
+                .delete(TorrentIdOrHash::Hash(id), false)
+                .await
+                .map_err(|e| torrent_err("removing torrent from session", e))?;
+            tracing::info!(%infohash, "torrent removed from session");
+        }
+        Ok(())
+    }
+
+    /// Whether the torrent is in the engine (stream or download).
+    pub fn has_torrent(&self, infohash: &str) -> bool {
+        self.entry(&infohash.to_ascii_lowercase()).is_some()
+    }
+
+    /// Progress of a download's torrent; `None` if it is not in the engine.
+    pub fn download_stats(&self, infohash: &str) -> Option<DownloadStats> {
+        let entry = self.entry(&infohash.to_ascii_lowercase())?;
+        let Some(active) = entry.active.get() else {
+            return Some(DownloadStats::default());
+        };
+        let stats = active.handle.stats();
+        let (peers, down_bps) = stats
+            .live
+            .as_ref()
+            .map(|l| {
+                (
+                    l.snapshot.peer_stats.live,
+                    mib_to_bytes(l.download_speed.mbps),
+                )
+            })
+            .unwrap_or((0, 0));
+        let len = active.geo.len;
+        let downloaded = stats
+            .file_progress
+            .get(active.file_idx)
+            .copied()
+            .unwrap_or(0)
+            .min(len);
+        let paused = active.handle.is_paused();
+        let initializing = matches!(stats.state, TorrentStatsState::Initializing { .. });
+        if paused || initializing || downloaded >= len || (peers > 0 && down_bps > 0) {
+            entry.mark_alive();
+        }
+        Some(DownloadStats {
+            resolved: true,
+            file_len: len,
+            downloaded,
+            down_bps,
+            peers,
+            stalled: entry.idle_for() >= self.cfg.stall_after,
+            error: matches!(stats.state, TorrentStatsState::Error)
+                .then(|| stats.error.unwrap_or_else(|| "torrent error".into())),
+        })
+    }
+
+    /// Serves a finished download straight from disk (no torrent, no network).
+    pub async fn serve_local(&self, s: LocalStream) -> AppResult<StreamSession> {
+        let infohash = s.infohash.to_ascii_lowercase();
+        let meta = tokio::fs::metadata(&s.path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                AppError::NotFound(format!("{} is missing", s.path.display()))
+            } else {
+                e.into()
+            }
+        })?;
+        let name = s
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if let Ok(mut local) = self.local.lock() {
+            let readers = local
+                .get(&infohash)
+                .filter(|l| l.path == s.path)
+                .map(|l| Arc::clone(&l.readers))
+                .unwrap_or_default();
+            local.insert(
+                infohash.clone(),
+                LocalFile {
+                    movie_id: s.movie_id,
+                    path: s.path.clone(),
+                    len: meta.len(),
+                    name: name.clone(),
+                    readers,
+                },
+            );
+        }
+        tracing::info!(%infohash, path = %s.path.display(), "playing from library");
+        Ok(StreamSession {
+            stream_url: self.stream_url(&infohash, LOCAL_FILE_IDX),
+            infohash,
+            movie_id: s.movie_id,
+            file_name: name,
+            file_size_bytes: meta.len(),
+            video_codec: s.video_codec,
+            likely_playable: s.video_codec == VideoCodec::X264,
+            buffer_target_bytes: self.buffer_target_bytes(),
+            resume_at_s: None,
+            source: StreamSource::Library,
+        })
+    }
+
+    pub fn unregister_local(&self, infohash: &str) {
+        if let Ok(mut local) = self.local.lock() {
+            local.remove(&infohash.to_ascii_lowercase());
+        }
+    }
+
+    /// Whether a library stream of `infohash` has a reader open.
+    pub fn local_in_use(&self, infohash: &str) -> bool {
+        self.local
+            .lock()
+            .ok()
+            .and_then(|l| {
+                l.get(&infohash.to_ascii_lowercase())
+                    .map(|f| f.readers.has_open())
+            })
+            .unwrap_or(false)
+    }
+
+    fn local_file(
+        &self,
+        infohash: &str,
+        file_idx: usize,
+    ) -> Option<(PathBuf, u64, String, Arc<Readers>)> {
+        if file_idx != LOCAL_FILE_IDX {
+            return None;
+        }
+        let local = self.local.lock().ok()?;
+        let f = local.get(infohash)?;
+        Some((
+            f.path.clone(),
+            f.len,
+            f.name.clone(),
+            Arc::clone(&f.readers),
+        ))
+    }
+
+    /// Session-wide speed limits, applied immediately (`None` = unlimited).
+    pub fn set_rate_limits(&self, down_bps: Option<NonZeroU32>, up_bps: Option<NonZeroU32>) {
+        self.session.ratelimits.set_download_bps(down_bps);
+        self.session.ratelimits.set_upload_bps(up_bps);
+        tracing::info!(?down_bps, ?up_bps, "speed limits applied");
+    }
+
+    pub fn rate_limits(&self) -> (Option<NonZeroU32>, Option<NonZeroU32>) {
+        (
+            self.session.ratelimits.get_download_bps(),
+            self.session.ratelimits.get_upload_bps(),
+        )
+    }
+
     fn stream_url(&self, infohash: &str, file_idx: usize) -> String {
         format!("{}/stream/{infohash}/{file_idx}", self.cfg.local_base)
     }
@@ -764,15 +1229,32 @@ impl TorrentEngine {
         };
         let _control = Arc::clone(&entry.control).lock_owned().await;
         entry.stopped.store(true, Ordering::Relaxed);
-        self.touch(&entry.req.infohash);
-        // Phase 6: torrents that are also downloads must keep running.
-        if let Some(active) = entry.active.get() {
-            if !active.handle.is_paused() {
-                self.session
-                    .pause(&active.handle)
-                    .await
-                    .map_err(|e| torrent_err("pausing torrent", e))?;
-            }
+        if entry.output == Output::Cache {
+            self.touch(&entry.req.infohash);
+        }
+        // A torrent that is also a running download keeps going.
+        self.reconcile(&entry).await
+    }
+
+    /// Runs or pauses the torrent: it runs while a stream is open or while its download
+    /// wants it. Called with the entry's `control` lock held.
+    async fn reconcile(&self, entry: &Entry) -> AppResult<()> {
+        let Some(active) = entry.active.get() else {
+            return Ok(());
+        };
+        let want = !entry.stopped.load(Ordering::Relaxed) || entry.download() == Some(true);
+        let paused = active.handle.is_paused();
+        if want && paused {
+            self.session
+                .unpause(&active.handle)
+                .await
+                .map_err(|e| torrent_err("resuming torrent", e))?;
+            entry.mark_alive();
+        } else if !want && !paused {
+            self.session
+                .pause(&active.handle)
+                .await
+                .map_err(|e| torrent_err("pausing torrent", e))?;
         }
         Ok(())
     }
@@ -784,13 +1266,21 @@ impl TorrentEngine {
 
     /// Movie of an active session (for the external player's automatic subtitles).
     pub fn session_movie_id(&self, infohash: &str) -> Option<u64> {
-        self.entry(&infohash.to_ascii_lowercase())
-            .map(|e| e.req.movie_id)
+        let infohash = infohash.to_ascii_lowercase();
+        let local = self
+            .local
+            .lock()
+            .ok()
+            .and_then(|l| l.get(&infohash).map(|f| f.movie_id));
+        local.or_else(|| self.entry(&infohash).map(|e| e.req.movie_id))
     }
 
     /// Stream URL of an active session (for the external player).
     pub fn session_url(&self, infohash: &str) -> AppResult<String> {
         let infohash = infohash.to_ascii_lowercase();
+        if self.local_file(&infohash, LOCAL_FILE_IDX).is_some() {
+            return Ok(self.stream_url(&infohash, LOCAL_FILE_IDX));
+        }
         let entry = self
             .entry(&infohash)
             .ok_or_else(|| AppError::NotFound(format!("no stream for {infohash}")))?;
@@ -850,11 +1340,21 @@ impl TorrentEngine {
             .ok()
             .flatten()
             .ok_or_else(|| AppError::Torrent(format!("file {file_idx} not in torrent")))?;
-        tracing::info!(%infohash, file_idx, %file_name, len = geo.len, "stream ready");
+        let rel_path = handle
+            .with_metadata(|m| {
+                m.file_infos
+                    .get(file_idx)
+                    .map(|f| f.relative_filename.clone())
+            })
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| PathBuf::from(&file_name));
+        tracing::info!(%infohash, file_idx, %file_name, len = geo.len, "torrent ready");
         Ok(Active {
             handle,
             file_idx,
             file_name,
+            rel_path,
             geo,
         })
     }
@@ -868,9 +1368,13 @@ impl TorrentEngine {
             ..Default::default()
         };
 
-        // 1) .torrent from YTS (no metadata wait).
+        // 1) Known .torrent, else the one from YTS (no metadata wait).
         let mut listed = None;
-        if let Some(bytes) = self.download_torrent_file(entry).await {
+        let bytes = match entry.torrent_bytes.clone() {
+            Some(bytes) => Some(bytes),
+            None => self.download_torrent_file(entry).await,
+        };
+        if let Some(bytes) = bytes {
             match self
                 .session
                 .add_torrent(AddTorrent::from_bytes(bytes), Some(list_opts()))
@@ -930,13 +1434,21 @@ impl TorrentEngine {
 
         let mut peers = listed.seen_peers.clone();
         peers.extend(self.cfg.initial_peers.iter().copied());
+        let (output_folder, sub_folder) = match &entry.output {
+            Output::Cache => (None, Some(req.infohash.clone())),
+            Output::Library(dir) => (Some(dir.to_string_lossy().into_owned()), None),
+        };
+        // A download added paused (restored after a restart) still checks its pieces.
+        let paused = entry.stopped.load(Ordering::Relaxed) && entry.download() == Some(false);
         let resp = self
             .session
             .add_torrent(
                 AddTorrent::from_bytes(listed.torrent_bytes.clone()),
                 Some(AddTorrentOptions {
+                    paused,
                     only_files: Some(vec![file_idx]),
-                    sub_folder: Some(req.infohash.clone()),
+                    output_folder,
+                    sub_folder,
                     overwrite: true,
                     initial_peers: Some(peers),
                     trackers: Some(self.cfg.trackers.clone()),
@@ -983,6 +1495,28 @@ impl TorrentEngine {
         start: u64,
     ) -> AppResult<(TrackedReader, String)> {
         let infohash = infohash.to_ascii_lowercase();
+        if let Some((path, _, name, readers)) = self.local_file(&infohash, file_idx) {
+            let mut file = tokio::fs::File::open(&path).await.map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    AppError::NotFound(format!("{} is missing", path.display()))
+                } else {
+                    e.into()
+                }
+            })?;
+            if start > 0 {
+                tokio::io::AsyncSeekExt::seek(&mut file, SeekFrom::Start(start)).await?;
+            }
+            let id = readers.open(start);
+            return Ok((
+                TrackedReader {
+                    inner: Box::pin(file),
+                    readers,
+                    id,
+                    position: start,
+                },
+                name,
+            ));
+        }
         let entry = self
             .entry(&infohash)
             .ok_or_else(|| AppError::NotFound(format!("no stream for {infohash}")))?;
@@ -1013,7 +1547,11 @@ impl TorrentEngine {
 
     /// File length of the active stream `infohash/file_idx`.
     pub fn file_len(&self, infohash: &str, file_idx: usize) -> Option<u64> {
-        let entry = self.entry(&infohash.to_ascii_lowercase())?;
+        let infohash = infohash.to_ascii_lowercase();
+        if let Some((_, len, _, _)) = self.local_file(&infohash, file_idx) {
+            return Some(len);
+        }
+        let entry = self.entry(&infohash)?;
         let active = entry.active.get().filter(|a| a.file_idx == file_idx)?;
         Some(active.geo.len)
     }
@@ -1142,6 +1680,24 @@ impl TorrentEngine {
     }
 }
 
+fn download_torrent(active: &Active, in_cache: bool) -> AppResult<DownloadTorrent> {
+    let torrent_bytes = active
+        .handle
+        .with_metadata(|m| m.torrent_bytes.clone())
+        .map_err(|e| torrent_err("reading metadata", e))?;
+    Ok(DownloadTorrent {
+        rel_path: active.rel_path.clone(),
+        file_len: active.geo.len,
+        torrent_bytes,
+        in_cache,
+    })
+}
+
+/// `KB/s` setting (KiB/s, as the UI shows it) → bytes/s for librqbit. `None` = unlimited.
+pub fn kbps_to_bps(kbps: Option<u32>) -> Option<NonZeroU32> {
+    NonZeroU32::new(kbps?.saturating_mul(1024))
+}
+
 fn mib_to_bytes(mib_per_s: f64) -> u64 {
     (mib_per_s * 1024.0 * 1024.0).max(0.0) as u64
 }
@@ -1196,8 +1752,39 @@ impl Drop for TrackedReader {
     }
 }
 
+/// Moves a file, creating the destination folder. Falls back to copy + delete when a
+/// rename is not possible (another filesystem).
+async fn move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if let Some(parent) = dst.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    if tokio::fs::rename(src, dst).await.is_ok() {
+        return Ok(());
+    }
+    tokio::fs::copy(src, dst).await?;
+    tokio::fs::remove_file(src).await
+}
+
+/// Moves the contents of `src` into `dst` (created if needed), file by file.
+async fn move_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let mut stack = vec![(src.to_path_buf(), dst.to_path_buf())];
+    while let Some((from, to)) = stack.pop() {
+        tokio::fs::create_dir_all(&to).await?;
+        let mut rd = tokio::fs::read_dir(&from).await?;
+        while let Some(item) = rd.next_entry().await? {
+            let target = to.join(item.file_name());
+            if item.file_type().await?.is_dir() {
+                stack.push((item.path(), target));
+            } else {
+                move_file(&item.path(), &target).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Deletes a file or a folder; missing is fine.
-async fn remove_path(path: &Path) -> std::io::Result<()> {
+pub async fn remove_path(path: &Path) -> std::io::Result<()> {
     let result = match tokio::fs::symlink_metadata(path).await {
         Ok(m) if m.is_dir() => tokio::fs::remove_dir_all(path).await,
         Ok(_) => tokio::fs::remove_file(path).await,

@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod commands;
 pub mod db;
+pub mod downloads;
 pub mod error;
 pub mod external_player;
 pub mod images;
@@ -21,12 +22,13 @@ use tracing_subscriber::EnvFilter;
 
 use crate::cache::CacheManager;
 use crate::db::Db;
+use crate::downloads::{DownloadManager, DownloadsConfig};
 use crate::images::ImageStore;
 use crate::paths::AppPaths;
 use crate::settings::SettingsStore;
 use crate::state::AppState;
 use crate::subtitles::{SubtitlesClient, SubtitlesConfig};
-use crate::torrent::{EngineConfig, TorrentEngine};
+use crate::torrent::{kbps_to_bps, EngineConfig, TorrentEngine};
 use crate::types::events;
 use crate::yts::{YtsClient, YtsConfig};
 
@@ -70,13 +72,47 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     images.register(tauri::async_runtime::block_on(db.images())?);
     let yts = YtsClient::new(config, Arc::clone(&images))?;
 
-    let torrents = tauri::async_runtime::block_on(TorrentEngine::new(EngineConfig {
+    let engine_config = EngineConfig {
         dht_state_file: Some(app_paths.data_dir.join("dht.json")),
         allowed_torrent_hosts: allowed_hosts,
         buffer_target_bytes: current.buffer_target_bytes,
+        download_limit_bps: kbps_to_bps(current.down_limit_kbps),
+        upload_limit_bps: kbps_to_bps(current.up_limit_kbps),
+        // `listenPort` is read only here: it applies on restart.
+        listen_addr: current
+            .listen_port
+            .map(|port| (std::net::Ipv6Addr::UNSPECIFIED, port).into()),
         ..EngineConfig::new(paths.cache_dir.clone(), local_base.clone())
-    }))?;
-    forward_torrent_stats(app, &torrents);
+    };
+    let torrents = match tauri::async_runtime::block_on(TorrentEngine::new(engine_config.clone())) {
+        Ok(engine) => engine,
+        Err(e) if engine_config.listen_addr.is_some() => {
+            tracing::warn!(error = %e, port = ?current.listen_port, "could not listen on the configured port, using a random one");
+            tauri::async_runtime::block_on(TorrentEngine::new(EngineConfig {
+                listen_addr: None,
+                ..engine_config
+            }))?
+        }
+        Err(e) => return Err(e.into()),
+    };
+    tracing::info!(listen = ?torrents.listen_addr(), "torrent session ready");
+    forward_torrent_stats(app.clone(), &torrents);
+
+    let downloads = DownloadManager::new(DownloadsConfig {
+        db: db.clone(),
+        images: Arc::clone(&images),
+        engine: Arc::clone(&torrents),
+        library_dir: paths.library_dir.clone(),
+        seed_after_download: current.seed_after_download,
+        free_space: Arc::new(cache::free_disk_bytes),
+    });
+    // Before the cache cleanup: downloads still in `cache/` are moved out first.
+    tauri::async_runtime::block_on(downloads.restore())?;
+    tauri::async_runtime::block_on(async {
+        downloads.resume_all();
+        downloads.spawn_tick(downloads::TICK_INTERVAL);
+    });
+    forward_download_changes(app, &downloads);
 
     let cache = Arc::new(CacheManager::new(
         paths.cache_dir.clone(),
@@ -112,7 +148,26 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         torrents,
         cache,
         subtitles,
+        downloads,
     })
+}
+
+/// Re-emits download state changes as the `download://changed` event.
+fn forward_download_changes(app: AppHandle, downloads: &DownloadManager) {
+    let mut rx = downloads.subscribe();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(change) => {
+                    if let Err(e) = app.emit(events::DOWNLOAD_CHANGED, &change) {
+                        tracing::warn!(error = %e, "could not emit download change");
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
 }
 
 /// Re-emits engine stats as the `torrent://stats` event.
@@ -167,6 +222,12 @@ pub fn run() {
             commands::load_subtitle,
             commands::load_subtitle_file,
             commands::get_subtitles_status,
+            commands::start_download,
+            commands::list_downloads,
+            commands::pause_download,
+            commands::resume_download,
+            commands::remove_download,
+            commands::open_download_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

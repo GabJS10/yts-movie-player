@@ -427,6 +427,7 @@ impl YtsClient {
             is_favorite: false,
             progress: None,
             download: None,
+            offline: false,
         }
     }
 }
