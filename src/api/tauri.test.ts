@@ -12,6 +12,11 @@ import {
   onDownloadChanged,
   onTorrentStats,
   openDownloadFolder,
+  onMoveProgress,
+  moveDownloads,
+  cancelMoveDownloads,
+  getStorageUsage,
+  pickFolder,
   pauseDownload,
   pickSubtitleFile,
   removeDownload,
@@ -21,7 +26,7 @@ import {
   toAppError,
   updateSettings,
 } from "./tauri";
-import type { DownloadChanged, TorrentStats } from "./types";
+import type { DownloadChanged, MoveProgress, TorrentStats } from "./types";
 
 describe("tauri api (mock backend)", () => {
   beforeEach(() => {
@@ -117,6 +122,27 @@ describe("subtitles wrappers", () => {
     answer = null;
     expect(await pickSubtitleFile()).toBeNull();
   });
+
+  it("pickFolder asks for a directory starting at the current one, or null if cancelled", async () => {
+    let answer: unknown = "/media/usb/Películas";
+    const seen: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd !== "plugin:dialog|open") throw new Error(cmd);
+      seen.push(args);
+      return answer;
+    });
+    expect(await pickFolder("Carpeta de descargas", "/home/u/lib")).toBe("/media/usb/Películas");
+    expect(seen[0]).toMatchObject({
+      options: {
+        title: "Carpeta de descargas",
+        directory: true,
+        multiple: false,
+        defaultPath: "/home/u/lib",
+      },
+    });
+    answer = null;
+    expect(await pickFolder("Carpeta de descargas")).toBeNull();
+  });
 });
 
 describe("downloads wrappers (IPC v0.10)", () => {
@@ -125,7 +151,7 @@ describe("downloads wrappers (IPC v0.10)", () => {
   beforeEach(() => {
     calls.length = 0;
     backend = createMockBackend();
-    backend.onDownloadChanged((p) => void emit("download://changed", p));
+    backend.onEvent((event, p) => void emit(event, p));
     mockIPC(
       (cmd, args) => {
         calls.push({ cmd, args });
@@ -196,5 +222,34 @@ describe("downloads wrappers (IPC v0.10)", () => {
     await expect(listMovies({})).rejects.toMatchObject({ code: "network" });
     backend.setOffline(false);
     expect((await getMovie(1632)).offline).toBe(false);
+  });
+});
+
+describe("move_downloads (IPC v0.11)", () => {
+  it("moves the downloads outside downloadsDir one by one, with progress, and only one move at a time", async () => {
+    const backend = createMockBackend();
+    backend.onEvent((event, p) => void emit(event, p));
+    mockIPC((cmd, args) => backend.handle(cmd, args), { shouldMockEvents: true });
+    const events: MoveProgress[] = [];
+    const unlisten = await onMoveProgress((p) => events.push(p));
+
+    await updateSettings({ downloadsDir: "/media/usb/Películas" });
+    expect((await getStorageUsage()).downloadsOutsideDir).toBe(5);
+    await moveDownloads();
+    await expect(moveDownloads()).rejects.toMatchObject({ code: "invalid_input" });
+    expect((await listDownloads()).filter((d) => d.state === "moving")).toHaveLength(1);
+    for (let i = 0; i < 20 && !events.at(-1)?.finished; i++) {
+      backend.tick();
+      await vi.waitFor(() => expect(events.length).toBeGreaterThan(i + 1));
+    }
+    const last = events.at(-1)!;
+    expect(last).toMatchObject({ finished: true, cancelled: false, total: 5, failed: [] });
+    expect(last.bytesDone).toBe(last.bytesTotal);
+    const after = await listDownloads();
+    expect(after.every((d) => d.path?.startsWith("/media/usb/Películas/"))).toBe(true);
+    expect(after.some((d) => d.state === "moving")).toBe(false);
+    expect((await getStorageUsage()).downloadsOutsideDir).toBe(0);
+    await cancelMoveDownloads(); // nothing running: no-op
+    unlisten();
   });
 });

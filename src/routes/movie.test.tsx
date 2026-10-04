@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { Download, MovieDetail } from "../api/types";
@@ -154,6 +154,18 @@ describe("/movie/$movieId", () => {
         "No se pudo descargar. Libera espacio o revisa la carpeta de datos.",
       );
       expect(screen.getByRole("button", { name: /Descargar/ })).toBeEnabled();
+    });
+
+    it("shows when the download's folder is missing or being moved", async () => {
+      const { backend } = await renderApp("/movie/3304");
+      const done = (backend.handle("list_downloads") as Download[]).find((d) => d.movie.id === 3304)!;
+      await screen.findByRole("link", { name: /^Descargada/ });
+      act(() => backend.patchDownload(done.infohash, { state: "unavailable" }));
+      expect(
+        await screen.findByRole("link", { name: /^Carpeta no disponible \(1080p\)/ }),
+      ).toBeInTheDocument();
+      act(() => backend.patchDownload(done.infohash, { state: "moving" }));
+      expect(await screen.findByRole("link", { name: /^Moviendo… \(1080p\)/ })).toBeInTheDocument();
     });
   });
 });

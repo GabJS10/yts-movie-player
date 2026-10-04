@@ -38,7 +38,7 @@ export function installBackend(options: Options = {}) {
     { shouldMockEvents: true },
   );
   // After `before` (seeding is not an event) and once IPC exists; a late emit after teardown is dropped.
-  backend.onDownloadChanged((payload) => void emit("download://changed", payload).catch(() => undefined));
+  backend.onEvent((event, payload) => void emit(event, payload).catch(() => undefined));
   /** Make `cmd` fail from now on (or succeed again with `null`). */
   const setFailure = (cmd: string, error: { code: string; message: string } | null) => {
     if (error) fail[cmd] = error;

@@ -112,6 +112,16 @@ export async function pickSubtitleFile(): Promise<string | null> {
   }
 }
 
+/** Native folder picker (Ajustes › Almacenamiento). Resolves to the absolute path, or null if cancelled. */
+export async function pickFolder(title: string, defaultPath?: string): Promise<string | null> {
+  try {
+    const path = await openDialog({ title, directory: true, multiple: false, defaultPath });
+    return typeof path === "string" ? path : null;
+  } catch (err) {
+    throw toAppError(err);
+  }
+}
+
 /** Opens a web page in the system browser (tauri-plugin-opener); a new tab outside Tauri (dev). */
 export async function openExternalUrl(url: string): Promise<void> {
   if (!isTauri()) {
@@ -146,6 +156,9 @@ export const resumeDownload = (infohash: string) => call("resume_download", { in
 export const removeDownload = (infohash: string, deleteFiles: boolean) =>
   call("remove_download", { infohash, deleteFiles });
 export const openDownloadFolder = (infohash: string) => call("open_download_folder", { infohash });
+/** Moves every download outside downloadsDir into it, in the background (progress: onMoveProgress). */
+export const moveDownloads = () => call("move_downloads");
+export const cancelMoveDownloads = () => call("cancel_move_downloads");
 
 // ───────── Settings & storage ─────────
 export const getSettings = () => call("get_settings");
@@ -162,5 +175,7 @@ export const onTorrentStats = (handler: (p: EventMap["torrent://stats"]) => void
   on("torrent://stats", handler);
 export const onDownloadChanged = (handler: (p: EventMap["download://changed"]) => void) =>
   on("download://changed", handler);
+export const onMoveProgress = (handler: (p: EventMap["downloads://move-progress"]) => void) =>
+  on("downloads://move-progress", handler);
 export const onBackgroundError = (handler: (p: EventMap["app://error"]) => void) =>
   on("app://error", handler);

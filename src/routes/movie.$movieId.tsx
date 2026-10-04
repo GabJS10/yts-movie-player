@@ -9,7 +9,7 @@ import { MovieMeta } from "../components/MovieMeta";
 import { Poster } from "../components/Poster";
 import { StaticMovieRow } from "../components/MovieRow";
 import { VersionsTable } from "../components/VersionsTable";
-import { downloadForMovie, roundPercent } from "../lib/downloads";
+import { downloadForMovie, isActive, roundPercent } from "../lib/downloads";
 import { genreLabel } from "../lib/genres";
 import { toSummary } from "../lib/movie";
 import { formatClock } from "../lib/player";
@@ -59,7 +59,8 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
   const [polling, setPolling] = useState(false);
   const downloads = useDownloads({ poll: polling });
   const download = downloads.data ? downloadForMovie(downloads.data, movie.id) : movie.download;
-  const inProgress = !!download && download.state !== "done";
+  // Polled only while it changes by itself (paused or a missing folder change through events).
+  const inProgress = !!download && (isActive(download) || download.state === "moving");
   if (polling !== inProgress) setPolling(inProgress);
   const library = download?.state === "done" ? download.infohash : null;
 
@@ -221,15 +222,19 @@ function DownloadButton({
     );
   }
   const label =
-    download.state === "done"
-      ? "Descargada"
-      : download.state === "queued"
-        ? "En cola"
-        : download.state === "paused"
-          ? `En pausa ${roundPercent(download.progress)}`
-          : download.state === "error"
-            ? "Falló la descarga"
-            : `Descargando ${roundPercent(download.progress)}`;
+    download.state === "unavailable"
+      ? "Carpeta no disponible"
+      : download.state === "moving"
+        ? "Moviendo…"
+        : download.state === "done"
+          ? "Descargada"
+          : download.state === "queued"
+            ? "En cola"
+            : download.state === "paused"
+              ? `En pausa ${roundPercent(download.progress)}`
+              : download.state === "error"
+                ? "Falló la descarga"
+                : `Descargando ${roundPercent(download.progress)}`;
   return (
     <Link
       to="/downloads"
@@ -238,7 +243,15 @@ function DownloadButton({
       aria-label={`${label} (${download.quality}), ver en Descargas`}
     >
       <Icon
-        name={download.state === "done" ? "check" : download.state === "error" ? "alert" : "download"}
+        name={
+          download.state === "done"
+            ? "check"
+            : download.state === "error" || download.state === "unavailable"
+              ? "alert"
+              : download.state === "moving"
+                ? "folder"
+                : "download"
+        }
         size={22}
         className={download.state === "done" ? "text-green" : undefined}
       />

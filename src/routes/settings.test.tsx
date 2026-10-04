@@ -2,7 +2,16 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { CACHE_COMMIT_MS } from "../components/settings/StorageSection";
-import { QUOTA_KEY } from "../mocks/backend";
+import type { Download, StorageUsage } from "../api/types";
+import { formatBytes } from "../lib/format";
+import {
+  FULL_DIR_MARK,
+  MOCK_DATA_DIR,
+  MOCK_PICKED_FOLDER,
+  QUOTA_KEY,
+  UNMOUNTED_DIR_MARK,
+  type MockBackend,
+} from "../mocks/backend";
 import { useSubtitlesQuota } from "../store/subtitlesQuota";
 import { renderApp } from "../test/render";
 
@@ -209,12 +218,12 @@ describe("/settings", () => {
   });
 
   describe("Almacenamiento", () => {
-    it("shows cache use against the limit, the library and free space", async () => {
-      await open();
+    it("shows cache use against the limit and the library", async () => {
+      const { backend } = await open();
       const section = screen.getByRole("region", { name: "Almacenamiento" });
       expect(await within(section).findByText("3,1 GB de 10,0 GB")).toBeInTheDocument();
-      expect(within(section).getByText("24,6 GB")).toBeInTheDocument();
-      expect(within(section).getByText("180,0 GB")).toBeInTheDocument();
+      const library = (backend.handle("get_storage_usage") as StorageUsage).libraryBytes;
+      expect(within(section).getByText(formatBytes(library))).toBeInTheDocument();
       expect(within(section).getByRole("meter", { name: "Uso de la caché" })).toHaveAttribute(
         "aria-valuenow",
         "31",
@@ -322,6 +331,121 @@ describe("/settings", () => {
       await user.selectOptions(within(region()).getByRole("combobox", { name: "Idioma preferido" }), "pt");
       await user.click(within(region()).getByRole("switch", { name: "Buscar subtítulos automáticamente" }));
       expect(patches(calls)).toEqual([{ subtitleLang: "pt" }, { autoSubtitles: false }]);
+    });
+  });
+
+  describe("Carpetas", () => {
+    const folder = (name: string) => screen.getByRole("textbox", { name });
+
+    it("shows both folders with their disk's free space and what they hold; defaults have no Restablecer", async () => {
+      await open();
+      expect(folder("Carpeta de descargas")).toHaveValue(`${MOCK_DATA_DIR}/library`);
+      expect(folder("Carpeta de la caché de streaming")).toHaveValue(`${MOCK_DATA_DIR}/cache`);
+      expect(await screen.findAllByText(/^Libre en ese disco: 180,0 GB · Ocupa:/)).toHaveLength(2);
+      expect(screen.queryByRole("button", { name: /^Restablecer/ })).toBeNull();
+      expect(screen.queryByText(/Descargas en otra carpeta/)).toBeNull();
+    });
+
+    it("Cambiar… opens the system folder picker and applies the folder; Restablecer goes back (null)", async () => {
+      const user = userEvent.setup();
+      const { calls } = await open();
+      await user.click(screen.getByRole("button", { name: "Cambiar la carpeta de descargas" }));
+      const picker = calls.find((c) => c.cmd === "plugin:dialog|open")?.args as {
+        options: { directory: boolean; defaultPath: string };
+      };
+      expect(picker.options).toMatchObject({ directory: true, defaultPath: `${MOCK_DATA_DIR}/library` });
+      expect(patches(calls).at(-1)).toEqual({ downloadsDir: MOCK_PICKED_FOLDER });
+      expect(folder("Carpeta de descargas")).toHaveValue(MOCK_PICKED_FOLDER);
+      expect(await screen.findByText(/^Libre en ese disco: 900,0 GB/)).toBeInTheDocument();
+      // The existing downloads stayed in the old folder: offer to move them.
+      expect(await screen.findByText(/5 descargas siguen en una carpeta anterior/)).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Restablecer la carpeta de descargas" }));
+      expect(patches(calls).at(-1)).toEqual({ downloadsDir: null });
+      await waitFor(() => expect(folder("Carpeta de descargas")).toHaveValue(`${MOCK_DATA_DIR}/library`));
+      await waitFor(() => expect(screen.queryByText(/Descargas en otra carpeta/)).toBeNull());
+    });
+
+    it("explains a folder the backend refuses and keeps the old one", async () => {
+      const user = userEvent.setup();
+      await open({
+        fail: { update_settings: { code: "invalid_input", message: "cacheDir is not writable" } },
+      });
+      await user.click(screen.getByRole("button", { name: "Cambiar la carpeta de la caché de streaming" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("No se puede usar esa carpeta");
+      expect(folder("Carpeta de la caché de streaming")).toHaveValue(`${MOCK_DATA_DIR}/cache`);
+    });
+
+    it("warns when a folder isn't available", async () => {
+      await open({
+        before: (b) =>
+          b.handle("update_settings", { patch: { downloadsDir: `/media/${UNMOUNTED_DIR_MARK}/pelis` } }),
+      });
+      expect(await screen.findByText(/aparecen como «Carpeta no disponible»/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Restablecer la carpeta de descargas" })).toBeInTheDocument();
+    });
+
+    async function startMove(dir = MOCK_PICKED_FOLDER) {
+      const user = userEvent.setup();
+      const r = await open({ before: (b) => b.handle("update_settings", { patch: { downloadsDir: dir } }) });
+      await user.click(await screen.findByRole("button", { name: "Mover también las descargas existentes" }));
+      const dialog = screen.getByRole("dialog", { name: "Moviendo descargas" });
+      expect(r.calls.some((c) => c.cmd === "move_downloads")).toBe(true);
+      return { ...r, user, dialog };
+    }
+    const tickUntil = async (backend: MockBackend, text: RegExp) => {
+      for (let i = 0; i < 20 && !screen.queryByText(text); i++) {
+        act(() => void backend.tick());
+        await act(() => new Promise((r) => setTimeout(r, 20)));
+      }
+      return screen.findByText(text);
+    };
+
+    it("moves the existing downloads with progress; it can go on in the background", async () => {
+      const { backend, user, dialog } = await startMove();
+      expect(await within(dialog).findByText(/^Descarga 1 de 5: /)).toBeInTheDocument();
+      act(() => void backend.tick());
+      expect(await within(dialog).findByText(/^Descarga 2 de 5: /)).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("progressbar", { name: "Progreso del movimiento" }),
+      ).not.toHaveAttribute("aria-valuenow", "0");
+
+      await user.click(within(dialog).getByRole("button", { name: "Seguir en segundo plano" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Ver progreso" }));
+      expect(screen.getByRole("dialog", { name: "Moviendo descargas" })).toBeInTheDocument();
+
+      await tickUntil(backend, /Las 5 descargas ya están en la carpeta nueva/);
+      await user.click(screen.getByRole("button", { name: "Cerrar" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await waitFor(() => expect(screen.queryByText(/Descargas en otra carpeta/)).toBeNull());
+      const moved = backend.handle("list_downloads") as Download[];
+      expect(moved.every((d) => d.path?.startsWith(`${MOCK_PICKED_FOLDER}/`))).toBe(true);
+    });
+
+    it("Cancelar stops the move; the rest stay where they were", async () => {
+      const { backend, user, dialog } = await startMove();
+      await within(dialog).findByText(/^Descarga 1 de 5: /);
+      act(() => void backend.tick());
+      await within(dialog).findByText(/^Descarga 2 de 5: /);
+      await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+      expect(await screen.findByRole("heading", { name: "Movimiento cancelado" })).toBeInTheDocument();
+      expect(screen.getByText(/las demás se quedan donde estaban/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cerrar" }));
+      expect(await screen.findByText(/4 descargas siguen en una carpeta anterior/)).toBeInTheDocument();
+    });
+
+    it("lists the ones that couldn't move (no space)", async () => {
+      const { backend } = await startMove(`/media/${FULL_DIR_MARK}`);
+      await tickUntil(backend, /Se movieron 4 de 5/);
+      expect(screen.getByText("No se pudo mover:")).toBeInTheDocument();
+      const dialog = screen.getByRole("dialog", { name: "Descargas movidas" });
+      expect(
+        within(dialog)
+          .getAllByRole("listitem")
+          .map((li) => li.textContent),
+      ).toEqual(["The Godfather (1080p)"]);
+      expect(screen.getByText(/Suele ser falta de espacio/)).toBeInTheDocument();
     });
   });
 });

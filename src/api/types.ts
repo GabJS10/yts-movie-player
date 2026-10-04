@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.10); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.11); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -196,7 +196,9 @@ export type ContinueItem = { movie: MovieSummary; progress: Progress };
 
 // ───────── Downloads ─────────
 
-export type DownloadState = "queued" | "active" | "paused" | "stalled" | "done" | "error";
+/** unavailable = its folder is gone (unmounted disk); moving = being moved by move_downloads. */
+export type DownloadState =
+  "queued" | "active" | "paused" | "stalled" | "done" | "error" | "unavailable" | "moving";
 
 export type Download = {
   infohash: string;
@@ -232,24 +234,39 @@ export type Settings = {
   upLimitKbps: number | null;
   seedAfterDownload: boolean;
   listenPort: number | null;
-  dataDir: string;
+  /** Absolute path; default ~/.local/share/yts-player/library. Applies at once; existing downloads stay. */
+  downloadsDir: string;
+  /** Absolute path; default ~/.local/share/yts-player/cache. Applies at once; the old cache is dropped. */
+  cacheDir: string;
   cacheLimitBytes: number;
 };
 
+/** Settings fields whose patch accepts `null` to go back to the default folder. */
+type FolderKey = "downloadsDir" | "cacheDir";
+
 /**
  * Partial settings update. Absent key = leave unchanged. On nullable fields (openSubtitlesApiKey,
- * openSubtitlesUsername, openSubtitlesPassword, downLimitKbps, upLimitKbps, listenPort) `null` = clear the value.
- * `dataDir` is stored but only applied after restarting the app.
+ * openSubtitlesUsername, openSubtitlesPassword, downLimitKbps, upLimitKbps, listenPort, downloadsDir,
+ * cacheDir) `null` = clear the value (no key, no limit, automatic port, default folder).
  */
-export type SettingsPatch = Partial<Settings>;
+export type SettingsPatch = Partial<Omit<Settings, FolderKey>> & { [K in FolderKey]?: string | null };
 
 export type ClearCacheResult = { freedBytes: number };
 
 export type StorageUsage = {
   cacheBytes: number;
   cacheLimitBytes: number;
+  /** All downloads, wherever they are. */
   libraryBytes: number;
-  freeDiskBytes: number;
+  /** Free space on cacheDir's disk. */
+  cacheFreeBytes: number;
+  /** Free space on downloadsDir's disk. */
+  downloadsFreeBytes: number;
+  /** false = missing or not writable (streaming falls back to the default folder). */
+  cacheDirAvailable: boolean;
+  downloadsDirAvailable: boolean;
+  /** Downloads still in another folder (to offer "Mover"). */
+  downloadsOutsideDir: number;
 };
 
 // ───────── Events ─────────
@@ -283,10 +300,26 @@ export type DownloadChanged = { infohash: string; download: Download | null };
 
 export type BackgroundError = AppError & { infohash: string | null };
 
+/** downloads://move-progress, ~4 times a second during move_downloads and once at the end. */
+export type MoveProgress = {
+  /** 1-based: the download being moved. */
+  index: number;
+  total: number;
+  infohash: string | null;
+  /** Of the whole move. */
+  bytesDone: number;
+  bytesTotal: number;
+  finished: boolean;
+  cancelled: boolean;
+  /** Not moved (they stay where they were). `message` is technical, not for the UI. */
+  failed: { infohash: string; message: string }[];
+};
+
 export type EventMap = {
   "torrent://stats": TorrentStats;
   "download://changed": DownloadChanged;
   "app://error": BackgroundError;
+  "downloads://move-progress": MoveProgress;
 };
 
 export type EventName = keyof EventMap;
@@ -329,6 +362,8 @@ export type CommandMap = {
   resume_download: { args: { infohash: string }; result: Download };
   remove_download: { args: { infohash: string; deleteFiles: boolean }; result: void };
   open_download_folder: { args: { infohash: string }; result: void };
+  move_downloads: { args: undefined; result: void };
+  cancel_move_downloads: { args: undefined; result: void };
 
   get_settings: { args: undefined; result: Settings };
   update_settings: { args: { patch: SettingsPatch }; result: Settings };

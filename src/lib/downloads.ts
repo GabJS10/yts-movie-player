@@ -19,12 +19,18 @@ export function downloadForMovie(list: readonly Download[], movieId: number): Do
   return mine.find((d) => d.state === "done") ?? mine[0] ?? null;
 }
 
+/** Complete on disk: done, or a complete one whose folder is missing or being moved. */
+export const isComplete = (d: Download) => d.state === "done" || (d.progress >= 1 && d.state !== "error");
+
+/** Moving or missing its folder: no pause, resume, play or folder until it settles. */
+export const isLocked = (d: Download) => d.state === "moving" || d.state === "unavailable";
+
 /** Downloads page groups: "En curso" (newest first) and "En la biblioteca". */
 export function groupDownloads(list: readonly Download[]) {
   const newest = [...list].sort((a, b) => b.addedAt.localeCompare(a.addedAt));
   return {
-    inProgress: newest.filter((d) => d.state !== "done"),
-    library: newest.filter((d) => d.state === "done"),
+    inProgress: newest.filter((d) => !isComplete(d)),
+    library: newest.filter(isComplete),
   };
 }
 
@@ -35,6 +41,8 @@ export const STATE_LABEL: Record<DownloadState, string> = {
   stalled: "Sin seeds conectados",
   done: "Completada",
   error: "Falló la descarga",
+  unavailable: "Carpeta no disponible",
+  moving: "Moviendo",
 };
 
 const pct = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });

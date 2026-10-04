@@ -12,6 +12,9 @@
 //   The Shawshank Redemption has no Spanish subtitles (English fallback offer).
 // - localStorage.setItem("mock:offline", "1") → no network: the catalog fails with `network`, downloaded
 //   movies open from their saved copy and play from the library (reload to apply).
+// - Ajustes › Almacenamiento: "Cambiar…" picks /media/usb/Películas (another disk), which offers to move the
+//   existing downloads (progress dialog, Cancelar). Folder paths with "sin-permiso" are refused, with
+//   "desconectado" show as unavailable, and with "lleno" the downloads over 2 GB fail to move.
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -37,7 +40,7 @@ function latency(): number {
 
 export function installMocks(): void {
   const backend = createMockBackend();
-  backend.onDownloadChanged((payload) => void emit("download://changed", payload));
+  backend.onEvent((event, payload) => void emit(event, payload));
   try {
     backend.setOffline(localStorage.getItem("mock:offline") === "1");
   } catch {

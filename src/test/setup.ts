@@ -3,6 +3,7 @@ import { cleanup, configure } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { afterEach } from "vitest";
 import { resetConnectivity } from "../store/connectivity";
+import { resetMove } from "../store/moveDownloads";
 import { clearQuota } from "../store/subtitlesQuota";
 import { useToastStore } from "../store/toast";
 import { installIntersectionObserver } from "./intersection";
@@ -18,6 +19,7 @@ afterEach(() => {
   useToastStore.setState({ toast: null });
   clearQuota();
   resetConnectivity();
+  resetMove();
 });
 
 // jsdom has no media playback: play()/pause() flip `paused` and fire the matching events.

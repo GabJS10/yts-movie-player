@@ -1,7 +1,10 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { Download } from "../api/types";
+import type { Download, MovieDetail } from "../api/types";
+import { formatBytes } from "../lib/format";
+import { toSummary } from "../lib/movie";
+import { MOCK_DATA_DIR } from "../mocks/backend";
 import { renderApp } from "../test/render";
 
 // Mock: The Dark Knight and Coco downloading, The Shawshank Redemption paused, Spider-Verse (4K) stalled,
@@ -120,7 +123,44 @@ describe("/downloads", () => {
     expect(calls.find((c) => c.cmd === "open_download_folder")?.args).toEqual({
       infohash: godfather.infohash,
     });
-    expect(screen.getByRole("button", { name: "Abrir la carpeta de Coco (1080p)" })).toBeDisabled();
+  });
+
+  it("the folder button waits until the folder exists", async () => {
+    const { backend } = await renderApp("/downloads", {
+      before: (b) => {
+        const movie = b.handle("get_movie", { movieId: 1632 }) as MovieDetail;
+        b.handle("start_download", { movie: toSummary(movie), infohash: movie.torrents[0]!.infohash });
+      },
+    });
+    const folder = await screen.findByRole("button", { name: "Abrir la carpeta de Interstellar (720p)" });
+    expect(folder).toBeDisabled();
+    act(() => void backend.tick()); // the queue starts and its folder appears
+    await waitFor(() => expect(folder).toBeEnabled());
+  });
+
+  it("a download whose folder is missing, or being moved, can't be played, paused or opened", async () => {
+    const { byTitle, backend } = await open();
+    act(() => {
+      backend.patchDownload(byTitle("The Godfather").infohash, { state: "unavailable" });
+      backend.patchDownload(byTitle("Coco").infohash, { state: "moving" });
+    });
+    const godfather = await waitFor(() => {
+      const r = row(/The Godfather/);
+      expect(within(r).getByText("Carpeta no disponible")).toBeInTheDocument();
+      return r;
+    });
+    // Still a complete download: it stays in the library group.
+    expect(screen.getByRole("region", { name: "En la biblioteca" })).toContainElement(godfather);
+    expect(within(godfather).getByText(/Sigue sola cuando la carpeta vuelva/)).toBeInTheDocument();
+    expect(within(godfather).getByRole("button", { name: /^Reproducir/ })).toBeDisabled();
+    expect(within(godfather).getByRole("button", { name: /^Abrir la carpeta/ })).toBeDisabled();
+    expect(within(godfather).getByRole("button", { name: /^Quitar/ })).toBeEnabled();
+
+    const coco = row(/Coco/);
+    expect(within(coco).getByText("Moviendo a la carpeta nueva…")).toBeInTheDocument();
+    expect(within(coco).getByRole("button", { name: /^(Pausar|Reanudar)/ })).toBeDisabled();
+    expect(within(coco).getByRole("button", { name: /^Quitar/ })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Descargas, 2 activas" })).toBeInTheDocument();
   });
 
   it("explains a failed action with a next step", async () => {
@@ -133,10 +173,11 @@ describe("/downloads", () => {
   });
 
   it("shows the library, cache and speed summary", async () => {
-    await open();
+    const { backend } = await open();
     const summary = screen.getByText("Biblioteca").closest("dl") as HTMLElement;
-    expect(within(summary).getByText("24,6 GB · 1 película")).toBeInTheDocument();
-    expect(within(summary).getByText("~/.local/share/yts-player/library")).toBeInTheDocument();
+    const total = (backend.handle("list_downloads") as Download[]).reduce((n, d) => n + d.downloadedBytes, 0);
+    expect(await within(summary).findByText(`${formatBytes(total)} · 1 película`)).toBeInTheDocument();
+    expect(within(summary).getByText(`${MOCK_DATA_DIR}/library`)).toBeInTheDocument();
     expect(within(summary).getByRole("meter", { name: "Uso de la caché" })).toBeInTheDocument();
     expect(within(summary).getByText("No se comparte al terminar")).toBeInTheDocument();
   });

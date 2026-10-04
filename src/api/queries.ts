@@ -11,6 +11,7 @@ import { useEffect, useMemo } from "react";
 import { DOWNLOAD_POLL_MS, downloadForMovie } from "../lib/downloads";
 import { formatBytes } from "../lib/format";
 import type { TorrentPrefs } from "../lib/versions";
+import { resetMove, useMoveStore } from "../store/moveDownloads";
 import { showToast } from "../store/toast";
 import { describeError } from "./errors";
 import {
@@ -22,10 +23,13 @@ import {
   getStorageUsage,
   getSuggestions,
   listContinueWatching,
+  cancelMoveDownloads,
   listDownloads,
+  moveDownloads,
   listFavorites,
   listMovies,
   onDownloadChanged,
+  onMoveProgress,
   openDownloadFolder,
   pauseDownload,
   removeDownload,
@@ -246,6 +250,20 @@ export function useTorrentPrefs(): TorrentPrefs | null {
 /** Catalog data that depends on which YTS mirror answers. */
 const CATALOG_KEYS = [["movies"], queryKeys.hero, ["movie"], ["suggestions"], queryKeys.apiStatus];
 
+/** The patch as the UI can show it before the backend answers: a folder reset (null) waits for the answer. */
+function optimistic(prev: Settings, patch: SettingsPatch): Settings {
+  const { downloadsDir, cacheDir, ...rest } = patch;
+  return {
+    ...prev,
+    ...rest,
+    ...(downloadsDir ? { downloadsDir } : {}),
+    ...(cacheDir ? { cacheDir } : {}),
+  };
+}
+
+const touchesFolders = (patch: SettingsPatch) =>
+  patch.downloadsDir !== undefined || patch.cacheDir !== undefined;
+
 /**
  * update_settings with the patch shown right away; on failure the previous values come back and a
  * toast explains why. Changing the base URLs refetches the catalog without restarting.
@@ -257,14 +275,18 @@ export function useUpdateSettings() {
     onMutate: async (patch) => {
       await qc.cancelQueries({ queryKey: queryKeys.settings });
       const prev = qc.getQueryData<Settings>(queryKeys.settings);
-      if (prev) qc.setQueryData<Settings>(queryKeys.settings, { ...prev, ...patch });
+      if (prev) qc.setQueryData<Settings>(queryKeys.settings, optimistic(prev, patch));
       return { prev };
     },
-    onError: (err, _patch, ctx) => {
+    onError: (err, patch, ctx) => {
       if (ctx?.prev) qc.setQueryData(queryKeys.settings, ctx.prev);
       const copy = describeError(err);
       showToast(
-        err.code === "invalid_input" ? `No se guardó: ${copy.title.toLowerCase()}` : copy.title,
+        err.code === "invalid_input" && touchesFolders(patch)
+          ? "No se puede usar esa carpeta: tiene que poder escribirse y no estar dentro de la otra"
+          : err.code === "invalid_input"
+            ? `No se guardó: ${copy.title.toLowerCase()}`
+            : copy.title,
         "error",
       );
     },
@@ -272,7 +294,8 @@ export function useUpdateSettings() {
       qc.setQueryData(queryKeys.settings, settings);
       if (patch.seedAfterDownload !== undefined) void qc.invalidateQueries({ queryKey: queryKeys.downloads });
       if (patch.apiBaseUrls) for (const key of CATALOG_KEYS) void qc.invalidateQueries({ queryKey: key });
-      if (patch.cacheLimitBytes !== undefined) void qc.invalidateQueries({ queryKey: queryKeys.storage });
+      if (patch.cacheLimitBytes !== undefined || touchesFolders(patch))
+        void qc.invalidateQueries({ queryKey: queryKeys.storage });
     },
   });
 }
@@ -404,5 +427,48 @@ export function useOpenDownloadFolder() {
   return useMutation<void, AppError, string>({
     mutationFn: openDownloadFolder,
     onError: failToast("No se pudo abrir la carpeta"),
+  });
+}
+
+// ───────── Mover descargas ─────────
+
+/** Follows downloads://move-progress into the move store; at the end, refreshes downloads and storage. */
+export function useMoveEvents() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let gone = false;
+    onMoveProgress((progress) => {
+      useMoveStore.setState({ progress, starting: false });
+      if (progress.finished) {
+        void qc.invalidateQueries({ queryKey: queryKeys.downloads });
+        void qc.invalidateQueries({ queryKey: queryKeys.storage });
+      }
+    })
+      .then((fn) => (gone ? fn() : (unlisten = fn)))
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, [qc]);
+}
+
+/** Starts move_downloads and opens the progress dialog. */
+export function useMoveDownloads() {
+  return useMutation<void, AppError, void>({
+    mutationFn: moveDownloads,
+    onMutate: () => useMoveStore.setState({ progress: null, open: true, starting: true }),
+    onError: (err) => {
+      resetMove();
+      failToast("No se pudieron mover las descargas")(err);
+    },
+  });
+}
+
+export function useCancelMove() {
+  return useMutation<void, AppError, void>({
+    mutationFn: cancelMoveDownloads,
+    onError: failToast("No se pudo cancelar"),
   });
 }

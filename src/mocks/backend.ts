@@ -8,7 +8,9 @@ import type {
   CommandResult,
   ContinueItem,
   Download,
-  DownloadChanged,
+  EventMap,
+  EventName,
+  MoveProgress,
   MovieDetail,
   MovieSummary,
   Progress,
@@ -101,14 +103,35 @@ const iso = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).t
 type Handler<C extends CommandName> = (args: CommandArgs<C>) => CommandResult<C>;
 type Handlers = { [C in CommandName]: Handler<C> };
 
+export type MockEmitter = <E extends EventName>(event: E, payload: EventMap[E]) => void;
+
+/** Default data folders (IPC v0.11): ~/.local/share/yts-player/{library,cache}. */
+export const MOCK_DATA_DIR = "/home/usuario/.local/share/yts-player";
+const DEFAULT_DOWNLOADS_DIR = `${MOCK_DATA_DIR}/library`;
+const DEFAULT_CACHE_DIR = `${MOCK_DATA_DIR}/cache`;
+/** Folder paths that exercise the edge cases: not writable, unmounted, a disk with little space. */
+export const UNWRITABLE_DIR_MARK = "sin-permiso";
+export const UNMOUNTED_DIR_MARK = "desconectado";
+export const FULL_DIR_MARK = "lleno";
+/** What the folder picker answers in the mock: another disk. */
+export const MOCK_PICKED_FOLDER = "/media/usb/Películas";
+const GiB = 1024 ** 3;
+/** Bytes a move copies per tick in the mock. */
+const MOVE_BYTES_PER_TICK = 1.5 * GiB;
+
 export type MockBackend = {
   handle: (cmd: string, args?: unknown) => unknown;
   /** Stats for every active torrent, as the backend would emit them each second. */
   tick: () => TorrentStats[];
-  /** Where `download://changed` goes (setup.ts / tests wire it to the mocked event bus). */
-  onDownloadChanged: (emit: (payload: DownloadChanged) => void) => void;
+  /**
+   * Where backend events go (setup.ts / tests wire it to the mocked event bus): download://changed and
+   * downloads://move-progress. torrent://stats comes from `tick`.
+   */
+  onEvent: (emit: MockEmitter) => void;
   /** Test helper: finish a download now, as if its last piece had just arrived. */
   completeDownload: (infohash: string) => void;
+  /** Test helper: force fields of a download (e.g. state "unavailable"), announced with download://changed. */
+  patchDownload: (infohash: string, patch: Partial<Download>) => void;
   /**
    * No network: the catalog, suggestions and subtitles fail with `network`; get_movie answers with
    * the saved copy (offline: true) of downloaded movies; only finished downloads play.
@@ -152,8 +175,13 @@ export function createMockBackend(): MockBackend {
   const requireNetwork = (what: string) => {
     if (offline) fail("network", `mock: offline (${what})`);
   };
-  let emitChanged: (payload: DownloadChanged) => void = () => undefined;
-  const changed = (infohash: string) => emitChanged({ infohash, download: downloads.get(infohash) ?? null });
+  let emit: MockEmitter = () => undefined;
+  const changed = (infohash: string) =>
+    emit("download://changed", { infohash, download: downloads.get(infohash) ?? null });
+  let downloadsDir = DEFAULT_DOWNLOADS_DIR;
+  const folderFor = (d: { quality: string; movie: { title: string; year: number } }, dir = downloadsDir) =>
+    `${dir}/${d.movie.title} (${d.movie.year}) [${d.quality}]`;
+  const inDir = (path: string, dir: string) => path === dir || path.startsWith(`${dir}/`);
 
   const downloads = new Map<string, Download>();
   const seedDownload = (id: number, quality: string, state: Download["state"], fraction: number) => {
@@ -172,7 +200,7 @@ export function createMockBackend(): MockBackend {
       downSpeedBps: state === "active" ? 5.2 * 1024 * 1024 : 0,
       peers: state === "active" ? 41 : 0,
       etaS: state === "active" ? 240 : null,
-      path: state === "done" ? `~/.local/share/yts-player/library/${m.title} (${m.year}) [${quality}]` : null,
+      path: `${DEFAULT_DOWNLOADS_DIR}/${m.title} (${m.year}) [${quality}]`,
       error: null,
       addedAt: iso(90),
     });
@@ -214,7 +242,8 @@ export function createMockBackend(): MockBackend {
     upLimitKbps: 512,
     seedAfterDownload: false,
     listenPort: null,
-    dataDir: "~/.local/share/yts-player",
+    downloadsDir: DEFAULT_DOWNLOADS_DIR,
+    cacheDir: DEFAULT_CACHE_DIR,
     cacheLimitBytes: 10 * 1024 ** 3,
   };
 
@@ -478,7 +507,7 @@ export function createMockBackend(): MockBackend {
     list_downloads: () => [...downloads.values()],
     pause_download: ({ infohash }) => {
       const d = downloads.get(infohash) ?? fail("not_found", `download ${infohash} not found`);
-      if (d.state === "done") return d;
+      if (d.state === "done" || d.state === "moving" || d.state === "unavailable") return d;
       const next: Download = { ...d, state: "paused", downSpeedBps: 0, peers: 0, etaS: null };
       downloads.set(infohash, next);
       changed(infohash);
@@ -486,7 +515,7 @@ export function createMockBackend(): MockBackend {
     },
     resume_download: ({ infohash }) => {
       const d = downloads.get(infohash) ?? fail("not_found", `download ${infohash} not found`);
-      if (d.state === "done") return d;
+      if (d.state === "done" || d.state === "moving" || d.state === "unavailable") return d;
       const next: Download = { ...d, state: "active", peers: 12, error: null };
       downloads.set(infohash, next);
       changed(infohash);
@@ -498,6 +527,30 @@ export function createMockBackend(): MockBackend {
     },
     open_download_folder: ({ infohash }) => {
       if (!downloads.has(infohash)) fail("not_found", `download ${infohash} not found`);
+    },
+    move_downloads: () => {
+      if (move) fail("invalid_input", "a move is already running");
+      const items = [...downloads.values()]
+        .filter((d) => d.path && !inDir(d.path, downloadsDir))
+        .map((d) => ({ infohash: d.infohash, state: d.state, bytes: d.downloadedBytes }));
+      move = {
+        items,
+        current: 0,
+        currentDone: 0,
+        bytesDone: 0,
+        bytesTotal: items.reduce((sum, i) => sum + i.bytes, 0),
+        failed: [],
+      };
+      startMoveItem();
+      emitMove();
+    },
+    cancel_move_downloads: () => {
+      if (!move) return;
+      const item = move.items[move.current];
+      // The one being copied stays where it was (the partial copy is deleted); the rest don't move.
+      if (item) restoreState(item.infohash, item.state);
+      emitMove({ cancelled: true });
+      move = null;
     },
 
     get_settings: () => settings,
@@ -526,17 +579,42 @@ export function createMockBackend(): MockBackend {
         fail("invalid_input", "listenPort must be within 1024–65535 or null");
       if (patch.externalPlayer !== undefined && !patch.externalPlayer.trim())
         fail("invalid_input", "externalPlayer must not be empty");
-      settings = { ...settings, ...patch };
+      const folders = { downloadsDir: DEFAULT_DOWNLOADS_DIR, cacheDir: DEFAULT_CACHE_DIR };
+      const next = {
+        downloadsDir:
+          patch.downloadsDir === null ? folders.downloadsDir : (patch.downloadsDir ?? settings.downloadsDir),
+        cacheDir: patch.cacheDir === null ? folders.cacheDir : (patch.cacheDir ?? settings.cacheDir),
+      };
+      for (const [key, raw] of Object.entries(next)) {
+        if (!raw.startsWith("/")) fail("invalid_input", `${key} must be an absolute path`);
+        if (raw.includes(UNWRITABLE_DIR_MARK)) fail("invalid_input", `${key} is not writable`);
+      }
+      next.downloadsDir = next.downloadsDir.replace(/\/+$/, "");
+      next.cacheDir = next.cacheDir.replace(/\/+$/, "");
+      if (inDir(next.downloadsDir, next.cacheDir) || inDir(next.cacheDir, next.downloadsDir))
+        fail("invalid_input", "downloadsDir and cacheDir must not contain each other");
+      // A new cache folder starts empty (the old one is dropped); downloads stay where they are.
+      if (next.cacheDir !== settings.cacheDir) cacheBytes = 0;
+      downloadsDir = next.downloadsDir;
+      settings = { ...settings, ...patch, ...next };
       // LRU: shrinking the limit evicts down to it.
       cacheBytes = Math.min(cacheBytes, settings.cacheLimitBytes);
       return settings;
     },
-    get_storage_usage: () => ({
-      cacheBytes,
-      cacheLimitBytes: settings.cacheLimitBytes,
-      libraryBytes: Math.round(24.6 * 1024 ** 3),
-      freeDiskBytes: 180 * 1024 ** 3,
-    }),
+    get_storage_usage: () => {
+      const all = [...downloads.values()];
+      const free = (dir: string) => (dir.startsWith("/media/") ? 900 : 180) * GiB;
+      return {
+        cacheBytes,
+        cacheLimitBytes: settings.cacheLimitBytes,
+        libraryBytes: all.reduce((sum, d) => sum + d.downloadedBytes, 0),
+        cacheFreeBytes: free(settings.cacheDir),
+        downloadsFreeBytes: free(settings.downloadsDir),
+        cacheDirAvailable: !settings.cacheDir.includes(UNMOUNTED_DIR_MARK),
+        downloadsDirAvailable: !settings.downloadsDir.includes(UNMOUNTED_DIR_MARK),
+        downloadsOutsideDir: all.filter((d) => d.path && !inDir(d.path, downloadsDir)).length,
+      };
+    },
     clear_cache: () => {
       const freedBytes = cacheBytes;
       cacheBytes = 0;
@@ -548,7 +626,11 @@ export function createMockBackend(): MockBackend {
 
   const handle = (cmd: string, args?: unknown): unknown => {
     // Tauri plugins the UI calls directly.
-    if (cmd === "plugin:dialog|open") return "/home/usuario/Descargas/Interstellar.2014.es.srt";
+    if (cmd === "plugin:dialog|open") {
+      // Folder picker (Ajustes › Almacenamiento) or subtitle file picker.
+      const options = (args as { options?: { directory?: boolean } } | undefined)?.options;
+      return options?.directory ? MOCK_PICKED_FOLDER : "/home/usuario/Descargas/Interstellar.2014.es.srt";
+    }
     if (cmd === "plugin:opener|open_url") return undefined;
     if (!(cmd in handlers)) fail("internal", `mock: unknown command ${cmd}`);
     const h = handlers[cmd as CommandName] as (a: unknown) => unknown;
@@ -619,17 +701,93 @@ export function createMockBackend(): MockBackend {
       downSpeedBps: 0,
       peers: 0,
       etaS: null,
-      path: m ? `~/.local/share/yts-player/library/${m.title} (${m.year}) [${d.quality}]` : null,
+      path: d.path ?? (m ? folderFor(d) : null),
     });
     changed(d.infohash);
+  };
+
+  // ───────── move_downloads: one at a time, MOVE_BYTES_PER_TICK per tick ─────────
+  type MoveItem = { infohash: string; state: Download["state"]; bytes: number };
+  type MoveSim = {
+    items: MoveItem[];
+    current: number;
+    currentDone: number;
+    bytesDone: number;
+    bytesTotal: number;
+    failed: MoveProgress["failed"];
+  };
+  let move: MoveSim | null = null;
+
+  const restoreState = (infohash: string, state: Download["state"], path?: string) => {
+    const d = downloads.get(infohash);
+    if (!d) return;
+    downloads.set(infohash, { ...d, state, ...(path ? { path } : {}) });
+    changed(infohash);
+  };
+
+  const emitMove = (over: Partial<MoveProgress> = {}) => {
+    if (!move) return;
+    const finished = move.current >= move.items.length;
+    emit("downloads://move-progress", {
+      index: Math.min(move.current + 1, move.items.length),
+      total: move.items.length,
+      infohash: move.items[move.current]?.infohash ?? null,
+      bytesDone: Math.round(move.bytesDone),
+      bytesTotal: move.bytesTotal,
+      finished,
+      cancelled: false,
+      failed: [...move.failed],
+      ...over,
+      ...(over.cancelled ? { finished: true } : {}),
+    });
+    if (finished) move = null;
+  };
+
+  /** Checks the space before each copy: a download that doesn't fit is skipped with its error. */
+  const startMoveItem = () => {
+    while (move && move.current < move.items.length) {
+      const item = move.items[move.current]!;
+      if (downloadsDir.includes(FULL_DIR_MARK) && item.bytes > 2 * GiB) {
+        move.failed.push({ infohash: item.infohash, message: "not enough free space on the target disk" });
+        move.bytesDone += item.bytes;
+        move.current += 1;
+        continue;
+      }
+      move.currentDone = 0;
+      restoreState(item.infohash, "moving");
+      return;
+    }
+  };
+
+  const moveTick = () => {
+    if (!move) return;
+    const item = move.items[move.current];
+    if (item) {
+      const step = Math.min(MOVE_BYTES_PER_TICK, item.bytes - move.currentDone);
+      move.currentDone += step;
+      move.bytesDone += step;
+      if (move.currentDone >= item.bytes) {
+        const d = downloads.get(item.infohash);
+        restoreState(item.infohash, item.state, d ? folderFor(d) : undefined);
+        move.current += 1;
+        startMoveItem();
+      }
+    }
+    emitMove();
   };
 
   const tick = (): TorrentStats[] => {
     const out: TorrentStats[] = [];
     for (const d of downloads.values()) {
-      // The queue starts right away in the mock.
+      // The queue starts right away in the mock; its folder appears then.
       if (d.state === "queued") {
-        downloads.set(d.infohash, { ...d, state: "active", peers: 12, downSpeedBps: 2 * 1048576 });
+        downloads.set(d.infohash, {
+          ...d,
+          state: "active",
+          peers: 12,
+          downSpeedBps: 2 * 1048576,
+          path: d.path ?? folderFor(d),
+        });
         changed(d.infohash);
         continue;
       }
@@ -662,14 +820,21 @@ export function createMockBackend(): MockBackend {
       });
     }
     for (const sim of streams.values()) out.push(streamTick(sim));
+    moveTick();
     return out;
   };
 
   return {
     handle,
     tick,
-    onDownloadChanged: (emit) => {
-      emitChanged = emit;
+    onEvent: (fn) => {
+      emit = fn;
+    },
+    patchDownload: (infohash, patch) => {
+      const d = downloads.get(infohash);
+      if (!d) return;
+      downloads.set(infohash, { ...d, ...patch });
+      changed(infohash);
     },
     completeDownload: (infohash) => {
       const d = downloads.get(infohash);

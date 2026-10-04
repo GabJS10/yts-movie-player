@@ -14,7 +14,16 @@ import { Icon } from "../components/Icon";
 import { Poster } from "../components/Poster";
 import { RemoveDownloadDialog } from "../components/RemoveDownloadDialog";
 import { Usage } from "../components/settings/StorageSection";
-import { canPause, formatEta, formatPercent, groupDownloads, isActive, STATE_LABEL } from "../lib/downloads";
+import {
+  canPause,
+  formatEta,
+  formatPercent,
+  groupDownloads,
+  isActive,
+  isComplete,
+  isLocked,
+  STATE_LABEL,
+} from "../lib/downloads";
 import { formatBytes, formatSpeed } from "../lib/format";
 
 export const Route = createFileRoute("/downloads")({ component: DownloadsPage });
@@ -95,7 +104,7 @@ function StorageSummary({ downloads }: { downloads: Download[] }) {
             ? `${formatBytes(usage.libraryBytes)} · ${libraryCount === 1 ? "1 película" : `${libraryCount} películas`}`
             : "—"
         }
-        note={settings ? `${settings.dataDir}/library` : undefined}
+        note={settings?.downloadsDir}
       />
       <Usage
         label="Caché de streaming"
@@ -214,6 +223,21 @@ function DownloadStatus({ d }: { d: Download }) {
           <span>Reanúdala, o quítala y vuelve a descargarla.</span>
         </>
       );
+    case "unavailable":
+      return (
+        <>
+          <b>{STATE_LABEL.unavailable}</b>
+          <span>{isComplete(d) ? formatBytes(d.sizeBytes) : formatPercent(d.progress)}</span>
+          <span>¿Un disco desconectado? Sigue sola cuando la carpeta vuelva.</span>
+        </>
+      );
+    case "moving":
+      return (
+        <>
+          <b>Moviendo a la carpeta nueva…</b>
+          <span>{isComplete(d) ? formatBytes(d.sizeBytes) : formatPercent(d.progress)}</span>
+        </>
+      );
   }
 }
 
@@ -223,6 +247,9 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
   const { movie } = d;
   const name = `${movie.title} (${d.quality})`;
   const pause = canPause(d);
+  const locked = isLocked(d);
+  const lockedWhy =
+    d.state === "moving" ? "Se está moviendo a la carpeta nueva" : "Su carpeta no está disponible";
   const percent = Math.round(d.progress * 100);
 
   return (
@@ -270,7 +297,17 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
         </div>
       </div>
       <div className="flex gap-1 max-[640px]:col-start-2">
-        {d.state === "done" ? (
+        {isComplete(d) && locked ? (
+          <button
+            type="button"
+            className="dl-action"
+            aria-label={`Reproducir ${name}`}
+            title={lockedWhy}
+            disabled
+          >
+            <Icon name="play" />
+          </button>
+        ) : d.state === "done" ? (
           <Link
             to="/play/$movieId"
             params={{ movieId: movie.id }}
@@ -286,8 +323,8 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
             type="button"
             className="dl-action"
             aria-label={`${pause ? "Pausar" : "Reanudar"} ${name}`}
-            title={pause ? "Pausar" : "Reanudar"}
-            disabled={toggle.isPending}
+            title={locked ? lockedWhy : pause ? "Pausar" : "Reanudar"}
+            disabled={locked || toggle.isPending}
             onClick={() => toggle.mutate({ infohash: d.infohash, pause })}
           >
             <Icon name={pause ? "pause" : "play"} />
@@ -297,8 +334,8 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
           type="button"
           className="dl-action"
           aria-label={`Abrir la carpeta de ${name}`}
-          title={d.path ? "Abrir carpeta" : "La carpeta se crea al empezar a bajar"}
-          disabled={!d.path}
+          title={locked ? lockedWhy : d.path ? "Abrir carpeta" : "La carpeta se crea al empezar a bajar"}
+          disabled={locked || !d.path}
           onClick={() => folder.mutate(d.infohash)}
         >
           <Icon name="folder" />
@@ -307,7 +344,8 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
           type="button"
           className="dl-action"
           aria-label={`Quitar ${name}`}
-          title="Quitar"
+          title={d.state === "moving" ? lockedWhy : "Quitar"}
+          disabled={d.state === "moving"}
           onClick={onRemove}
         >
           <Icon name="trash" />

@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { useDownloadEvents, useDownloads } from "../api/queries";
+import { useDownloadEvents, useDownloads, useMoveEvents } from "../api/queries";
 import { activeCount as countActive } from "../lib/downloads";
 import { formatSpeed } from "../lib/format";
 import { useConnectivityWatch } from "../lib/useConnectivityWatch";
@@ -47,8 +47,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   // The counter follows download://changed; the list itself is polled only on the Downloads page.
   useDownloadEvents();
+  useMoveEvents();
   useConnectivityWatch();
   const activeCount = countActive(useDownloads().data);
+  // torrent://stats only covers the open stream (IPC v0.10.1); downloads alone show just the count.
   const speed = useSwarmStore((s) => s.totalBps);
   const offline = useConnectivity((s) => s.offline);
 
@@ -109,7 +111,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <span className="size-1.5 rounded-full bg-green shadow-[0_0_0_3px_var(--color-green-wash)]" />
               <Icon name="down" size={14} />
-              {formatSpeed(speed)} · {activeCount} {activeCount === 1 ? "activa" : "activas"}
+              {speed > 0 ? `${formatSpeed(speed)} · ` : ""}
+              {activeCount} {activeCount === 1 ? "activa" : "activas"}
             </span>
           )}
           <Link to="/search" aria-label="Buscar" className={iconBtn}>
