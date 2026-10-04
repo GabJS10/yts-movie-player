@@ -17,6 +17,8 @@ export type MockOptions = {
   settings: SettingsPatch | null;
   /** Trailer page: real YouTube embed, "fake" (ready/playing without internet) or a YouTube error code. */
   trailer: "youtube" | "fake" | number;
+  /** check_for_update answers this newer version (e.g. "1.1.0"); null = up to date. */
+  update: string | null;
 };
 
 export const MOCK_KEYS = [
@@ -26,6 +28,7 @@ export const MOCK_KEYS = [
   "mock:tick",
   "mock:settings",
   "mock:trailer",
+  "mock:update",
 ] as const;
 
 /** `add_favorite,start_stream=no_peers` → add_favorite: db, start_stream: no_peers. */
@@ -69,6 +72,7 @@ export function readMockOptions(search: string, storage: Pick<Storage, "getItem"
     tickMs: Math.max(0, num(get("mock:tick")) ?? 1000),
     settings,
     trailer: trailerRaw === "fake" ? "fake" : trailerCode !== null ? trailerCode : "youtube",
+    update: get("mock:update")?.trim() || null,
   };
 }
 

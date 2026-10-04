@@ -124,7 +124,7 @@ export function BufferScreen({
               ? "Seguimos buscando a alguien que la comparta."
               : stalled
                 ? "Si sigue sin datos, prueba otra versión con más seeds."
-                : `Empieza solo al tener ${Math.round(target / MB)} MB · `}
+                : `Empieza en cuanto haya ${Math.round(target / MB)} MB · `}
             {!stalled && (
               <>
                 <kbd className="rounded-sm border border-line-hi px-1.5 text-[11px] font-bold text-text-2">

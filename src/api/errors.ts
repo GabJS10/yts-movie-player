@@ -19,7 +19,7 @@ export const ERROR_COPY: Record<ErrorCode, { title: string; action: string }> = 
     action: "Añádela en Ajustes › Subtítulos.",
   },
   subtitles_quota: {
-    title: "Se agotó la cuota diaria de subtítulos",
+    title: "Se agotó el cupo diario de subtítulos",
     action: "Carga un archivo .srt o vuelve a intentarlo mañana.",
   },
   external_player_missing: {

@@ -172,6 +172,11 @@ export const clearCache = () => call("clear_cache");
 export const openTrailerWindow = (ytTrailerCode: string, title: string) =>
   call("open_trailer_window", { ytTrailerCode, title });
 
+// ───────── Application ─────────
+export const getAppInfo = () => call("get_app_info");
+export const checkForUpdate = () => call("check_for_update");
+export const openLogsFolder = () => call("open_logs_folder");
+
 // ───────── Events ─────────
 export const onTorrentStats = (handler: (p: EventMap["torrent://stats"]) => void) =>
   on("torrent://stats", handler);

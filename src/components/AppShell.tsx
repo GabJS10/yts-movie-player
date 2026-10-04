@@ -10,6 +10,7 @@ import { useSearchMemory } from "../store/searchMemory";
 import { useSwarmStore } from "../store/swarm";
 import { Icon, type IconName } from "./Icon";
 import { ToastHost } from "./Toast";
+import { UpdateNotice } from "./UpdateNotice";
 
 type NavItem = {
   to: "/" | "/search" | "/my-list" | "/downloads" | "/settings";
@@ -164,6 +165,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </main>
       <ToastHost />
+      <UpdateNotice />
 
       <nav
         aria-label="Principal (compacta)"

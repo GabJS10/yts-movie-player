@@ -17,7 +17,9 @@ import { describeError } from "./errors";
 import {
   addFavorite,
   clearCache,
+  checkForUpdate,
   getApiStatus,
+  getAppInfo,
   getFeatured,
   getHomeProfile,
   getMovie,
@@ -66,6 +68,8 @@ export const queryKeys = {
   settings: ["settings"] as const,
   storage: ["storage"] as const,
   downloads: ["downloads"] as const,
+  appInfo: ["app-info"] as const,
+  update: ["update"] as const,
 };
 
 /** Errors that a retry cannot fix. */
@@ -485,4 +489,15 @@ export function useCancelMove() {
     mutationFn: cancelMoveDownloads,
     onError: failToast("No se pudo cancelar"),
   });
+}
+
+// ───────── Aplicación ─────────
+
+export function useAppInfo() {
+  return useQuery({ queryKey: queryKeys.appInfo, queryFn: getAppInfo, retry, staleTime: Infinity });
+}
+
+/** A newer release on GitHub, asked once per session (the backend caches it too and never fails). */
+export function useUpdateCheck() {
+  return useQuery({ queryKey: queryKeys.update, queryFn: checkForUpdate, retry: false, staleTime: Infinity });
 }

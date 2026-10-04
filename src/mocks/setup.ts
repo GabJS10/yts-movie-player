@@ -17,7 +17,7 @@
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { createMockBackend, setMockTrailerMode, type MockBackend } from "./backend";
+import { createMockBackend, setMockTrailerMode, setMockUpdate, type MockBackend } from "./backend";
 import { readMockOptions, stripMockParams } from "./options";
 
 declare global {
@@ -33,6 +33,15 @@ export function installMocks(): void {
   if (clean) window.history.replaceState(window.history.state, "", clean);
 
   setMockTrailerMode(options.trailer);
+  setMockUpdate(
+    options.update
+      ? {
+          version: options.update,
+          url: `https://github.com/GabJS10/yts-movie-player/releases/tag/v${options.update}`,
+          publishedAt: new Date().toISOString(),
+        }
+      : null,
+  );
   const backend = createMockBackend();
   backend.onEvent((event, payload) => void emit(event, payload));
   backend.setOffline(options.offline);

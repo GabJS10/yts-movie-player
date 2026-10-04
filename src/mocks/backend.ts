@@ -10,6 +10,7 @@ import type {
   Download,
   EventMap,
   FeaturedReason,
+  UpdateInfo,
   EventName,
   MoveProgress,
   MovieDetail,
@@ -117,6 +118,12 @@ const DEFAULT_CACHE_DIR = `${MOCK_DATA_DIR}/cache`;
 export const UNWRITABLE_DIR_MARK = "sin-permiso";
 export const UNMOUNTED_DIR_MARK = "desconectado";
 export const FULL_DIR_MARK = "lleno";
+export const MOCK_APP_VERSION = "1.0.0";
+/** check_for_update's answer in the mock (none by default; mock:update or setMockUpdate sets one). */
+let mockUpdate: UpdateInfo | null = null;
+export const setMockUpdate = (update: UpdateInfo | null) => {
+  mockUpdate = update;
+};
 /** What the folder picker answers in the mock: another disk. */
 export const MOCK_PICKED_FOLDER = "/media/usb/Películas";
 const GiB = 1024 ** 3;
@@ -723,6 +730,15 @@ export function createMockBackend(): MockBackend {
     },
 
     open_trailer_window: () => undefined,
+
+    get_app_info: () => ({
+      version: MOCK_APP_VERSION,
+      logsDir: "/home/usuario/.local/state/yts-player/logs",
+      dataDir: MOCK_DATA_DIR,
+      repoUrl: "https://github.com/GabJS10/yts-movie-player",
+    }),
+    check_for_update: () => (offline ? null : mockUpdate),
+    open_logs_folder: () => undefined,
   };
 
   const handle = (cmd: string, args?: unknown): unknown => {

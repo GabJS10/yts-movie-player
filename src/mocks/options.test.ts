@@ -12,6 +12,7 @@ describe("mock options (e2e scenarios)", () => {
       tickMs: 1000,
       settings: null,
       trailer: "youtube",
+      update: null,
     });
   });
 

@@ -342,7 +342,9 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
           className="dl-action"
           aria-label={`Abrir la carpeta de ${name}`}
           data-testid="download-folder"
-          title={locked ? lockedWhy : d.path ? "Abrir carpeta" : "La carpeta se crea al empezar a bajar"}
+          title={
+            locked ? lockedWhy : d.path ? "Abrir carpeta" : "La carpeta se crea cuando empiece a descargarse"
+          }
           disabled={locked || !d.path}
           onClick={() => folder.mutate(d.infohash)}
         >

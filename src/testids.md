@@ -21,6 +21,7 @@ Cada opción se puede pasar en la URL de la primera carga (se lee una vez al arr
 | `mock:offline` | `1` | Sin red: el catálogo falla con `network`; las películas descargadas abren su copia guardada y se reproducen desde la biblioteca. |
 | `mock:tick` | ms (`0` = nunca) | Paso de la simulación (búfer del stream, descargas, mover). Por defecto 1000. Con `0` se avanza a mano. |
 | `mock:trailer` | `fake` \| código | Página del tráiler: `fake` responde `ready`/`playing` sin YouTube (sin internet); un número (p. ej. `153`) manda ese error y dispara la cadena (ventana → navegador). Sin la clave: el embed real de YouTube. |
+| `mock:update` | versión | `check_for_update` responde esa versión (p. ej. `1.1.0`) como nueva; sin la clave, la app está al día (la del mock es `1.0.0`). |
 | `mock:settings` | JSON | Parche de ajustes antes del primer render. Ej.: `{"openSubtitlesApiKey":"quota"}`, `{"openSubtitlesApiKey":null}`. |
 
 Ejemplo: `http://localhost:1420/movie/1632?mock:latency=0&mock:fail=start_stream=no_peers`.
@@ -120,6 +121,8 @@ En la consola (y desde `page.evaluate`) está `window.__ytsMock`:
 | id | Elemento |
 |---|---|
 | `move-dialog`, `move-cancel`, `move-background`, `move-close` | Diálogo de mover descargas. |
+| `app-version`, `open-logs` | Acerca de: versión instalada y "Abrir carpeta de registros". |
+| `update-notice`, `update-open`, `update-dismiss` | Aviso de nueva versión (abajo a la izquierda; una vez por sesión): Ver novedades y cerrar. |
 
 ### Errores
 | id | Elemento |

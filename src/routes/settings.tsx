@@ -2,6 +2,7 @@ import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useSettings } from "../api/queries";
 import { ErrorState } from "../components/ErrorState";
+import { AboutSection } from "../components/settings/AboutSection";
 import { CatalogSection } from "../components/settings/CatalogSection";
 import { PlaybackSection } from "../components/settings/PlaybackSection";
 import { StorageSection } from "../components/settings/StorageSection";
@@ -16,6 +17,7 @@ const SECTIONS = [
   { id: "s-play", label: "Reproducción" },
   { id: "s-torrent", label: "Torrent" },
   { id: "s-disk", label: "Almacenamiento" },
+  { id: "s-about", label: "Acerca de" },
 ];
 
 /** Highlights the section in view (scroll spy). */
@@ -86,6 +88,7 @@ function SettingsPage() {
               <PlaybackSection settings={settings.data} />
               <TorrentSection settings={settings.data} />
               <StorageSection settings={settings.data} />
+              <AboutSection />
             </div>
           ) : (
             <div aria-busy="true" aria-label="Cargando ajustes">

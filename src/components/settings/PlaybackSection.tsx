@@ -47,7 +47,7 @@ export function PlaybackSection({ settings }: { settings: Settings }) {
       </SetRow>
       <SetRow
         title="Preferir x264"
-        help="Las versiones x265 (HEVC, típicas en 4K) suelen no reproducirse en el reproductor integrado."
+        help="Las versiones x265 (HEVC, típicas en 4K) no suelen reproducirse en el reproductor integrado."
       >
         <Switch
           label="Preferir x264"

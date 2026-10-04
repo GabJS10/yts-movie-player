@@ -33,7 +33,7 @@ describe("/settings", () => {
       within(nav)
         .getAllByRole("link")
         .map((a) => a.textContent),
-    ).toEqual(["Catálogo", "Subtítulos", "Reproducción", "Torrent", "Almacenamiento"]);
+    ).toEqual(["Catálogo", "Subtítulos", "Reproducción", "Torrent", "Almacenamiento", "Acerca de"]);
     expect(screen.queryByText("Próximamente")).toBeNull();
     const torrent = screen.getByRole("region", { name: /Torrent/ });
     for (const control of torrent.querySelectorAll("input, [role=switch]")) expect(control).toBeEnabled();

@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.12.1); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.13); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -300,6 +300,26 @@ export type StorageUsage = {
   defaultCacheDir: string;
 };
 
+// ───────── Application ─────────
+
+export type AppInfo = {
+  /** The package's, e.g. "1.0.0". */
+  version: string;
+  /** ~/.local/state/yts-player/logs (or $XDG_STATE_HOME/yts-player/logs). */
+  logsDir: string;
+  /** ~/.local/share/yts-player (DB, settings, subtitles). */
+  dataDir: string;
+  repoUrl: string;
+};
+
+/** A newer release on GitHub. */
+export type UpdateInfo = {
+  version: string;
+  /** The release page (html_url). */
+  url: string;
+  publishedAt: string;
+};
+
 // ───────── Events ─────────
 
 /** no_peers: 60 s after start_stream without ever connecting to a peer (the torrent keeps trying). */
@@ -406,6 +426,11 @@ export type CommandMap = {
   clear_cache: { args: undefined; result: ClearCacheResult };
 
   open_trailer_window: { args: { ytTrailerCode: string; title: string }; result: void };
+
+  get_app_info: { args: undefined; result: AppInfo };
+  /** null when there's nothing newer, offline or an unreadable answer: it never fails. */
+  check_for_update: { args: undefined; result: UpdateInfo | null };
+  open_logs_folder: { args: undefined; result: void };
 };
 
 export type CommandName = keyof CommandMap;
