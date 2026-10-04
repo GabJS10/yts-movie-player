@@ -42,6 +42,7 @@ El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia t
   herdr agent read frontend --source recent-unwrapped --lines 120
   ```
 - No mandes un prompt a un agente que está `working` o `blocked` sin revisar antes su estado (`herdr agent get <nombre>`). Excepción: el aviso de "terminé / bloqueado" a `plan` se manda siempre.
+- **Releases:** las hace `plan`. `scripts/bump-version.sh X.Y.Z` cambia la versión en `package.json`, `Cargo.toml` y `tauri.conf.json` (la única vez que `plan` toca archivos de otros); después, el tag `vX.Y.Z` dispara `.github/workflows/release.yml`, que deja un **borrador** de release que se publica a mano.
 - Decisiones de arquitectura nuevas: las registra `plan` en `docs/PLAN.md` (o en `docs/decisions/`).
 - No cerrar ni mover tabs/panes de otros agentes.
 

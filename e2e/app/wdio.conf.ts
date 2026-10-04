@@ -17,9 +17,11 @@ import { startFakeYts } from "./fake-yts.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
-const application = path.join(root, "src-tauri/target/e2e/debug/yts-player");
-const seederBin = path.join(root, "src-tauri/target/e2e/debug/examples/e2e_seeder");
-const tauriDriverBin = path.join(os.homedir(), ".cargo/bin/tauri-driver");
+// E2E_APP_BINARY / E2E_SEEDER_BINARY: run against an installed package (release smoke test).
+const application = process.env.E2E_APP_BINARY ?? path.join(root, "src-tauri/target/e2e/debug/yts-player");
+const seederBin =
+  process.env.E2E_SEEDER_BINARY ?? path.join(root, "src-tauri/target/e2e/debug/examples/e2e_seeder");
+const tauriDriverBin = process.env.TAURI_DRIVER_BINARY ?? path.join(os.homedir(), ".cargo/bin/tauri-driver");
 
 let seeder: ChildProcess | undefined;
 let tauriDriver: ChildProcess | undefined;

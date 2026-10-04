@@ -1,0 +1,130 @@
+name: Release
+
+# Push a tag vX.Y.Z (after scripts/bump-version.sh X.Y.Z) to build the Linux packages,
+# create a DRAFT GitHub release with them and smoke-test the installed app.
+# The draft is published by hand once the smoke tests pass and the packages were tried.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: Build packages (Ubuntu 22.04)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Version matches the tag
+        run: scripts/bump-version.sh --check "$TAG"
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libssl-dev \
+            patchelf rpm file gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.TAG }}
+          releaseName: "YTS Player ${{ env.TAG }}"
+          releaseBody: "Ver CHANGELOG.md. Paquetes para Linux: .deb (Debian/Ubuntu/Mint), .rpm (Fedora/openSUSE) y AppImage (cualquier distro)."
+          releaseDraft: true
+          prerelease: false
+          args: --bundles deb,rpm,appimage
+      # Test tools for the smoke jobs, built here so the clean containers stay clean.
+      - name: Build the E2E seeder and tauri-driver
+        working-directory: src-tauri
+        run: |
+          cargo build --example e2e_seeder
+          cargo install tauri-driver --locked --root "$RUNNER_TEMP/tools"
+          mkdir -p "$RUNNER_TEMP/smoke"
+          cp target/debug/examples/e2e_seeder "$RUNNER_TEMP/tools/bin/tauri-driver" "$RUNNER_TEMP/smoke/"
+          cp target/release/bundle/deb/*.deb target/release/bundle/appimage/*.AppImage "$RUNNER_TEMP/smoke/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke
+          path: ${{ runner.temp }}/smoke
+          retention-days: 7
+
+  smoke-deb:
+    name: Smoke test .deb (clean Ubuntu 24.04)
+    needs: build
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke
+          path: /smoke
+      - name: Install the .deb on a clean system (dependencies must resolve)
+        run: |
+          apt-get update
+          apt-get install -y /smoke/*.deb
+          test -x /usr/bin/yts-player
+          if ldd /usr/bin/yts-player | grep "not found"; then exit 1; fi
+          test -f /usr/share/applications/*.desktop
+      - name: Install test tooling
+        run: |
+          apt-get install -y git ca-certificates curl xvfb xauth webkit2gtk-driver ffmpeg dbus-x11
+          chmod +x /smoke/e2e_seeder /smoke/tauri-driver
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: e2e
+      - name: E2E on the installed app (offline)
+        working-directory: e2e
+        env:
+          E2E_APP_BINARY: /usr/bin/yts-player
+          E2E_SEEDER_BINARY: /smoke/e2e_seeder
+          TAURI_DRIVER_BINARY: /smoke/tauri-driver
+        run: xvfb-run -a npm run app
+
+  smoke-appimage:
+    name: Smoke test AppImage
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke
+          path: smoke
+      - name: Start the AppImage and check it serves
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          chmod +x smoke/*.AppImage
+          cd smoke && ./*.AppImage --appimage-extract >/dev/null && cd ..
+          export XDG_DATA_HOME="$RUNNER_TEMP/data" XDG_STATE_HOME="$RUNNER_TEMP/state"
+          xvfb-run -a smoke/squashfs-root/AppRun > app.log 2>&1 &
+          # Release builds log to $XDG_STATE_HOME/yts-player/logs; check both places.
+          timeout 60 bash -c 'until grep -rqs "local HTTP server listening" app.log "$XDG_STATE_HOME"; do sleep 1; done'
+          sleep 10
+          pgrep -f squashfs-root/ >/dev/null || { cat app.log; exit 1; }
+          tail -20 app.log; tail -20 "$XDG_STATE_HOME"/yts-player/logs/* 2>/dev/null || true
