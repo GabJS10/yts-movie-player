@@ -28,13 +28,47 @@ type CatalogMovie = Omit<MovieDetail, "isFavorite" | "progress" | "download" | "
 type Catalog = { movies: CatalogMovie[] };
 
 const CATALOG = catalog as unknown as Catalog;
-const STREAM_PORT = 47213;
 
 // Browser-playable stand-ins for the local stream (dev only): a short H.264 clip for x264, and a URL
 // that fails to decode for x265, so the codec-error path can be exercised.
 export const MOCK_H264_URL =
   "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_1MB.mp4";
 export const MOCK_UNPLAYABLE_URL = "data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb20=";
+
+/** Movies with no Spanish subtitles in the mock (English fallback): The Shawshank Redemption. */
+export const NO_SPANISH = new Set([3709]);
+export const INVALID_KEY = "invalid";
+export const QUOTA_KEY = "quota";
+
+/** Next midnight UTC: when OpenSubtitles renews the daily quota. */
+const quotaResetAt = () => {
+  const d = new Date();
+  d.setUTCHours(24, 0, 0, 0);
+  return d.toISOString();
+};
+
+const LINES: Record<string, string[]> = {
+  es: [
+    "Nacimos aquí, pero no estábamos destinados a morir aquí.",
+    "<i>No entres dócilmente en esa buena noche.</i>",
+    "El amor es lo único que trasciende el tiempo y el espacio.",
+  ],
+  en: [
+    "We were born here, but we were never meant to die here.",
+    "<i>Do not go gentle into that good night.</i>",
+    "Love is the one thing that transcends time and space.",
+  ],
+};
+
+/** A WebVTT document as a data: URL (the browser can't reach the local /subs server): a cue every 3 s for 10 min. */
+function mockVtt(lang: string, label: string): string {
+  const lines = LINES[lang] ?? [`Subtítulo de ${label}`, "<b>Línea en negrita</b>", "Tercera línea"];
+  const ts = (s: number) =>
+    `00:${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}.000`;
+  let vtt = "WEBVTT\n\n";
+  for (let i = 0; i < 200; i++) vtt += `${ts(i * 3)} --> ${ts(i * 3 + 2)}\n${lines[i % lines.length]}\n\n`;
+  return `data:text/vtt;charset=utf-8,${encodeURIComponent(vtt)}`;
+}
 
 type StreamSim = { session: StreamSession; ticks: number; buffered: number; seeds: number; peers: number };
 
@@ -135,9 +169,21 @@ export function createMockBackend(): MockBackend {
   const streams = new Map<string, StreamSim>();
   let cacheBytes = Math.round(3.1 * 1024 ** 3);
 
+  // OpenSubtitles: magic keys exercise the error paths ("invalid" → subtitles_auth, "quota" → subtitles_quota).
+  const downloaded = new Set<string>();
+  let remaining = 20;
+  const requireKey = () => {
+    const key = settings.openSubtitlesApiKey;
+    if (!key) fail("subtitles_auth", "no OpenSubtitles API key");
+    if (key === INVALID_KEY) fail("subtitles_auth", "OpenSubtitles rejected the API key (401)");
+  };
+
   let settings: Settings = {
     apiBaseUrls: ["https://movies-api.accel.li/api/v2/", "https://yts.gg/api/v2/"],
-    openSubtitlesApiKey: null,
+    // A key in the mock, so `npm run dev` shows subtitles; tests that need "no key" clear it.
+    openSubtitlesApiKey: "mock-key",
+    openSubtitlesUsername: null,
+    openSubtitlesPassword: null,
     subtitleLang: "es",
     autoSubtitles: true,
     preferredQuality: "1080p",
@@ -254,38 +300,65 @@ export function createMockBackend(): MockBackend {
       torrentOf(infohash);
     },
 
-    search_subtitles: ({ movieId, lang }) => {
+    search_subtitles: ({ movieId, lang, infohash }) => {
       const m = movie(movieId);
-      const options: SubtitleOption[] = [
-        {
-          id: `${m.id}-${lang}-1`,
-          lang,
-          label: `${m.title}.${m.year}.1080p.BluRay.x264-[YTS]`,
-          downloads: 4812,
-          hearingImpaired: false,
-          matchesRelease: true,
-        },
-        {
-          id: `${m.id}-${lang}-2`,
-          lang,
-          label: `${m.title}.${m.year}.WEBRip`,
-          downloads: 1290,
-          hearingImpaired: true,
-          matchesRelease: false,
-        },
+      requireKey();
+      if (lang === "es" && NO_SPANISH.has(movieId)) return [];
+      // The release of the version being played (quality + source), as the backend matches it.
+      const t = infohash ? m.torrents.find((x) => x.infohash === infohash) : undefined;
+      const release = t
+        ? `${t.quality}.${t.source === "bluray" ? "BluRay" : "WEBRip"}.x264`
+        : "1080p.BluRay.x264";
+      const option = (n: number, label: string, over: Partial<SubtitleOption> = {}): SubtitleOption => ({
+        id: `${m.id}-${lang}-${n}`,
+        lang,
+        label,
+        downloads: 0,
+        hearingImpaired: false,
+        matchesRelease: false,
+        aiTranslated: false,
+        ...over,
+      });
+      // Already in contract order: release match, then plain ones, then SDH / AI, by downloads.
+      return [
+        option(1, `${m.title}.${m.year}.${release}-[YTS.MX]`, { downloads: 4812, matchesRelease: !!t }),
+        option(2, `${m.title}.${m.year}.720p.WEBRip.x264-[YTS.MX]`, { downloads: 2304 }),
+        option(3, `${m.title}.${m.year}.BRRip.XviD`, { downloads: 980 }),
+        option(4, `${m.title}.${m.year}.1080p.BluRay.SDH`, { downloads: 1290, hearingImpaired: true }),
+        option(5, `${m.title}.${m.year}.WEB-DL (traducción automática)`, {
+          downloads: 40,
+          aiTranslated: true,
+        }),
       ];
-      return options;
     },
-    load_subtitle: ({ subtitleId }) => ({
-      trackUrl: `http://127.0.0.1:${STREAM_PORT}/subs/${subtitleId}.vtt`,
-      lang: subtitleId.split("-")[1] ?? null,
-      label: "OpenSubtitles",
-    }),
-    load_subtitle_file: ({ path }) => ({
-      trackUrl: `http://127.0.0.1:${STREAM_PORT}/subs/local.vtt`,
-      lang: null,
-      label: path.split("/").pop() ?? path,
-    }),
+    load_subtitle: ({ subtitleId }) => {
+      requireKey();
+      if (settings.openSubtitlesApiKey === QUOTA_KEY && !downloaded.has(subtitleId))
+        fail("subtitles_quota", `daily quota exhausted, resets at ${quotaResetAt()}`);
+      // A cached .vtt doesn't spend quota.
+      if (!downloaded.has(subtitleId)) {
+        downloaded.add(subtitleId);
+        remaining = Math.max(0, remaining - 1);
+      }
+      const [id, lang] = subtitleId.split("-");
+      const title = byId.get(Number(id))?.title ?? "";
+      return { trackUrl: mockVtt(lang ?? "es", title), lang: lang ?? null, label: "OpenSubtitles" };
+    },
+    load_subtitle_file: ({ path }) => {
+      if (!/\.(srt|vtt)$/i.test(path)) fail("invalid_input", `not a subtitle file: ${path}`);
+      const label = path.split("/").pop() ?? path;
+      return { trackUrl: mockVtt("file", label), lang: null, label };
+    },
+    get_subtitles_status: () => {
+      requireKey();
+      const loggedIn = !!(settings.openSubtitlesUsername && settings.openSubtitlesPassword);
+      return {
+        configured: true,
+        loggedIn,
+        remainingDownloads: settings.openSubtitlesApiKey === QUOTA_KEY ? 0 : loggedIn ? remaining : null,
+        resetAt: quotaResetAt(),
+      };
+    },
 
     list_favorites: () => [...favorites],
     add_favorite: ({ movie: m }) => {
@@ -396,6 +469,9 @@ export function createMockBackend(): MockBackend {
   };
 
   const handle = (cmd: string, args?: unknown): unknown => {
+    // Tauri plugins the UI calls directly.
+    if (cmd === "plugin:dialog|open") return "/home/usuario/Descargas/Interstellar.2014.es.srt";
+    if (cmd === "plugin:opener|open_url") return undefined;
     if (!(cmd in handlers)) fail("internal", `mock: unknown command ${cmd}`);
     const h = handlers[cmd as CommandName] as (a: unknown) => unknown;
     return h(args);

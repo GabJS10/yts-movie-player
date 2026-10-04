@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.6); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.7); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -145,12 +145,25 @@ export type SubtitleOption = {
   downloads: number;
   hearingImpaired: boolean;
   matchesRelease: boolean;
+  /** Translated by AI or machine. */
+  aiTranslated: boolean;
 };
 
 export type SubtitleTrack = {
   trackUrl: string;
   lang: string | null;
   label: string;
+};
+
+export type SubtitlesStatus = {
+  /** There is an API key. */
+  configured: boolean;
+  /** Username and password are set and the login worked. */
+  loggedIn: boolean;
+  /** null when OpenSubtitles doesn't report it (no login). */
+  remainingDownloads: number | null;
+  /** ISO 8601: when the daily quota renews (last known value). */
+  resetAt: string | null;
 };
 
 // ───────── Continue watching ─────────
@@ -183,6 +196,8 @@ export type Download = {
 export type Settings = {
   apiBaseUrls: string[];
   openSubtitlesApiKey: string | null;
+  openSubtitlesUsername: string | null;
+  openSubtitlesPassword: string | null;
   subtitleLang: string;
   autoSubtitles: boolean;
   preferredQuality: Quality;
@@ -198,8 +213,8 @@ export type Settings = {
 };
 
 /**
- * Partial settings update. Absent key = leave unchanged. On nullable fields
- * (openSubtitlesApiKey, downLimitKbps, upLimitKbps, listenPort) `null` = clear the value.
+ * Partial settings update. Absent key = leave unchanged. On nullable fields (openSubtitlesApiKey,
+ * openSubtitlesUsername, openSubtitlesPassword, downLimitKbps, upLimitKbps, listenPort) `null` = clear the value.
  * `dataDir` is stored but only applied after restarting the app.
  */
 export type SettingsPatch = Partial<Settings>;
@@ -270,6 +285,7 @@ export type CommandMap = {
   };
   load_subtitle: { args: { subtitleId: string }; result: SubtitleTrack };
   load_subtitle_file: { args: { path: string }; result: SubtitleTrack };
+  get_subtitles_status: { args: undefined; result: SubtitlesStatus };
 
   list_favorites: { args: undefined; result: MovieSummary[] };
   add_favorite: { args: { movie: MovieSummary }; result: void };

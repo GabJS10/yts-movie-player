@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { Torrent, TorrentStats } from "../../api/types";
 import { formatSpeed } from "../../lib/format";
 import { formatClock, type ScrubLayers } from "../../lib/player";
@@ -24,6 +24,8 @@ type Props = {
   onMute: () => void;
   onFullscreen: () => void;
   onBack: () => void;
+  /** Subtitle menu (cc button + popover), before fullscreen. */
+  subtitles?: ReactNode;
 };
 
 const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
@@ -176,9 +178,11 @@ export function PlayerControls(p: Props) {
           <span className="mx-auto truncate px-4 text-[15px] font-semibold text-text-2 max-[900px]:hidden">
             {p.title}
           </span>
+          <span className="ml-auto" />
+          {p.subtitles}
           <button
             type="button"
-            className="ctrl-btn ml-auto"
+            className="ctrl-btn"
             aria-label={p.fullscreen ? "Salir de pantalla completa (F)" : "Pantalla completa (F)"}
             onClick={p.onFullscreen}
           >

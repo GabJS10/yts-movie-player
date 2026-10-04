@@ -41,7 +41,7 @@ describe("/search filters ↔ URL", () => {
     const { router, calls } = await renderApp("/search");
     await user.type(screen.getByLabelText("Buscar películas"), "interstellar");
     expect(searchOf(router)?.query).toBeUndefined();
-    await waitFor(() => expect(searchOf(router)).toMatchObject({ query: "interstellar" }), { timeout: 1500 });
+    await waitFor(() => expect(searchOf(router)).toMatchObject({ query: "interstellar" }));
     expect(await screen.findByText("1 película")).toBeInTheDocument();
     const queries = calls
       .filter((c) => c.cmd === "list_movies")

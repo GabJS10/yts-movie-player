@@ -3,6 +3,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   AppError,
   CommandArgs,
@@ -83,6 +85,26 @@ export const searchSubtitles = (movieId: number, lang: string, infohash?: string
   call("search_subtitles", infohash === undefined ? { movieId, lang } : { movieId, lang, infohash });
 export const loadSubtitle = (subtitleId: string) => call("load_subtitle", { subtitleId });
 export const loadSubtitleFile = (path: string) => call("load_subtitle_file", { path });
+export const getSubtitlesStatus = () => call("get_subtitles_status");
+
+/** "Cargar archivo…": native file dialog (tauri-plugin-dialog). Resolves to the path, or null if cancelled. */
+export async function pickSubtitleFile(): Promise<string | null> {
+  try {
+    const path = await openDialog({
+      title: "Cargar subtítulos",
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Subtítulos", extensions: ["srt", "vtt"] }],
+    });
+    return typeof path === "string" ? path : null;
+  } catch (err) {
+    throw toAppError(err);
+  }
+}
+
+/** Opens a web page in the system browser (tauri-plugin-opener). */
+export const openExternalUrl = (url: string) =>
+  openUrl(url).catch((err: unknown) => Promise.reject(toAppError(err)));
 
 // ───────── My list ─────────
 export const listFavorites = () => call("list_favorites");

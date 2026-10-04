@@ -6,6 +6,9 @@ type UiState = {
   muted: boolean;
   setVolume: (volume: number) => void;
   toggleMuted: () => void;
+  /** Subtitle delay in seconds per movie id, remembered for the session only. */
+  subtitleDelay: Record<number, number>;
+  setSubtitleDelay: (movieId: number, delay: number) => void;
 };
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -13,4 +16,7 @@ export const useUiStore = create<UiState>()((set) => ({
   muted: false,
   setVolume: (volume) => set({ volume: Math.min(1, Math.max(0, volume)), muted: false }),
   toggleMuted: () => set((s) => ({ muted: !s.muted })),
+  subtitleDelay: {},
+  setSubtitleDelay: (movieId, delay) =>
+    set((s) => ({ subtitleDelay: { ...s.subtitleDelay, [movieId]: delay } })),
 }));

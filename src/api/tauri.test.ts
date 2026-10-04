@@ -2,7 +2,17 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockBackend } from "../mocks/backend";
-import { getMovie, listMovies, onTorrentStats, toAppError, updateSettings } from "./tauri";
+import {
+  getMovie,
+  getSubtitlesStatus,
+  listMovies,
+  loadSubtitleFile,
+  onTorrentStats,
+  pickSubtitleFile,
+  searchSubtitles,
+  toAppError,
+  updateSettings,
+} from "./tauri";
 import type { TorrentStats } from "./types";
 
 describe("tauri api (mock backend)", () => {
@@ -66,5 +76,37 @@ describe("tauri api (mock backend)", () => {
   it("normalizes non-contract errors to internal", () => {
     expect(toAppError(new Error("boom"))).toEqual({ code: "internal", message: "boom" });
     expect(toAppError({ code: "no_peers", message: "x" })).toEqual({ code: "no_peers", message: "x" });
+  });
+});
+
+describe("subtitles wrappers", () => {
+  it("search_subtitles without a key rejects with subtitles_auth; the status reports the quota", async () => {
+    const backend = createMockBackend();
+    mockIPC((cmd, args) => backend.handle(cmd, args));
+    expect(await getSubtitlesStatus()).toMatchObject({
+      configured: true,
+      loggedIn: false,
+      remainingDownloads: null,
+    });
+    await updateSettings({ openSubtitlesApiKey: null });
+    await expect(searchSubtitles(1632, "es")).rejects.toMatchObject({ code: "subtitles_auth" });
+    // A local file always works.
+    expect(await loadSubtitleFile("/x/peli.srt")).toMatchObject({ label: "peli.srt", lang: null });
+  });
+
+  it("pickSubtitleFile asks the dialog plugin for one .srt/.vtt and returns its path, or null if cancelled", async () => {
+    let answer: unknown = "/home/u/peli.srt";
+    const seen: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd !== "plugin:dialog|open") throw new Error(cmd);
+      seen.push(args);
+      return answer;
+    });
+    expect(await pickSubtitleFile()).toBe("/home/u/peli.srt");
+    expect(seen[0]).toMatchObject({
+      options: { multiple: false, directory: false, filters: [{ extensions: ["srt", "vtt"] }] },
+    });
+    answer = null;
+    expect(await pickSubtitleFile()).toBeNull();
   });
 });

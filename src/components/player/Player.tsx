@@ -11,7 +11,9 @@ import {
   scrubLayers,
   shortcutAction,
 } from "../../lib/player";
+import { onFileDrop } from "../../lib/fileDrop";
 import { toSummary } from "../../lib/movie";
+import { formatDelay, isSubtitleFile } from "../../lib/subtitles";
 import { pickDefaultTorrent } from "../../lib/versions";
 import { useSwarmStore } from "../../store/swarm";
 import { useUiStore } from "../../store/ui";
@@ -19,9 +21,14 @@ import { ErrorState } from "../ErrorState";
 import { BufferScreen } from "./BufferScreen";
 import { CodecError } from "./CodecError";
 import { PlayerControls } from "./PlayerControls";
+import { SubtitleLayer } from "./SubtitleLayer";
+import { SubtitleMenu } from "./SubtitleMenu";
+import { SubtitleNotice } from "./SubtitleNotice";
 import { useProgressSaver } from "./useProgressSaver";
+import { useSubtitles } from "./useSubtitles";
 
 const HIDE_CONTROLS_MS = 3000;
+const OSD_MS = 1500;
 
 type Props = {
   movie: MovieDetail;
@@ -80,12 +87,18 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
   const [fullscreen, setFs] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
   const hideTimer = useRef<number | undefined>(undefined);
+  // The subtitle menu keeps the controls up while it's open.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuOpenRef = useRef(false);
+  useEffect(() => {
+    menuOpenRef.current = menuOpen;
+  }, [menuOpen]);
 
   const showChrome = useCallback(() => {
     setChromeVisible(true);
     window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => {
-      if (video.current && !video.current.paused) setChromeVisible(false);
+      if (video.current && !video.current.paused && !menuOpenRef.current) setChromeVisible(false);
     }, HIDE_CONTROLS_MS);
   }, []);
   useEffect(() => () => window.clearTimeout(hideTimer.current), []);
@@ -133,11 +146,55 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
     return () => document.removeEventListener("fullscreenchange", sync);
   }, []);
 
-  // ── Keyboard ──
+  // ── Subtitles ──
   const preroll = state.status === "starting" || state.status === "buffering";
+  const playable = !!state.session && !preroll && state.status !== "failed" && state.status !== "codec-error";
+  const subs = useSubtitles({ movieId: movie.id, infohash, started: playable, menuOpen });
+  const { nudgeDelay, loadFile } = subs;
+  const [osd, setOsd] = useState<string | null>(null);
+  const osdTimer = useRef<number | undefined>(undefined);
+  const flash = useCallback((text: string) => {
+    setOsd(text);
+    window.clearTimeout(osdTimer.current);
+    osdTimer.current = window.setTimeout(() => setOsd(null), OSD_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(osdTimer.current), []);
+  const nudge = useCallback(
+    (dir: 1 | -1) => {
+      nudgeDelay(dir);
+      flash(`Retraso de subtítulos: ${formatDelay(useUiStore.getState().subtitleDelay[movie.id] ?? 0)}`);
+    },
+    [nudgeDelay, flash, movie.id],
+  );
+
+  // Dropping a .srt/.vtt on the window loads it (Tauri gives the real path).
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let alive = true;
+    void onFileDrop((e) => {
+      if (e.type === "leave") setDragging(false);
+      else if (e.type === "enter") setDragging(e.paths.some(isSubtitleFile));
+      else {
+        setDragging(false);
+        const path = e.paths.find(isSubtitleFile);
+        if (path) void loadFile(path);
+        else if (e.paths.length) flash("Solo se pueden cargar subtítulos .srt o .vtt");
+      }
+    }).then((unlisten) => {
+      if (alive) off = unlisten;
+      else unlisten();
+    });
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, [loadFile, flash]);
+
+  // ── Keyboard ──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement | null)?.closest?.("input, select, textarea")) return;
+      if ((e.target as HTMLElement | null)?.closest?.("input, select, textarea, [role=menu]")) return;
       if (preroll || state.status === "codec-error" || state.status === "failed") {
         if (e.key === "Enter" && preroll) dispatch({ type: "force-start" });
         else if (e.key === "Escape") back();
@@ -172,6 +229,12 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
         case "fullscreen":
           void toggleFullscreen();
           break;
+        case "subsEarlier":
+          nudge(-1);
+          break;
+        case "subsLater":
+          nudge(1);
+          break;
         case "escape":
           void isFullscreen().then((fs) => (fs ? toggleFullscreen() : back()));
           break;
@@ -190,6 +253,7 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
     toggleMuted,
     showChrome,
     toggleFullscreen,
+    nudge,
   ]);
 
   // ── Progress: save_progress every 10 s, on pause, on ended and on leave ──
@@ -288,6 +352,32 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
         />
       )}
 
+      {playable && <SubtitleLayer video={video} cues={subs.cues} delay={subs.delay} raised={chromeVisible} />}
+
+      {playable && subs.notice && (
+        <SubtitleNotice
+          notice={subs.notice}
+          onDismiss={subs.dismissNotice}
+          onFallback={subs.tryFallback}
+          onPickFile={() => void subs.pickFile()}
+        />
+      )}
+
+      {osd && (
+        <div
+          role="status"
+          className="pointer-events-none absolute top-[84px] right-gutter rounded-lg bg-black/75 px-4 py-2 text-sm font-semibold tnum"
+        >
+          {osd}
+        </div>
+      )}
+
+      {dragging && (
+        <div className="pointer-events-none absolute inset-4 z-20 grid place-items-center rounded-lg border-2 border-dashed border-green bg-black/60 text-lg font-bold">
+          Suelta el archivo para cargar los subtítulos
+        </div>
+      )}
+
       {preroll && (
         <BufferScreen
           movie={movie}
@@ -352,6 +442,16 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
             onMute={toggleMuted}
             onFullscreen={() => void toggleFullscreen()}
             onBack={back}
+            subtitles={
+              <SubtitleMenu
+                subs={subs}
+                open={menuOpen}
+                onOpenChange={(open) => {
+                  setMenuOpen(open);
+                  showChrome();
+                }}
+              />
+            }
           />
         </div>
       )}

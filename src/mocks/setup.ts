@@ -7,6 +7,9 @@
 // - localStorage.setItem("mock:latency", "2000") → slower responses (skeletons); default 150–450 ms.
 // - localStorage.setItem("mock:fail", "add_favorite,update_settings") → those commands fail with `db`
 //   (optimistic rollback, error toasts).
+// - Subtitles: the mock starts with an OpenSubtitles key, so they load by themselves. In Ajustes, set the
+//   key to "invalid" (subtitles_auth) or "quota" (quota exhausted), or clear it ("no key" notice).
+//   The Shawshank Redemption has no Spanish subtitles (English fallback offer).
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";

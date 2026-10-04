@@ -15,7 +15,7 @@ async function open(options?: Parameters<typeof renderApp>[1]) {
 }
 
 describe("/settings", () => {
-  it("has every section of the prototype; Subtítulos and Torrent are 'Próximamente' and disabled", async () => {
+  it("has every section of the prototype; Torrent is 'Próximamente' and disabled", async () => {
     await open();
     const nav = screen.getByRole("navigation", { name: "Secciones" });
     expect(
@@ -23,7 +23,8 @@ describe("/settings", () => {
         .getAllByRole("link")
         .map((a) => a.textContent),
     ).toEqual(["Catálogo", "Subtítulos", "Reproducción", "Torrent", "Almacenamiento"]);
-    for (const name of [/Subtítulos/, /Torrent/]) {
+    expect(within(screen.getByRole("region", { name: /Subtítulos/ })).queryByText("Próximamente")).toBeNull();
+    for (const name of [/Torrent/]) {
       const section = screen.getByRole("region", { name });
       expect(within(section).getByText("Próximamente")).toBeInTheDocument();
       const controls = section.querySelectorAll("input, select, [role=switch]");
@@ -185,6 +186,74 @@ describe("/settings", () => {
       expect(calls.some((c) => c.cmd === "clear_cache")).toBe(true);
       expect(await screen.findByText("0 MB de 10,0 GB")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Vaciar caché" })).toBeDisabled();
+    });
+  });
+
+  describe("Subtítulos", () => {
+    const region = () => screen.getByRole("region", { name: "Subtítulos" });
+
+    it("without a key, explains how to get one and can't test", async () => {
+      await open({ before: (b) => b.handle("update_settings", { patch: { openSubtitlesApiKey: null } }) });
+      expect(within(region()).getByText("Falta la clave de OpenSubtitles")).toBeInTheDocument();
+      expect(within(region()).getByRole("button", { name: /Conseguir una clave/ })).toBeInTheDocument();
+      expect(within(region()).getByRole("button", { name: "Probar" })).toBeDisabled();
+    });
+
+    it("saves the key on blur (hidden by default), and clearing it sends null", async () => {
+      const user = userEvent.setup();
+      const { calls } = await open({
+        before: (b) => b.handle("update_settings", { patch: { openSubtitlesApiKey: null } }),
+      });
+      const key = within(region()).getByLabelText("Clave de API");
+      expect(key).toHaveAttribute("type", "password");
+      await user.click(within(region()).getByRole("button", { name: "Mostrar clave de api" }));
+      expect(key).toHaveAttribute("type", "text");
+      await user.type(key, "  abc123  ");
+      await user.tab();
+      expect(patches(calls).at(-1)).toEqual({ openSubtitlesApiKey: "abc123" });
+      await waitFor(() => expect(within(region()).queryByText("Falta la clave de OpenSubtitles")).toBeNull());
+
+      await user.clear(key);
+      await user.keyboard("{Enter}");
+      expect(patches(calls).at(-1)).toEqual({ openSubtitlesApiKey: null });
+    });
+
+    it("Probar reports a valid key, the session and the quota left", async () => {
+      const user = userEvent.setup();
+      const { calls } = await open();
+      await user.click(within(region()).getByRole("button", { name: "Probar" }));
+      expect(await within(region()).findByText("Clave válida")).toBeInTheDocument();
+
+      await user.type(within(region()).getByLabelText("Usuario"), "gabriel");
+      await user.type(within(region()).getByLabelText("Contraseña"), "secreto");
+      // Clicking Probar blurs the password: it's saved first, then tested.
+      await user.click(within(region()).getByRole("button", { name: "Probar" }));
+      expect(
+        await within(region()).findByText(
+          /^Clave válida · sesión iniciada · quedan 20 descargas hoy \(se renueva a las \d{2}:\d{2}\)$/,
+        ),
+      ).toBeInTheDocument();
+      expect(patches(calls)).toEqual([
+        { openSubtitlesUsername: "gabriel" },
+        { openSubtitlesPassword: "secreto" },
+      ]);
+    });
+
+    it("Probar explains a rejected key", async () => {
+      const user = userEvent.setup();
+      await open({
+        before: (b) => b.handle("update_settings", { patch: { openSubtitlesApiKey: "invalid" } }),
+      });
+      await user.click(within(region()).getByRole("button", { name: "Probar" }));
+      expect(await within(region()).findByText(/OpenSubtitles no acepta esta clave/)).toBeInTheDocument();
+    });
+
+    it("saves the language and automatic search", async () => {
+      const user = userEvent.setup();
+      const { calls } = await open();
+      await user.selectOptions(within(region()).getByRole("combobox", { name: "Idioma preferido" }), "pt");
+      await user.click(within(region()).getByRole("switch", { name: "Buscar subtítulos automáticamente" }));
+      expect(patches(calls)).toEqual([{ subtitleLang: "pt" }, { autoSubtitles: false }]);
     });
   });
 });

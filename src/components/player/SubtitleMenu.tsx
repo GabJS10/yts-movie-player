@@ -1,0 +1,212 @@
+import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, type KeyboardEvent } from "react";
+import { describeError } from "../../api/errors";
+import type { SubtitleOption } from "../../api/types";
+import { FALLBACK_LANG, formatDelay, langLabel } from "../../lib/subtitles";
+import { Icon } from "../Icon";
+import type { Subtitles } from "./useSubtitles";
+
+const MAX_OPTIONS = 6;
+const nf = new Intl.NumberFormat("es-ES");
+
+type Props = { subs: Subtitles; open: boolean; onOpenChange: (open: boolean) => void };
+
+function OptionMeta({ o }: { o: SubtitleOption }) {
+  const bits = [`${nf.format(o.downloads)} descargas`];
+  if (o.hearingImpaired) bits.push("Para sordos");
+  if (o.aiTranslated) bits.push("Traducción automática");
+  return (
+    <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-medium text-muted">
+      {o.matchesRelease && (
+        <span className="rounded-xs border border-green/60 px-1 leading-4 font-bold text-green">
+          Tu versión
+        </span>
+      )}
+      {bits.join(" · ")}
+    </span>
+  );
+}
+
+/** Player subtitle menu (prototype): off, options per language, "Cargar archivo…" and the delay. */
+export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
+  const anchor = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+
+  // Click outside closes it.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!anchor.current?.contains(e.target as Node)) onOpenChange(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [open, onOpenChange]);
+
+  // Inside the menu, Escape closes it (and doesn't leave the player); arrows move between items.
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onOpenChange(false);
+      button.current?.focus();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role^=menuitem]:not(:disabled)")];
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      const next = items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length];
+      if (next) {
+        e.preventDefault();
+        e.stopPropagation();
+        next.focus();
+      }
+    }
+  };
+
+  const { selection, options, loadingId } = subs;
+  const langs = [...new Set([subs.preferred, FALLBACK_LANG])];
+  const isOn = selection.kind !== "off";
+
+  return (
+    <div className="relative" ref={anchor}>
+      <button
+        ref={button}
+        type="button"
+        className={`ctrl-btn ${isOn ? "text-green" : ""}`}
+        aria-label="Subtítulos"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => onOpenChange(!open)}
+      >
+        <Icon name="cc" size={26} />
+      </button>
+      {open && (
+        <div className="menu" role="menu" aria-label="Subtítulos" onKeyDown={onKeyDown}>
+          <h3>Subtítulos</h3>
+          <button
+            type="button"
+            className="menu-item"
+            role="menuitemradio"
+            aria-checked={!isOn}
+            onClick={subs.turnOff}
+          >
+            <span className="chk">{!isOn && <Icon name="check" size={18} />}</span>
+            Desactivados
+          </button>
+          {selection.kind === "file" && (
+            <button type="button" className="menu-item" role="menuitemradio" aria-checked="true">
+              <span className="chk">
+                <Icon name="check" size={18} />
+              </span>
+              <span className="min-w-0 truncate" title={selection.label}>
+                {selection.label}
+              </span>
+            </button>
+          )}
+
+          {subs.hasKey ? (
+            <>
+              {langs.length > 1 && (
+                <div
+                  className="flex gap-1.5 px-4 pt-2 pb-1"
+                  role="group"
+                  aria-label="Idioma de los subtítulos"
+                >
+                  {langs.map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      aria-pressed={subs.shownLang === code}
+                      onClick={() => subs.showLang(code)}
+                      className="rounded-full px-3 py-1 text-[13px] font-semibold text-text-2 ring-1 ring-line-hi hover:text-text aria-pressed:bg-white/10 aria-pressed:text-text"
+                    >
+                      {langLabel(code)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {options.isPending ? (
+                <p className="m-0 px-4 py-2.5 text-sm text-muted" role="status">
+                  Buscando en OpenSubtitles…
+                </p>
+              ) : options.isError ? (
+                <p className="m-0 px-4 py-2.5 text-sm text-muted">{describeError(options.error).title}</p>
+              ) : options.data.length === 0 ? (
+                <p className="m-0 px-4 py-2.5 text-sm text-muted">
+                  No hay subtítulos en {langLabel(subs.shownLang).toLowerCase()} para esta película.
+                </p>
+              ) : (
+                options.data.slice(0, MAX_OPTIONS).map((o) => {
+                  const on = selection.kind === "option" && selection.option.id === o.id;
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      className="menu-item"
+                      role="menuitemradio"
+                      aria-checked={on}
+                      disabled={loadingId === o.id}
+                      onClick={() => void subs.choose(o)}
+                    >
+                      <span className="chk">{on && <Icon name="check" size={18} />}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate" title={o.label}>
+                          {loadingId === o.id ? "Cargando…" : o.label}
+                        </span>
+                        <OptionMeta o={o} />
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </>
+          ) : (
+            <div className="grid gap-1.5 px-4 py-2.5 text-sm text-muted">
+              <span>Para buscarlos falta la clave de OpenSubtitles.</span>
+              <Link to="/settings" hash="s-subs" className="font-semibold text-green hover:underline">
+                Añadirla en Ajustes › Subtítulos
+              </Link>
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="menu-item"
+            role="menuitem"
+            disabled={loadingId?.startsWith("file:")}
+            onClick={() => void subs.pickFile()}
+          >
+            <span className="chk text-text-2">
+              <Icon name="upload" size={18} />
+            </span>
+            Cargar archivo .srt o .vtt…
+          </button>
+
+          <hr />
+          <h3>Sincronía</h3>
+          <div className="flex items-center gap-2 px-4 pt-1.5 pb-2 text-sm text-text-2">
+            <span>Retraso</span>
+            <output className="ml-auto min-w-14 text-center font-bold text-text tnum" aria-live="polite">
+              {formatDelay(subs.delay)}
+            </output>
+            <button
+              type="button"
+              role="menuitem"
+              className="inline-grid size-[30px] place-items-center rounded-full ring-1 ring-line-hi hover:bg-white/8"
+              aria-label="Adelantar subtítulos 0,1 s (G)"
+              onClick={() => subs.nudgeDelay(-1)}
+            >
+              <Icon name="minus" size={16} />
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="inline-grid size-[30px] place-items-center rounded-full ring-1 ring-line-hi hover:bg-white/8"
+              aria-label="Retrasar subtítulos 0,1 s (H)"
+              onClick={() => subs.nudgeDelay(1)}
+            >
+              <Icon name="plus" size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

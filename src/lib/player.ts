@@ -221,7 +221,16 @@ export function parsePieceMap(map: string | null): PieceCell[] {
 // ───────── Shortcuts ─────────
 
 export type PlayerAction =
-  "toggle" | "back10" | "forward10" | "fullscreen" | "mute" | "escape" | "volUp" | "volDown";
+  | "toggle"
+  | "back10"
+  | "forward10"
+  | "fullscreen"
+  | "mute"
+  | "escape"
+  | "volUp"
+  | "volDown"
+  | "subsEarlier"
+  | "subsLater";
 
 export function shortcutAction(key: string): PlayerAction | null {
   switch (key) {
@@ -245,6 +254,13 @@ export function shortcutAction(key: string): PlayerAction | null {
       return "mute";
     case "Escape":
       return "escape";
+    // Subtitle delay −/+ 0,1 s (as in VLC).
+    case "g":
+    case "G":
+      return "subsEarlier";
+    case "h":
+    case "H":
+      return "subsLater";
     default:
       return null;
   }

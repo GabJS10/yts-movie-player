@@ -1,11 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useSettings } from "../api/queries";
 import { ErrorState } from "../components/ErrorState";
 import { CatalogSection } from "../components/settings/CatalogSection";
 import { PlaybackSection } from "../components/settings/PlaybackSection";
-import { SubtitlesSection, TorrentSection } from "../components/settings/SoonSections";
+import { TorrentSection } from "../components/settings/SoonSections";
 import { StorageSection } from "../components/settings/StorageSection";
+import { SubtitlesSection } from "../components/settings/SubtitlesSection";
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
 
@@ -37,6 +38,12 @@ function useActiveSection(ready: boolean) {
 function SettingsPage() {
   const settings = useSettings();
   const [active, setActive] = useActiveSection(!!settings.data);
+  // Deep links such as /settings#s-subs (from the player): scroll once the sections exist.
+  const hash = useRouterState({ select: (s) => s.location.hash });
+  const loaded = !!settings.data;
+  useEffect(() => {
+    if (loaded && hash) document.getElementById(hash)?.scrollIntoView?.();
+  }, [loaded, hash]);
 
   const jump = (id: string) => {
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;

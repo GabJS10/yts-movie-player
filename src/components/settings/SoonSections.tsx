@@ -3,45 +3,6 @@ import { SetRow, SetSection, Switch } from "./controls";
 
 // Visible so the page has its final shape; wired in later phases (docs/ROADMAP.md).
 
-/** Ajustes › Subtítulos: phase 5. */
-export function SubtitlesSection({ settings }: { settings: Settings }) {
-  return (
-    <SetSection
-      id="s-subs"
-      title="Subtítulos"
-      soon
-      lede="Se buscan en OpenSubtitles por el código IMDb de la película y se eligen los que mejor encajan con la versión de YTS."
-    >
-      <SetRow
-        stack
-        title="Clave de API de OpenSubtitles"
-        help="Gratis en opensubtitles.com → Perfil → API consumers."
-        id="subs-key-title"
-      >
-        <input
-          className="input input-mono"
-          type="password"
-          aria-labelledby="subs-key-title"
-          placeholder="Sin clave"
-        />
-      </SetRow>
-      <SetRow title="Idioma preferido" id="subs-lang-title">
-        <select className="select" aria-labelledby="subs-lang-title" defaultValue={settings.subtitleLang}>
-          <option value="es">Español</option>
-          <option value="en">English</option>
-          <option value="pt">Português</option>
-        </select>
-      </SetRow>
-      <SetRow
-        title="Buscar subtítulos automáticamente"
-        help="Al empezar una película se cargan en tu idioma sin pedírtelo."
-      >
-        <Switch label="Buscar subtítulos automáticamente" checked={settings.autoSubtitles} disabled />
-      </SetRow>
-    </SetSection>
-  );
-}
-
 /** Ajustes › Torrent: phase 6. */
 export function TorrentSection({ settings }: { settings: Settings }) {
   const unit = "inline-flex items-center gap-2 text-[13px] text-muted";

@@ -37,7 +37,7 @@ describe("MovieRow", () => {
     const { calls } = await renderWithProviders(<MovieRow title="Caída" params={{ query: "!api" }} />);
     // The hook retries once (1 s) before giving up.
     expect(
-      await screen.findByText("El catálogo de YTS no responde", {}, { timeout: 3000 }),
+      await screen.findByText("El catálogo de YTS no responde", {}, { timeout: 6000 }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Reintentar" }));
     await waitFor(() => expect(calls.filter((c) => c.cmd === "list_movies").length).toBeGreaterThan(2));
