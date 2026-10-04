@@ -782,6 +782,12 @@ impl TorrentEngine {
         entry.active.get().map(|a| a.handle.is_paused())
     }
 
+    /// Movie of an active session (for the external player's automatic subtitles).
+    pub fn session_movie_id(&self, infohash: &str) -> Option<u64> {
+        self.entry(&infohash.to_ascii_lowercase())
+            .map(|e| e.req.movie_id)
+    }
+
     /// Stream URL of an active session (for the external player).
     pub fn session_url(&self, infohash: &str) -> AppResult<String> {
         let infohash = infohash.to_ascii_lowercase();
@@ -1200,48 +1206,6 @@ async fn remove_path(path: &Path) -> std::io::Result<()> {
     match result {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         other => other,
-    }
-}
-
-/// Launches `player <url>` detached. Missing binary → `external_player_missing`.
-pub fn launch_external_player(player: &str, url: &str) -> AppResult<()> {
-    let path = find_in_path(player)
-        .ok_or_else(|| AppError::ExternalPlayerMissing(format!("{player} not found in PATH")))?;
-    let mut child = tokio::process::Command::new(path)
-        .arg(url)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-    // Reap the process when it exits.
-    tokio::spawn(async move {
-        let _ = child.wait().await;
-    });
-    Ok(())
-}
-
-fn find_in_path(program: &str) -> Option<PathBuf> {
-    let candidate = Path::new(program);
-    if candidate.components().count() > 1 {
-        return is_executable(candidate).then(|| candidate.to_path_buf());
-    }
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|dir| dir.join(program))
-            .find(|p| is_executable(p))
-    })
-}
-
-fn is_executable(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        path.metadata()
-            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
     }
 }
 

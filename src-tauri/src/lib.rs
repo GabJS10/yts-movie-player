@@ -2,6 +2,7 @@ pub mod cache;
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod external_player;
 pub mod images;
 pub mod paths;
 pub mod settings;

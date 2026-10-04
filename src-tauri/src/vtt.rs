@@ -214,9 +214,52 @@ pub fn cues_to_vtt(cues: &[Cue]) -> String {
     out
 }
 
-/// Converts subtitle bytes (SRT or WebVTT, any common encoding) to clean WebVTT.
-/// `None` if no cue could be read.
-pub fn to_vtt(bytes: &[u8]) -> Option<String> {
+/// Shifts every cue by `delay_ms` (positive = later). Cues that end up entirely before
+/// 0 are dropped; a cue cut by 0 starts at 0.
+pub fn shift(cues: &[Cue], delay_ms: i64) -> Vec<Cue> {
+    cues.iter()
+        .filter_map(|c| {
+            let move_by = |t: u64| i64::try_from(t).ok().map(|t| t.saturating_add(delay_ms));
+            let end = move_by(c.end_ms)?;
+            if end <= 0 {
+                return None;
+            }
+            let start = move_by(c.start_ms)?.max(0);
+            Some(Cue {
+                start_ms: start as u64,
+                end_ms: end as u64,
+                text: c.text.clone(),
+            })
+        })
+        .collect()
+}
+
+fn format_srt_timestamp(ms: u64) -> String {
+    format_timestamp(ms).replace('.', ",")
+}
+
+/// SubRip output (for external players). Tags other than `<i>/<b>/<u>` were already
+/// removed; the WebVTT escapes are undone.
+pub fn cues_to_srt(cues: &[Cue]) -> String {
+    let mut out = String::new();
+    for (i, cue) in cues.iter().enumerate() {
+        let text = cue
+            .text
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&");
+        out.push_str(&format!(
+            "{}\n{} --> {}\n{text}\n\n",
+            i + 1,
+            format_srt_timestamp(cue.start_ms),
+            format_srt_timestamp(cue.end_ms)
+        ));
+    }
+    out
+}
+
+/// Cues of a subtitle file (SRT or WebVTT, any common encoding).
+pub fn parse_any(bytes: &[u8]) -> Vec<Cue> {
     let text = decode(bytes);
     let trimmed = text.trim_start_matches('\u{FEFF}').trim_start();
     // WebVTT input: its timing lines use the same syntax, so the same parser rebuilds a
@@ -226,7 +269,13 @@ pub fn to_vtt(bytes: &[u8]) -> Option<String> {
     } else {
         trimmed
     };
-    let cues = parse_srt(body);
+    parse_srt(body)
+}
+
+/// Converts subtitle bytes (SRT or WebVTT, any common encoding) to clean WebVTT.
+/// `None` if no cue could be read.
+pub fn to_vtt(bytes: &[u8]) -> Option<String> {
+    let cues = parse_any(bytes);
     (!cues.is_empty()).then(|| cues_to_vtt(&cues))
 }
 
@@ -323,6 +372,44 @@ mod tests {
             to_vtt(input.as_bytes()).unwrap(),
             "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHola\n\n"
         );
+    }
+
+    #[test]
+    fn shift_and_srt_output() {
+        let cue = |s, e, t: &str| Cue {
+            start_ms: s,
+            end_ms: e,
+            text: t.into(),
+        };
+        let cues = vec![
+            cue(500, 1_500, "A"),
+            cue(2_000, 3_000, "<i>B</i> &amp; &lt;C&gt;"),
+        ];
+        assert_eq!(shift(&cues, 0), cues);
+        assert_eq!(
+            shift(&cues, 1_250),
+            vec![
+                cue(1_750, 2_750, "A"),
+                cue(3_250, 4_250, "<i>B</i> &amp; &lt;C&gt;")
+            ]
+        );
+        // Earlier: the first cue is cut at 0, a cue ending before 0 disappears.
+        assert_eq!(
+            shift(&cues, -1_000),
+            vec![
+                cue(0, 500, "A"),
+                cue(1_000, 2_000, "<i>B</i> &amp; &lt;C&gt;")
+            ]
+        );
+        assert_eq!(shift(&cues, -1_500).len(), 1);
+        assert_eq!(
+            cues_to_srt(&shift(&cues, 3_600_000)),
+            "1\n01:00:00,500 --> 01:00:01,500\nA\n\n\
+             2\n01:00:02,000 --> 01:00:03,000\n<i>B</i> & <C>\n\n"
+        );
+        // Round trip through our own VTT.
+        let vtt = to_vtt(cues_to_srt(&cues).as_bytes()).unwrap();
+        assert_eq!(parse_any(vtt.as_bytes())[0], cues[0]);
     }
 
     #[test]

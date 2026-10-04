@@ -533,6 +533,26 @@ impl BackgroundError {
     }
 }
 
+/// Outcome of the subtitles part of `open_external_player`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalSubtitle {
+    Loaded,
+    /// Not requested and automatic subtitles are off.
+    None,
+    NoKey,
+    Quota,
+    NotFound,
+    UnsupportedPlayer,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalPlayerResult {
+    pub subtitle: ExternalSubtitle,
+}
+
 pub mod events {
     pub const TORRENT_STATS: &str = "torrent://stats";
     pub const DOWNLOAD_CHANGED: &str = "download://changed";
@@ -965,6 +985,25 @@ mod tests {
                 "resetAt": "2026-10-04T13:03:16Z"
             })
         );
+    }
+
+    #[test]
+    fn external_player_result() {
+        let cases = [
+            (ExternalSubtitle::Loaded, "loaded"),
+            (ExternalSubtitle::None, "none"),
+            (ExternalSubtitle::NoKey, "no_key"),
+            (ExternalSubtitle::Quota, "quota"),
+            (ExternalSubtitle::NotFound, "not_found"),
+            (ExternalSubtitle::UnsupportedPlayer, "unsupported_player"),
+            (ExternalSubtitle::Error, "error"),
+        ];
+        for (subtitle, s) in cases {
+            assert_eq!(
+                to_json(&ExternalPlayerResult { subtitle }),
+                json!({ "subtitle": s })
+            );
+        }
     }
 
     #[test]

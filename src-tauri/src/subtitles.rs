@@ -651,6 +651,24 @@ impl SubtitlesClient {
 
     /// Loads a local `.srt`/`.vtt` (file dialog or drag & drop). Works without a key.
     pub async fn load_file(&self, path: &Path) -> AppResult<SubtitleTrack> {
+        Ok(self.import_file(path).await?.1)
+    }
+
+    /// The cached `.vtt` behind an id returned by [`Self::load`] or [`Self::import_file`].
+    pub fn cached_file(&self, id: &str) -> PathBuf {
+        vtt_path(&self.cfg.subs_dir, id)
+    }
+
+    pub fn subs_dir(&self) -> &Path {
+        &self.cfg.subs_dir
+    }
+
+    pub fn has_api_key(&self) -> bool {
+        self.creds().api_key.is_some()
+    }
+
+    /// [`Self::load_file`] that also returns the id of the cached `.vtt`.
+    pub async fn import_file(&self, path: &Path) -> AppResult<(String, SubtitleTrack)> {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -677,7 +695,8 @@ impl SubtitlesClient {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "Subtítulos".into());
         tracing::info!(%id, "local subtitle loaded");
-        Ok(self.track(&id, None, label))
+        let track = self.track(&id, None, label);
+        Ok((id, track))
     }
 
     /// "Probar" in Settings: validates the key (and the login, if configured).

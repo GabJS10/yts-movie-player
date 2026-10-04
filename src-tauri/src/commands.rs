@@ -3,15 +3,16 @@
 
 use tauri::State;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
+use crate::external_player::{self, player_kind, subtitle_request};
 use crate::images::ImageStore;
 use crate::state::AppState;
 use crate::subtitles::{Credentials, Release};
-use crate::torrent::{launch_external_player, StreamRequest};
+use crate::torrent::StreamRequest;
 use crate::types::{
-    ApiEndpointStatus, ClearCacheResult, ContinueItem, ListMoviesParams, MovieDetail, MoviePage,
-    MovieSummary, Progress, Settings, SettingsPatch, StorageUsage, StreamSession, SubtitleOption,
-    SubtitleTrack, SubtitlesStatus,
+    ApiEndpointStatus, ClearCacheResult, ContinueItem, ExternalPlayerResult, ListMoviesParams,
+    MovieDetail, MoviePage, MovieSummary, Progress, Settings, SettingsPatch, StorageUsage,
+    StreamSession, SubtitleOption, SubtitleTrack, SubtitlesStatus,
 };
 
 // ---------------------------------------------------------------------------
@@ -98,12 +99,48 @@ pub async fn stop_stream(state: State<'_, AppState>, infohash: String) -> AppRes
     state.torrents.stop_stream(&infohash).await
 }
 
+/// Opens the player from Settings with the stream and, when possible, the subtitles
+/// (see `external_player.rs`). Subtitle problems never stop it from opening.
 #[tauri::command]
-pub async fn open_external_player(state: State<'_, AppState>, infohash: String) -> AppResult<()> {
+pub async fn open_external_player(
+    state: State<'_, AppState>,
+    infohash: String,
+    subtitle_id: Option<String>,
+    subtitle_path: Option<String>,
+    subtitle_delay_ms: Option<i64>,
+    subtitles_off: Option<bool>,
+) -> AppResult<ExternalPlayerResult> {
     let url = state.torrents.session_url(&infohash)?;
-    let player = state.settings.get().external_player;
-    tracing::info!(%url, %player, "opening external player");
-    launch_external_player(&player, &url)
+    let settings = state.settings.get();
+    // Before touching subtitles: no quota spent if the player isn't there.
+    let player = external_player::resolve_player(&settings.external_player)?;
+    let kind = player_kind(&settings.external_player);
+    let request = subtitle_request(
+        subtitles_off.unwrap_or(false),
+        subtitle_id,
+        subtitle_path,
+        settings.auto_subtitles,
+        state.subtitles.has_api_key(),
+    );
+    let search = async {
+        let movie_id = state
+            .torrents
+            .session_movie_id(&infohash)
+            .ok_or_else(|| AppError::NotFound(format!("no stream for {infohash}")))?;
+        search_for_movie(&state, movie_id, &settings.subtitle_lang, Some(&infohash)).await
+    };
+    let (subtitle_file, subtitle) = external_player::prepare_subtitle(
+        &state.subtitles,
+        kind,
+        request,
+        search,
+        subtitle_delay_ms.unwrap_or(0),
+    )
+    .await;
+    let args = external_player::player_args(kind, &url, subtitle_file.as_deref());
+    tracing::info!(player = %player.display(), ?args, ?subtitle, "opening external player");
+    external_player::launch(&player, &args)?;
+    Ok(ExternalPlayerResult { subtitle })
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +268,16 @@ pub async fn search_subtitles(
     infohash: Option<String>,
 ) -> AppResult<Vec<SubtitleOption>> {
     tracing::debug!(movie_id, %lang, ?infohash, "search_subtitles");
+    search_for_movie(&state, movie_id, &lang, infohash.as_deref()).await
+}
+
+/// Ranked subtitles for a movie, matching the release of `infohash` when given.
+async fn search_for_movie(
+    state: &AppState,
+    movie_id: u64,
+    lang: &str,
+    infohash: Option<&str>,
+) -> AppResult<Vec<SubtitleOption>> {
     // Cached by the YTS client (the movie page already asked for it).
     let movie = state.yts.get_movie(movie_id).await?;
     let release = infohash.and_then(|h| {
@@ -245,7 +292,7 @@ pub async fn search_subtitles(
     });
     state
         .subtitles
-        .search(&movie.summary_fields.imdb_code, &lang, release)
+        .search(&movie.summary_fields.imdb_code, lang, release)
         .await
 }
 
