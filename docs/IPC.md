@@ -331,8 +331,8 @@ type Settings = {
   externalPlayer: string;          // comando, por defecto "vlc"
   bufferTargetBytes: number;
   // Torrent
-  downLimitKbps: number | null;    // null = sin límite
-  upLimitKbps: number | null;
+  downLimitKbps: number | null;    // KiB/s (la UI dice "KB/s"); null = sin límite
+  upLimitKbps: number | null;      // KiB/s
   seedAfterDownload: boolean;
   listenPort: number | null;       // null = automático
   // Almacenamiento
@@ -368,7 +368,7 @@ Es el plan B por si el embed `youtube-nocookie` falla dentro de la WebView: abre
 Se escuchan con `listen(evento, handler)` de `@tauri-apps/api/event`.
 
 ### `torrent://stats`
-Se emite **cada segundo** por cada torrent activo, sea de streaming o de descarga.
+Se emite **cada segundo** solo para el stream abierto (las descargas se consultan con `list_downloads`).
 
 ```ts
 type TorrentStats = {
@@ -397,7 +397,7 @@ type StreamPhase =
 ```
 
 ### `download://changed`
-Se emite **solo cuando cambia el estado** de una descarga (agregada, pausada, terminada, error o eliminada). El progreso continuo llega por `torrent://stats`.
+Se emite **solo cuando cambia el estado** de una descarga (agregada, pausada, terminada, error o eliminada). El progreso continuo se obtiene consultando `list_downloads` (≈1 s).
 
 ```ts
 type DownloadChanged = { infohash: string; download: Download | null }; // null = eliminada
@@ -434,3 +434,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.8** (2026-10-04): `open_external_player` pasa subtítulos al reproductor externo (`subtitleId?`, `subtitlePath?`, `subtitleDelayMs?`) y devuelve `ExternalPlayerResult` en vez de `void`. `subtitlesOff?` respeta "Desactivados".
 - **v0.9** (2026-10-04): `SubtitleOption.pageUrl` y `SubtitleOption.cached`; con el cupo agotado, el clic en una opción no cacheada abre su página de OpenSubtitles.
 - **v0.10** (2026-10-04): descargas. `MovieDetail.offline`; reglas de carpeta legible, comprobación de espacio, ficha sin conexión, reproducción directa desde `library/`, recuperación al reiniciar y seeding. Progreso por polling de `list_downloads`. `listenPort` se aplica al reiniciar.
+- **v0.10.1** (2026-10-04): aclaraciones: límites en KiB/s; `torrent://stats` solo para el stream abierto; una segunda versión con el mismo nombre de carpeta lleva el sufijo ` (2)`; al promover se mueve toda la carpeta del torrent cuando se cierra el stream (mientras se verifica: `queued`).
