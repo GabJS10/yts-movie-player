@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.12 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.13 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -422,6 +422,32 @@ type TrailerMessage = {
 
 El front valida que `event.origin` sea el origen local de la sesión y da el modal por fallido si llega `error` o si en 8 s no llega `ready`.
 
+### Aplicación
+
+| Comando | Argumentos | Devuelve |
+|---|---|---|
+| `get_app_info` | — | `AppInfo` |
+| `check_for_update` | — | `UpdateInfo \| null` |
+| `open_logs_folder` | — | `void` |
+
+```ts
+type AppInfo = {
+  version: string;                 // "1.0.0" (la del paquete)
+  logsDir: string;                 // ~/.local/state/yts-player/logs (o $XDG_STATE_HOME/yts-player/logs)
+  dataDir: string;                 // ~/.local/share/yts-player (DB, ajustes, subtítulos)
+  repoUrl: string;                 // https://github.com/GabJS10/yts-movie-player
+};
+
+type UpdateInfo = {
+  version: string;                 // p. ej. "1.1.0"
+  url: string;                     // página de la release en GitHub (html_url)
+  publishedAt: string;             // ISO 8601
+};
+```
+
+- `check_for_update` consulta `https://api.github.com/repos/GabJS10/yts-movie-player/releases/latest` (sin token, con `User-Agent`), compara por semver y devuelve `null` si no hay una más nueva, si falla la red o si la respuesta no se entiende: nunca da error. Se hace como mucho una vez por arranque (el resultado se guarda en memoria). Ignora borradores y prereleases.
+- `open_logs_folder` abre `logsDir` en el gestor de archivos. Los logs rotan (diario, se guardan 7) y en release el nivel por defecto es `info` (`RUST_LOG` lo cambia). Nunca contienen la API key ni las credenciales de OpenSubtitles.
+
 ## Eventos (backend → frontend)
 
 Se escuchan con `listen(evento, handler)` de `@tauri-apps/api/event`.
@@ -524,3 +550,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.11** (2026-10-04): carpetas elegibles. `dataDir` → `downloadsDir` + `cacheDir` (en caliente, migración del valor viejo); `StorageUsage` por disco y disponibilidad; `DownloadState` `unavailable` y `moving`; comandos `move_downloads`/`cancel_move_downloads` y evento `downloads://move-progress`. Rompe `dataDir`/`freeDiskBytes`, que ninguna versión publicada usaba.
 - **v0.12** (2026-10-04): fase 7. `get_featured` (banner rotativo con motivo) y `get_home_profile` (fila "Porque viste X" y orden de géneros); `StreamPhase` `no_peers` (60 s sin peers); `StorageUsage.defaultDownloadsDir`/`defaultCacheDir`; variables de entorno para los E2E.
 - **v0.12.1** (2026-10-04): `MovieDetail.trailerUrl` (página local del tráiler, solo para la sesión) y mensajes `TrailerMessage` de la página `/trailer` al padre por `postMessage`; cadena modal → ventana → navegador.
+- **v0.13** (2026-10-04): fase 8. Comandos `get_app_info`, `check_for_update` (aviso de nueva versión vía GitHub Releases, nunca falla) y `open_logs_folder`; logs a archivo con rotación.

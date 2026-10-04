@@ -240,16 +240,27 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 
 ## Fase 8: Empaquetado y release v1.0
 
-**Objetivo:** instalar la app como cualquier otra.
+**Objetivo:** que la app se instale como cualquier otra y publicar la v1.0.0 en GitHub Releases ya verificada. Contrato: IPC v0.13 (sección Aplicación).
+
+**Decisiones:** (1) solo Linux en la v1.0: `.deb`, `.rpm` y AppImage (Windows y macOS al backlog: en Windows el iframe del tráiler se bloquea por contenido mixto); (2) se compila en Ubuntu 22.04 (glibc más viejo = más distros); (3) `.deb`/`.rpm` dependen de GStreamer (libav, good, bad) y recomiendan VLC; el AppImage incluye GStreamer (`bundleMediaFramework`); (4) actualizaciones solo con aviso (GitHub Releases), sin auto-update firmado; (5) la release se arma como borrador y solo se publica tras el smoke test en el CI y la prueba del usuario; (6) logs a archivo con rotación.
 
 - **plan:**
-  - Workflow de release en GitHub Actions: en cada tag `v*` se ejecuta `tauri build` y se publican `.deb` y AppImage en GitHub Releases.
-  - Versionado semántico y `CHANGELOG.md`.
-  - README con capturas, instalación, configuración de la API key de OpenSubtitles y el aviso legal.
-- **backend:** metadatos del bundle en `tauri.conf.json` (identificador, versión, categoría, dependencias `.deb` como `gstreamer1.0-libav`) y comprobar que el binario de release no tiene logs de depuración ni rutas de desarrollo.
-- **frontend:** icono y recursos de la app (todas las resoluciones), pantalla "Acerca de" y revisión final de los textos en español.
-- **Tests:** smoke test de instalación del `.deb` y del AppImage en un Ubuntu limpio (en el CI o en una VM). La app abre, el catálogo carga y se reproduce una película.
-- **Cierre:** release `v1.0.0` publicada, instalable y verificada. Tag `v1.0.0`.
+  - Workflow `release.yml`: con un tag `v*` compila en `ubuntu-22.04` (`tauri-action`), comprueba que la versión coincide con el tag, crea un **borrador** de release con `.deb`, `.rpm` y AppImage, y corre el smoke test: instala el `.deb` en un contenedor Ubuntu 24.04 limpio y el AppImage, y pasa los E2E de la app real (`e2e/app`, sin internet) sobre el binario instalado.
+  - `scripts/bump-version.sh <versión>`: sincroniza `package.json`, `src-tauri/Cargo.toml` y `src-tauri/tauri.conf.json`.
+  - `CHANGELOG.md` (fases 1–8) y README completo: qué es, capturas (sacadas de la app real), instalación por formato, dependencias, API key de OpenSubtitles, compilar desde el código, aviso legal.
+- **backend:**
+  - Metadatos del bundle: versión 1.0.0, categoría `AudioVideo`, descripciones corta y larga, dependencias de `.deb` y `.rpm`, `bundleMediaFramework` en AppImage, archivo `.desktop` correcto.
+  - Release limpio: sin logs de depuración ni rutas de desarrollo; las variables de E2E siguen funcionando pero no aparecen en la UI ni en los logs salvo un `info` al arrancar.
+  - Logs a archivo con rotación (`$XDG_STATE_HOME/yts-player/logs`), `get_app_info`, `check_for_update` y `open_logs_folder`.
+  - Iconos en todas las resoluciones con `npx tauri icon` a partir del SVG de frontend.
+  - Que `e2e/app` pueda usar un binario instalado: respetar `E2E_APP_BINARY` en la config (lo hace `plan`), y que el binario no dependa de nada del repo.
+- **frontend:**
+  - **Icono de la app**: diseño propio en SVG (`design/icon/app-icon.svg`, 1024×1024, legible a 32 px), coherente con `DESIGN.md`.
+  - **Acerca de** (en Ajustes): versión, repo, aviso legal, créditos (YTS, OpenSubtitles, librqbit, Tauri), "Abrir carpeta de logs".
+  - Aviso discreto de **nueva versión disponible** (una vez por sesión, se puede descartar) con enlace a la release.
+  - Revisión final de todos los textos en español.
+- **Tests:** smoke test de instalación en el CI (arriba); backend: comparación semver y parseo de la respuesta de GitHub (wiremock), rotación de logs; frontend: Acerca de y aviso de actualización.
+- **Cierre:** release `v1.0.0` publicada con `.deb`, `.rpm` y AppImage, el smoke test en verde y el usuario la instala en su máquina (la app abre, el catálogo carga y se reproduce una película). Tag `v1.0.0`.
 
 ---
 
