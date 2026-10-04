@@ -82,6 +82,31 @@ describe("Player", () => {
     await waitFor(() => expect(status()).toBe("playing"));
   });
 
+  it("clears 'Esperando datos…' when the clock moves again, even without a playing event", async () => {
+    await startPlaying(x264);
+    const v = video();
+    act(() => void v.play());
+    fireEvent.waiting(v);
+    expect(await screen.findByText(/Esperando datos…/)).toBeInTheDocument();
+    v.currentTime = 50;
+    fireEvent.timeUpdate(v);
+    expect(status()).toBe("waiting");
+    v.currentTime = 50.4;
+    fireEvent.timeUpdate(v);
+    await waitFor(() => expect(status()).toBe("playing"));
+    expect(screen.queryByText(/Esperando datos…/)).not.toBeInTheDocument();
+  });
+
+  it("clears it on canplay after a seek", async () => {
+    await startPlaying(x264);
+    const v = video();
+    act(() => void v.play());
+    fireEvent.waiting(v);
+    await waitFor(() => expect(status()).toBe("waiting"));
+    fireEvent.canPlay(v);
+    await waitFor(() => expect(status()).toBe("playing"));
+  });
+
   it("falls back to VLC and an x264 version on a decode error", async () => {
     const user = userEvent.setup();
     const { calls } = await startPlaying(x265);

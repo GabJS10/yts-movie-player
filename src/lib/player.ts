@@ -18,6 +18,10 @@ export type PlayerState = {
   session: StreamSession | null;
   stats: TorrentStats | null;
   error: AppError | null;
+  /** Why we're in "waiting": the <video> said so, or the swarm stalled. null otherwise. */
+  waitingCause: "video" | "stalled" | null;
+  /** currentTime baseline while waiting, to notice playback moving again. */
+  waitingSince: number | null;
 };
 
 export type PlayerEvent =
@@ -28,6 +32,10 @@ export type PlayerEvent =
   | { type: "video-playing" }
   | { type: "video-pause" }
   | { type: "video-waiting" }
+  // canplay / canplaythrough / seeked while not paused. WebKitGTK often skips `playing` after a stall.
+  | { type: "video-resumed" }
+  | { type: "video-seeking" }
+  | { type: "video-timeupdate"; currentTime: number; paused: boolean }
   | { type: "codec-error" }
   | { type: "retry" };
 
@@ -36,6 +44,8 @@ export const initialPlayerState: PlayerState = {
   session: null,
   stats: null,
   error: null,
+  waitingCause: null,
+  waitingSince: null,
 };
 
 /** Enough contiguous data to start, or the backend says so; a downloaded file starts right away. */
@@ -49,6 +59,19 @@ export function isBufferReady(session: StreamSession, stats: TorrentStats | null
 const isPreroll = (s: PlayerStatus) => s === "starting" || s === "buffering";
 const isTerminal = (s: PlayerStatus) => s === "codec-error" || s === "failed";
 
+const toWaiting = (state: PlayerState, cause: "video" | "stalled"): PlayerState => ({
+  ...state,
+  status: "waiting",
+  waitingCause: cause,
+  waitingSince: null,
+});
+const toPlaying = (state: PlayerState): PlayerState => ({
+  ...state,
+  status: "playing",
+  waitingCause: null,
+  waitingSince: null,
+});
+
 export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerState {
   if (event.type === "retry") return initialPlayerState;
   if (isTerminal(state.status) && event.type !== "session") return state;
@@ -61,8 +84,10 @@ export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerSta
       const next = { ...state, stats: event.stats };
       if (isPreroll(state.status) && state.session && isBufferReady(state.session, event.stats))
         return { ...next, status: "playing" };
-      if (state.status === "playing" && event.stats.phase === "stalled")
-        return { ...next, status: "waiting" };
+      if (state.status === "playing" && event.stats.phase === "stalled") return toWaiting(next, "stalled");
+      // Entered from the swarm: leave when it recovers (unless the <video> itself is starving too).
+      if (state.status === "waiting" && state.waitingCause === "stalled" && event.stats.phase !== "stalled")
+        return toPlaying(next);
       return next;
     }
     case "force-start":
@@ -70,13 +95,27 @@ export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerSta
     case "start-failed":
       return { ...state, status: "failed", error: event.error };
     case "video-playing":
-      return isPreroll(state.status) ? state : { ...state, status: "playing" };
+      return isPreroll(state.status) ? state : toPlaying(state);
+    case "video-resumed":
+      return state.status === "waiting" ? toPlaying(state) : state;
+    case "video-seeking":
+      // A seek jumps currentTime: restart the baseline so the jump isn't read as playback.
+      return state.status === "waiting" && state.waitingSince !== null
+        ? { ...state, waitingSince: null }
+        : state;
+    case "video-timeupdate": {
+      if (state.status !== "waiting" || event.paused) return state;
+      if (state.waitingSince !== null && event.currentTime > state.waitingSince) return toPlaying(state);
+      return state.waitingSince === event.currentTime ? state : { ...state, waitingSince: event.currentTime };
+    }
     case "video-pause":
       return state.status === "playing" || state.status === "waiting"
-        ? { ...state, status: "paused" }
+        ? { ...state, status: "paused", waitingCause: null, waitingSince: null }
         : state;
     case "video-waiting":
-      return state.status === "playing" ? { ...state, status: "waiting" } : state;
+      if (state.status === "playing") return toWaiting(state, "video");
+      // Already waiting on the swarm: the <video> starving too means only the video can clear it.
+      return state.status === "waiting" ? { ...state, waitingCause: "video" } : state;
     case "codec-error":
       return { ...state, status: "codec-error" };
   }

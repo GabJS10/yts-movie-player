@@ -193,6 +193,10 @@ export function Player({ movie, torrent }: Props) {
     if (resume && resume < v.duration - 5) v.currentTime = resume;
     setTime({ current: v.currentTime, duration: v.duration });
   };
+  // WebKitGTK/GStreamer often recovers from a stall without firing `playing` again.
+  const onResumable = (e: SyntheticEvent<HTMLVideoElement>) => {
+    if (!e.currentTarget.paused) dispatch({ type: "video-resumed" });
+  };
   const onError = (e: SyntheticEvent<HTMLVideoElement>) => {
     if (isCodecError(e.currentTarget.error?.code)) dispatch({ type: "codec-error" });
     else dispatch({ type: "video-waiting" });
@@ -231,9 +235,11 @@ export function Player({ movie, torrent }: Props) {
           playsInline
           className={`absolute inset-0 size-full bg-black object-contain ${state.status === "codec-error" ? "invisible" : ""}`}
           onLoadedMetadata={onLoadedMetadata}
-          onTimeUpdate={(e) =>
-            setTime({ current: e.currentTarget.currentTime, duration: e.currentTarget.duration })
-          }
+          onTimeUpdate={(e) => {
+            const v = e.currentTarget;
+            setTime({ current: v.currentTime, duration: v.duration });
+            dispatch({ type: "video-timeupdate", currentTime: v.currentTime, paused: v.paused });
+          }}
           onDurationChange={(e) => {
             const duration = e.currentTarget.duration;
             setTime((t) => ({ ...t, duration }));
@@ -248,6 +254,10 @@ export function Player({ movie, torrent }: Props) {
             setChromeVisible(true);
           }}
           onWaiting={() => dispatch({ type: "video-waiting" })}
+          onSeeking={() => dispatch({ type: "video-seeking" })}
+          onSeeked={onResumable}
+          onCanPlay={onResumable}
+          onCanPlayThrough={onResumable}
           onError={onError}
           onClick={togglePlay}
           data-testid="video"

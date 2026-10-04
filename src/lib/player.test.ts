@@ -66,6 +66,69 @@ describe("playerReducer", () => {
     expect(s.status).toBe("paused");
   });
 
+  describe("leaving waiting without a `playing` event (WebKitGTK)", () => {
+    const playing = () =>
+      run([
+        { type: "session", session },
+        { type: "stats", stats: stats({ phase: "ready" }) },
+      ]);
+
+    it("timeupdate advancing → playing; a still clock or a paused video doesn't count", () => {
+      let s = run([{ type: "video-waiting" }], playing());
+      expect(s).toMatchObject({ status: "waiting", waitingCause: "video" });
+      s = run([{ type: "video-timeupdate", currentTime: 42, paused: false }], s); // baseline
+      expect(s.status).toBe("waiting");
+      s = run([{ type: "video-timeupdate", currentTime: 42, paused: false }], s); // stuck
+      expect(s.status).toBe("waiting");
+      expect(run([{ type: "video-timeupdate", currentTime: 43, paused: true }], s).status).toBe("waiting");
+      s = run([{ type: "video-timeupdate", currentTime: 42.3, paused: false }], s);
+      expect(s).toMatchObject({ status: "playing", waitingCause: null, waitingSince: null });
+    });
+
+    it("a seek resets the baseline so the jump isn't mistaken for playback", () => {
+      let s = run(
+        [{ type: "video-waiting" }, { type: "video-timeupdate", currentTime: 10, paused: false }],
+        playing(),
+      );
+      s = run([{ type: "video-seeking" }, { type: "video-timeupdate", currentTime: 300, paused: false }], s);
+      expect(s.status).toBe("waiting");
+      s = run([{ type: "video-timeupdate", currentTime: 300.25, paused: false }], s);
+      expect(s.status).toBe("playing");
+    });
+
+    it("canplay / canplaythrough / seeked (video-resumed) → playing", () => {
+      const s = run([{ type: "video-waiting" }, { type: "video-resumed" }], playing());
+      expect(s.status).toBe("playing");
+      expect(run([{ type: "video-resumed" }], playing()).status).toBe("playing"); // no-op elsewhere
+    });
+
+    it("entered from stalled stats → leaves when the swarm recovers", () => {
+      let s = run([{ type: "stats", stats: stats({ phase: "stalled" }) }], playing());
+      expect(s).toMatchObject({ status: "waiting", waitingCause: "stalled" });
+      s = run([{ type: "stats", stats: stats({ phase: "stalled" }) }], s);
+      expect(s.status).toBe("waiting");
+      s = run([{ type: "stats", stats: stats({ phase: "buffering" }) }], s);
+      expect(s.status).toBe("playing");
+    });
+
+    it("stalled + the <video> itself waiting → recovered stats alone don't clear it", () => {
+      let s = run(
+        [{ type: "stats", stats: stats({ phase: "stalled" }) }, { type: "video-waiting" }],
+        playing(),
+      );
+      expect(s.waitingCause).toBe("video");
+      s = run([{ type: "stats", stats: stats({ phase: "ready" }) }], s);
+      expect(s.status).toBe("waiting");
+      s = run([{ type: "video-resumed" }], s);
+      expect(s.status).toBe("playing");
+    });
+
+    it("pausing while waiting clears the cause", () => {
+      const s = run([{ type: "video-waiting" }, { type: "video-pause" }], playing());
+      expect(s).toMatchObject({ status: "paused", waitingCause: null });
+    });
+  });
+
   it("starts on phase ready, on Enter, and immediately from the library", () => {
     expect(
       run([
