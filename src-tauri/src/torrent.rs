@@ -37,7 +37,8 @@ use url::Url;
 use crate::error::{AppError, AppResult};
 use crate::images::{host_allowed, restricted_client, HostAllowlist};
 use crate::types::{
-    PieceMapWindow, StreamPhase, StreamSession, StreamSource, TorrentStats, VideoCodec,
+    BackgroundError, PieceMapWindow, StreamPhase, StreamSession, StreamSource, TorrentStats,
+    VideoCodec,
 };
 
 /// Public trackers added to every torrent and magnet.
@@ -673,6 +674,9 @@ pub struct TorrentEngine {
     allowed_hosts: HostAllowlist,
     entries: Mutex<HashMap<String, Arc<Entry>>>,
     stats_tx: broadcast::Sender<TorrentStats>,
+    /// `app://error` for torrents that fail in the background (once per failure).
+    errors_tx: broadcast::Sender<BackgroundError>,
+    reported_errors: Mutex<HashSet<String>>,
     /// `bufferTargetBytes` setting, changeable at runtime.
     buffer_target: AtomicU64,
     /// Finished downloads served from disk, by infohash.
@@ -721,6 +725,7 @@ impl TorrentEngine {
             cfg.torrent_file_timeout,
         )?;
         let (stats_tx, _) = broadcast::channel(64);
+        let (errors_tx, _) = broadcast::channel(16);
         let cfg_buffer_target = cfg.buffer_target_bytes;
         let cfg_output_dir = cfg.output_dir.clone();
         let engine = Arc::new(Self {
@@ -731,6 +736,8 @@ impl TorrentEngine {
             allowed_hosts,
             entries: Mutex::new(HashMap::new()),
             stats_tx,
+            errors_tx,
+            reported_errors: Mutex::new(HashSet::new()),
             buffer_target: AtomicU64::new(cfg_buffer_target),
             local: Mutex::new(HashMap::new()),
             cache_dir: std::sync::RwLock::new(cfg_output_dir),
@@ -869,9 +876,30 @@ impl TorrentEngine {
         Ok(true)
     }
 
-    /// Stops the librqbit session (every torrent, the listener and the DHT).
+    /// Closing: every torrent leaves the session (paused, files closed, nothing deleted),
+    /// then the session stops (listener, DHT, trackers).
     pub async fn shutdown(&self) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.clear();
+        }
+        if let Ok(mut local) = self.local.lock() {
+            local.clear();
+        }
+        let ids: Vec<Id20> = self
+            .session
+            .with_torrents(|torrents| torrents.map(|(_, t)| t.info_hash()).collect());
+        for id in ids {
+            if let Err(e) = self.session.delete(TorrentIdOrHash::Hash(id), false).await {
+                tracing::warn!(infohash = %id.as_string(), error = %e, "could not close torrent");
+            }
+        }
         self.session.stop().await;
+        tracing::info!("torrent session stopped");
+    }
+
+    /// Background torrent failures (disk full, permissions…) for `app://error`.
+    pub fn subscribe_errors(&self) -> broadcast::Receiver<BackgroundError> {
+        self.errors_tx.subscribe()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<TorrentStats> {
@@ -1740,7 +1768,24 @@ impl TorrentEngine {
             entry.ever_connected.store(true, Ordering::Relaxed);
         }
         if matches!(stats.state, TorrentStatsState::Error) {
-            tracing::warn!(infohash = %req.infohash, error = ?stats.error, "torrent error");
+            let message = stats
+                .error
+                .clone()
+                .unwrap_or_else(|| "torrent error".into());
+            let first = self
+                .reported_errors
+                .lock()
+                .map(|mut r| r.insert(req.infohash.clone()))
+                .unwrap_or(false);
+            if first {
+                tracing::warn!(infohash = %req.infohash, error = %message, "torrent error");
+                let _ = self.errors_tx.send(BackgroundError::new(
+                    &background_error(&message),
+                    Some(req.infohash.clone()),
+                ));
+            }
+        } else if let Ok(mut r) = self.reported_errors.lock() {
+            r.remove(&req.infohash);
         }
         let phase = compute_phase(&PhaseInput {
             resolving: None,
@@ -1812,6 +1857,25 @@ fn download_torrent(active: &Active, in_cache: bool) -> AppResult<DownloadTorren
         torrent_bytes,
         in_cache,
     })
+}
+
+/// A failure librqbit reports as text, with the code the front should show: a full disk
+/// or a permission problem is `io`, anything else `torrent`.
+pub fn background_error(message: &str) -> AppError {
+    let lower = message.to_ascii_lowercase();
+    let io_kind = if lower.contains("no space left") || lower.contains("os error 28") {
+        Some(std::io::ErrorKind::StorageFull)
+    } else if lower.contains("permission denied") || lower.contains("os error 13") {
+        Some(std::io::ErrorKind::PermissionDenied)
+    } else if lower.contains("read-only file system") || lower.contains("os error 30") {
+        Some(std::io::ErrorKind::ReadOnlyFilesystem)
+    } else {
+        None
+    };
+    match io_kind {
+        Some(kind) => AppError::Io(std::io::Error::new(kind, message.to_owned())),
+        None => AppError::Torrent(message.to_owned()),
+    }
 }
 
 /// `KB/s` setting (KiB/s, as the UI shows it) → bytes/s for librqbit. `None` = unlimited.
@@ -2253,5 +2317,18 @@ mod tests {
     fn no_dht_values() {
         assert!(no_dht(Some("1")) && no_dht(Some(" true ")));
         assert!(!no_dht(None) && !no_dht(Some("0")) && !no_dht(Some("")));
+    }
+
+    #[test]
+    fn background_errors_map_to_codes() {
+        let code = |m: &str| background_error(m).code();
+        use crate::error::ErrorCode;
+        assert_eq!(
+            code("error writing: No space left on device (os error 28)"),
+            ErrorCode::Io
+        );
+        assert_eq!(code("Permission denied (os error 13)"), ErrorCode::Io);
+        assert_eq!(code("Read-only file system (os error 30)"), ErrorCode::Io);
+        assert_eq!(code("bug: torrent in broken state"), ErrorCode::Torrent);
     }
 }

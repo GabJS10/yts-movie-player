@@ -149,6 +149,10 @@ async fn movie_details_fixture() {
     assert_eq!(movie.language, "en");
     assert_eq!(movie.mpa_rating.as_deref(), Some("TV-PG"));
     assert_eq!(movie.yt_trailer_code.as_deref(), Some("nNpvWBuTfrc"));
+    assert_eq!(
+        movie.trailer_url.as_deref(),
+        Some("http://127.0.0.1:1/trailer/nNpvWBuTfrc?title=The+Matrix+Resurrections")
+    );
     assert!(!movie.is_favorite);
     assert!(movie.progress.is_none() && movie.download.is_none());
 

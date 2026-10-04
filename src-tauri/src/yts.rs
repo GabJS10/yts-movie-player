@@ -411,6 +411,11 @@ impl YtsClient {
                 })
             })
             .collect();
+        let trailer_url = crate::stream::trailer_url_for(
+            self.images.local_base(),
+            m.yt_trailer_code.as_deref(),
+            &summary_fields.title,
+        );
         MovieDetail {
             summary_fields,
             summary: non_empty(&m.description_full)
@@ -419,6 +424,7 @@ impl YtsClient {
                 .unwrap_or_default(),
             language: m.language.unwrap_or_default(),
             mpa_rating: non_empty(&m.mpa_rating),
+            trailer_url,
             yt_trailer_code: non_empty(&m.yt_trailer_code),
             screenshot_urls,
             cast,

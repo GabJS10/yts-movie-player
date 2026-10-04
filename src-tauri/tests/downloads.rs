@@ -50,6 +50,7 @@ fn detail() -> MovieDetail {
         language: "en".into(),
         mpa_rating: None,
         yt_trailer_code: None,
+        trailer_url: None,
         screenshot_urls: vec![],
         cast: vec![],
         torrents: vec![],
@@ -78,6 +79,8 @@ struct App {
     engine: Arc<TorrentEngine>,
     downloads: Arc<DownloadManager>,
     db: Db,
+    server_stop: tokio_util::sync::CancellationToken,
+    server_addr: SocketAddr,
 }
 
 impl App {
@@ -136,7 +139,9 @@ async fn start_app_with(
         torrents: Some(Arc::clone(&engine)),
         subs_dir: None,
     });
-    tokio::spawn(stream::serve(listener, router));
+    let server_addr = listener.local_addr().unwrap();
+    let server_stop = tokio_util::sync::CancellationToken::new();
+    tokio::spawn(stream::serve_until(listener, router, server_stop.clone()));
     let db = Db::open(&root.join(db::DB_FILE)).unwrap();
     let mut dl_cfg = DownloadsConfig {
         free_space,
@@ -159,6 +164,8 @@ async fn start_app_with(
         engine,
         downloads,
         db,
+        server_stop,
+        server_addr,
     }
 }
 
@@ -932,4 +939,105 @@ async fn cache_folder_changes_on_the_fly() {
     assert_eq!(body, seeder.video[100..200]);
     assert!(new_cache.join(&ih).exists());
     assert_eq!(app.engine.cache_folder_of(&ih), Some(new_cache.join(&ih)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shutdown_saves_progress_and_stops_everything_within_the_limit() {
+    let seeder = start_seeder().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let app = start_app(
+        tmp.path(),
+        vec![seeder.addr],
+        false,
+        unlimited_space(),
+        |c| c.download_limit_bps = NonZeroU32::new(1_000_000),
+    )
+    .await;
+    let ih = seeder.infohash.clone();
+    app.downloads
+        .start(summary(), &detail(), torrent_info(&seeder))
+        .await
+        .unwrap();
+    wait_for(&app, &ih, "some progress", |d| {
+        d.downloaded_bytes > 512 * 1024
+    })
+    .await;
+    // A client in the middle of a request does not hold the close.
+    let slow = tokio::net::TcpStream::connect(app.server_addr)
+        .await
+        .unwrap();
+
+    let started = std::time::Instant::now();
+    let done = yts_player_lib::lifecycle::shutdown(
+        &app.downloads,
+        &app.engine,
+        &app.db,
+        &app.server_stop,
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(done, "shutdown hit the limit");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+
+    // Progress and state saved; files closed; port freed.
+    let rows = app.db.list_downloads("").await.unwrap();
+    assert_eq!(rows[0].state, "active");
+    assert!(
+        rows[0].downloaded_bytes > 512 * 1024,
+        "{:?}",
+        rows[0].downloaded_bytes
+    );
+    assert!(open_files_under(&app.library()).is_empty());
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        tokio::net::TcpStream::connect(app.server_addr)
+            .await
+            .is_err(),
+        "local server still accepting"
+    );
+    drop(slow);
+    // The tick is stopped: nothing changes any more.
+    let before = app.db.list_downloads("").await.unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(app.db.list_downloads("").await.unwrap(), before);
+
+    // Next start: the download is back where it was.
+    let again = start_app(tmp.path(), Vec::new(), false, unlimited_space(), |_| {}).await;
+    let d = again.downloads.get(&ih).unwrap();
+    assert!(d.downloaded_bytes >= rows[0].downloaded_bytes);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_download_that_fails_in_the_background_is_reported() {
+    let seeder = start_seeder().await;
+    let tmp = tempfile::tempdir().unwrap();
+    // Nobody answers: the magnet never resolves.
+    let app = start_app(
+        tmp.path(),
+        vec!["127.0.0.1:9".parse().unwrap()],
+        false,
+        unlimited_space(),
+        |c| c.metadata_timeout = Duration::from_secs(1),
+    )
+    .await;
+    let mut errors = app.downloads.subscribe_errors();
+    let ih = seeder.infohash.clone();
+    app.downloads
+        .start(summary(), &detail(), torrent_info(&seeder))
+        .await
+        .unwrap();
+    let err = tokio::time::timeout(Duration::from_secs(20), errors.recv())
+        .await
+        .expect("no app://error")
+        .unwrap();
+    assert_eq!(err.infohash.as_deref(), Some(ih.as_str()));
+    assert_eq!(
+        serde_json::to_value(err.code).unwrap(),
+        serde_json::json!("no_peers")
+    );
+    wait_for(&app, &ih, "error", |d| d.state == DownloadState::Error).await;
 }

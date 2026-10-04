@@ -211,6 +211,15 @@ impl Db {
         .map_err(|e| AppError::Internal(format!("db task: {e}")))?
     }
 
+    /// Writes the WAL back into the DB file (closing the app).
+    pub async fn checkpoint(&self) -> AppResult<()> {
+        self.call(|c| {
+            c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+            Ok(())
+        })
+        .await
+    }
+
     // -- Image registry -----------------------------------------------------------------
 
     /// Every saved `hash → remote URL` (loaded into the `ImageStore` at startup).
@@ -736,6 +745,8 @@ pub fn detail_to_stored(d: &MovieDetail) -> MovieDetail {
         progress: None,
         download: None,
         offline: false,
+        // Session-only URL: rebuilt with the current port when read.
+        trailer_url: None,
         ..d.clone()
     }
 }
@@ -743,6 +754,11 @@ pub fn detail_to_stored(d: &MovieDetail) -> MovieDetail {
 pub fn detail_from_stored(d: MovieDetail, local_base: &str) -> MovieDetail {
     let base = local_base.trim_end_matches('/');
     MovieDetail {
+        trailer_url: crate::stream::trailer_url_for(
+            local_base,
+            d.yt_trailer_code.as_deref(),
+            &d.summary_fields.title,
+        ),
         summary_fields: from_stored(d.summary_fields.clone(), local_base),
         screenshot_urls: d
             .screenshot_urls
@@ -1103,7 +1119,8 @@ mod tests {
             summary: "Plot".into(),
             language: "en".into(),
             mpa_rating: Some("R".into()),
-            yt_trailer_code: Some("abc".into()),
+            yt_trailer_code: Some("9ix7TUGVYIo".into()),
+            trailer_url: Some("http://127.0.0.1:4000/trailer/9ix7TUGVYIo?title=Movie+1".into()),
             screenshot_urls: vec![imgs.local_url(Some(REMOTE)).unwrap()],
             cast: vec![CastMember {
                 name: "Actor".into(),
@@ -1186,6 +1203,11 @@ mod tests {
         assert_eq!(d.cast[0].image_url.as_deref(), Some(local.as_str()));
         assert!(!d.is_favorite && !d.offline);
         assert_eq!(d.summary, "Plot");
+        // Rebuilt with the current port, never stored.
+        assert_eq!(
+            d.trailer_url.as_deref(),
+            Some("http://127.0.0.1:5555/trailer/9ix7TUGVYIo?title=Movie+1")
+        );
         assert!(db
             .images()
             .await

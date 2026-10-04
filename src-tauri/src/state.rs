@@ -27,4 +27,6 @@ pub struct AppState {
     pub subtitles: SubtitlesClient,
     pub downloads: Arc<DownloadManager>,
     pub recommender: Recommender,
+    /// Cancelled when closing: stops the local HTTP server.
+    pub server_stop: tokio_util::sync::CancellationToken,
 }

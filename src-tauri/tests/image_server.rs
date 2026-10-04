@@ -145,10 +145,8 @@ async fn serves_the_trailer_page_with_its_own_origin_as_referrer() {
         "strict-origin-when-cross-origin"
     );
     let html = resp.text().await.unwrap();
-    let origin: String = url::form_urlencoded::byte_serialize(base.as_bytes()).collect();
-    assert!(html.contains(&format!(
-        "youtube-nocookie.com/embed/9ix7TUGVYIo?autoplay=1&amp;rel=0&amp;playsinline=1&amp;origin={origin}"
-    )), "{html}");
+    assert!(html.contains(r#"videoId: "9ix7TUGVYIo""#), "{html}");
+    assert!(html.contains(&format!(r#"origin: "{base}""#)), "{html}");
     assert!(html.contains("<title>Matrix &lt;4&gt;</title>"));
 
     for bad in ["x", "has%20space%20in", "..%2F..%2Fetc"] {

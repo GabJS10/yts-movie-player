@@ -35,8 +35,8 @@ use crate::torrent::{
     is_valid_infohash, remove_path, DownloadRequest, LocalStream, StreamRequest, TorrentEngine,
 };
 use crate::types::{
-    Download, DownloadChanged, DownloadState, MoveFailure, MoveProgress, MovieDetail, MovieSummary,
-    Quality, VideoCodec,
+    BackgroundError, Download, DownloadChanged, DownloadState, MoveFailure, MoveProgress,
+    MovieDetail, MovieSummary, Quality, VideoCodec,
 };
 
 pub const TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -177,6 +177,10 @@ pub struct DownloadManager {
     /// Last state emitted per download, to emit only changes.
     emitted: Mutex<HashMap<String, DownloadState>>,
     events: broadcast::Sender<DownloadChanged>,
+    /// `app://error` when a download fails in the background.
+    errors: broadcast::Sender<BackgroundError>,
+    /// Set by [`DownloadManager::shutdown`]: the tick stops.
+    stopped: AtomicBool,
     /// Serializes the commands (start/pause/resume/remove) and the tick.
     ops: tokio::sync::Mutex<()>,
 }
@@ -296,11 +300,14 @@ impl DownloadManager {
     pub fn new(cfg: DownloadsConfig) -> Arc<Self> {
         let (events, _) = broadcast::channel(64);
         let (move_events, _) = broadcast::channel(64);
+        let (errors, _) = broadcast::channel(16);
         Arc::new(Self {
             library_dir: std::sync::RwLock::new(cfg.library_dir.clone()),
             move_running: AtomicBool::new(false),
             move_cancel: AtomicBool::new(false),
             move_events,
+            errors,
+            stopped: AtomicBool::new(false),
             seed: AtomicBool::new(cfg.seed_after_download),
             cfg,
             records: Mutex::new(HashMap::new()),
@@ -313,6 +320,11 @@ impl DownloadManager {
     /// `download://changed` payloads.
     pub fn subscribe(&self) -> broadcast::Receiver<DownloadChanged> {
         self.events.subscribe()
+    }
+
+    /// Background failures (disk full during a download…) for `app://error`.
+    pub fn subscribe_errors(&self) -> broadcast::Receiver<BackgroundError> {
+        self.errors.subscribe()
     }
 
     /// `downloads://move-progress` payloads.
@@ -465,6 +477,9 @@ impl DownloadManager {
                 let Some(manager) = weak.upgrade() else {
                     break;
                 };
+                if manager.stopped.load(Ordering::SeqCst) {
+                    break;
+                }
                 n += 1;
                 manager.tick(n.is_multiple_of(PERSIST_EVERY_TICKS)).await;
             }
@@ -642,6 +657,14 @@ impl DownloadManager {
     }
 
     /// Changes the stored state (and live numbers) of a record and saves it.
+    /// Marks the download `error` and reports it on `app://error` with its code.
+    async fn fail(&self, infohash: &str, err: &AppError) {
+        self.set_state(infohash, ERROR, Some(err.to_string())).await;
+        let _ = self
+            .errors
+            .send(BackgroundError::new(err, Some(infohash.to_owned())));
+    }
+
     async fn set_state(&self, infohash: &str, state: &str, error: Option<String>) {
         let view = self.get(infohash);
         let row = self.with_record(infohash, |r| {
@@ -825,7 +848,7 @@ impl DownloadManager {
                 tracing::warn!(%infohash, error = %e, "could not add download");
                 self.with_record(infohash, |r| r.resolving = false);
                 if row.state != DONE {
-                    self.set_state(infohash, ERROR, Some(e.to_string())).await;
+                    self.fail(infohash, &e).await;
                 }
             }
         }
@@ -950,6 +973,33 @@ impl DownloadManager {
 
     // -- Background ------------------------------------------------------------------------
 
+    /// Closing the app: stops the tick, cancels a move (waiting for it to clean up) and
+    /// saves every download's state and progress. Bounded by the caller's timeout.
+    pub async fn shutdown(&self) {
+        self.stopped.store(true, Ordering::SeqCst);
+        self.cancel_move();
+        while self.move_running() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let _ops = self.ops.lock().await;
+        for infohash in self.infohashes() {
+            let Some(view) = self.get(&infohash) else {
+                continue;
+            };
+            let row = self.with_record(&infohash, |r| {
+                if r.row.state != DONE {
+                    r.row.size_bytes = view.size_bytes;
+                    r.row.downloaded_bytes = r.row.downloaded_bytes.max(view.downloaded_bytes);
+                }
+                r.row.clone()
+            });
+            if let Some(row) = row {
+                self.persist(&row).await;
+            }
+        }
+        tracing::info!("downloads saved");
+    }
+
     /// Follows the download's folder: gone → `unavailable` (torrent out of the session);
     /// back → resumes as it was. Returns whether the tick should skip the rest for it.
     async fn check_availability(
@@ -975,8 +1025,11 @@ impl DownloadManager {
                 let missing =
                     row.state == DONE && Self::video_path(row).is_none_or(|p| !p.is_file());
                 if missing {
-                    self.set_state(infohash, ERROR, Some("downloaded file is missing".into()))
-                        .await;
+                    self.fail(
+                        infohash,
+                        &AppError::NotFound("downloaded file is missing".into()),
+                    )
+                    .await;
                 } else if self.wants_torrent(infohash) {
                     self.spawn_resolve(infohash);
                 }
@@ -1008,9 +1061,7 @@ impl DownloadManager {
                         r.resolving = false;
                         r.in_cache = false;
                     });
-                    manager
-                        .set_state(&infohash, ERROR, Some(e.to_string()))
-                        .await;
+                    manager.fail(&infohash, &e).await;
                 }
             }
             manager.emit_if_changed(&infohash);
@@ -1021,6 +1072,9 @@ impl DownloadManager {
     /// `persist`) progress saved to the DB.
     pub async fn tick(self: &Arc<Self>, persist: bool) {
         let _ops = self.ops.lock().await;
+        if self.stopped.load(Ordering::SeqCst) {
+            return;
+        }
         for infohash in self.infohashes() {
             let Some((row, resolving, in_cache, unavailable, moving)) =
                 self.with_record(&infohash, |r| {
@@ -1054,7 +1108,10 @@ impl DownloadManager {
             let stats = self.cfg.engine.download_stats(&infohash);
             match stats {
                 Some(s) if s.error.is_some() && !resolving => {
-                    self.set_state(&infohash, ERROR, s.error).await;
+                    // librqbit only gives text: a full disk becomes `io`.
+                    let message = s.error.unwrap_or_default();
+                    self.fail(&infohash, &crate::torrent::background_error(&message))
+                        .await;
                 }
                 Some(s)
                     if s.resolved

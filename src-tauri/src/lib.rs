@@ -5,6 +5,7 @@ pub mod downloads;
 pub mod error;
 pub mod external_player;
 pub mod images;
+pub mod lifecycle;
 pub mod paths;
 pub mod recommend;
 pub mod settings;
@@ -140,6 +141,8 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         downloads.spawn_tick(downloads::TICK_INTERVAL);
     });
     forward_download_changes(app.clone(), &downloads);
+    forward_errors(app.clone(), torrents.subscribe_errors());
+    forward_errors(app.clone(), downloads.subscribe_errors());
     forward_move_progress(app.clone(), &downloads);
 
     let cache = Arc::new(CacheManager::new(
@@ -162,7 +165,22 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         torrents: Some(Arc::clone(&torrents)),
         subs_dir: Some(subs_dir),
     });
-    tauri::async_runtime::spawn(stream::serve(listener, router));
+    let server_stop = tokio_util::sync::CancellationToken::new();
+    {
+        let (app, stop) = (app.clone(), server_stop.clone());
+        tauri::async_runtime::spawn(async move {
+            // Stopped on purpose (closing) is fine; anything else leaves the front without
+            // images, streams or subtitles.
+            let failure = stream::serve_until(listener, router, stop.clone()).await;
+            if !stop.is_cancelled() {
+                let err = error::AppError::Internal(format!(
+                    "local HTTP server stopped: {}",
+                    failure.map(|e| e.to_string()).unwrap_or_default()
+                ));
+                emit_error(&app, &err, None);
+            }
+        });
+    }
     tracing::info!(%local_base, "local HTTP server listening");
 
     Ok(AppState {
@@ -177,7 +195,35 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         subtitles,
         downloads,
         recommender: recommend::Recommender::default(),
+        server_stop,
     })
+}
+
+fn emit_error(app: &AppHandle, err: &error::AppError, infohash: Option<String>) {
+    let payload = types::BackgroundError::new(err, infohash);
+    if let Err(e) = app.emit(events::APP_ERROR, &payload) {
+        tracing::warn!(error = %e, "could not emit app error");
+    }
+}
+
+/// Re-emits background failures as `app://error`.
+fn forward_errors(
+    app: AppHandle,
+    mut rx: tokio::sync::broadcast::Receiver<types::BackgroundError>,
+) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(payload) => {
+                    if let Err(e) = app.emit(events::APP_ERROR, &payload) {
+                        tracing::warn!(error = %e, "could not emit app error");
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
 }
 
 /// Re-emits `move_downloads` progress as `downloads://move-progress`.
@@ -206,12 +252,7 @@ const CACHE_DIR_CHECK: std::time::Duration = std::time::Duration::from_secs(30);
 fn watch_cache_dir(app: AppHandle, startup_warning: Option<error::AppError>) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        let emit = |err: &error::AppError| {
-            let payload = types::BackgroundError::new(err, None);
-            if let Err(e) = app.emit(events::APP_ERROR, &payload) {
-                tracing::warn!(error = %e, "could not emit app error");
-            }
-        };
+        let emit = |err: &error::AppError| emit_error(&app, err, None);
         if let Some(warning) = &startup_warning {
             emit(warning);
         }
@@ -318,6 +359,27 @@ pub fn run() {
             commands::cancel_move_downloads,
             commands::open_trailer_window,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        // Closing the main window closes the app (a trailer window left open does not keep
+        // it alive).
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                let Some(state) = app.try_state::<AppState>() else {
+                    return;
+                };
+                tauri::async_runtime::block_on(lifecycle::shutdown(
+                    &state.downloads,
+                    &state.torrents,
+                    &state.db,
+                    &state.server_stop,
+                    lifecycle::SHUTDOWN_TIMEOUT,
+                ));
+            }
+        });
 }

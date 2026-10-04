@@ -138,6 +138,10 @@ pub struct MovieDetail {
     pub language: String,
     pub mpa_rating: Option<String>,
     pub yt_trailer_code: Option<String>,
+    /// Local trailer page (`/trailer/<code>?title=…`), only valid for this session; `null`
+    /// without a trailer code.
+    #[serde(default)]
+    pub trailer_url: Option<String>,
     /// Large screenshots served by the local server; empty if none.
     pub screenshot_urls: Vec<String>,
     pub cast: Vec<CastMember>,
@@ -929,6 +933,7 @@ mod tests {
             language: "en".into(),
             mpa_rating: None,
             yt_trailer_code: Some("9ix7TUGVYIo".into()),
+            trailer_url: Some("http://127.0.0.1:1/trailer/9ix7TUGVYIo?title=Neo".into()),
             screenshot_urls: vec!["http://127.0.0.1:1/img/c".into()],
             cast: vec![CastMember {
                 name: "Keanu Reeves".into(),
@@ -947,6 +952,7 @@ mod tests {
             "language": "en",
             "mpaRating": null,
             "ytTrailerCode": "9ix7TUGVYIo",
+            "trailerUrl": "http://127.0.0.1:1/trailer/9ix7TUGVYIo?title=Neo",
             "screenshotUrls": ["http://127.0.0.1:1/img/c"],
             "cast": [{ "name": "Keanu Reeves", "character": "Neo", "imageUrl": null }],
             "torrents": [],

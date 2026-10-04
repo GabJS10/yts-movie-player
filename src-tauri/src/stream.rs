@@ -73,8 +73,28 @@ pub fn router(state: ServerState) -> Router {
 
 /// Runs the server until the process exits.
 pub async fn serve(listener: TcpListener, router: Router) {
-    if let Err(e) = axum::serve(listener, router).await {
-        tracing::error!(error = %e, "local HTTP server stopped");
+    serve_until(listener, router, tokio_util::sync::CancellationToken::new()).await;
+}
+
+/// Runs the server until `stop` is cancelled (it stops accepting at once, which frees the
+/// port) or it fails. Returns the error, if any.
+pub async fn serve_until(
+    listener: TcpListener,
+    router: Router,
+    stop: tokio_util::sync::CancellationToken,
+) -> Option<std::io::Error> {
+    let result = axum::serve(listener, router)
+        .with_graceful_shutdown(stop.cancelled_owned())
+        .await;
+    match result {
+        Ok(()) => {
+            tracing::info!("local HTTP server stopped");
+            None
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "local HTTP server failed");
+            Some(e)
+        }
     }
 }
 
@@ -124,13 +144,14 @@ fn escape_html(s: &str) -> String {
         .collect()
 }
 
-/// Full-window page with the `youtube-nocookie` embed. `origin` is this server's origin
-/// (`http://127.0.0.1:<port>`), sent by the iframe as `Referer`.
+/// Full-window page with the `youtube-nocookie` player (YouTube IFrame API,
+/// `enablejsapi=1`). `origin` is this server's origin (`http://127.0.0.1:<port>`), sent by
+/// the player iframe as `Referer`. Player events go to `window.parent` (the app's modal)
+/// and `window.opener` as `postMessage({ source: "yts-trailer", event, code? })`
+/// (`docs/IPC.md`, "Tráiler"); a failure to load the API counts as `error`.
 pub fn trailer_page(code: &str, title: &str, origin: &str) -> String {
-    let src = format!(
-        "https://www.youtube-nocookie.com/embed/{code}?autoplay=1&rel=0&playsinline=1&origin={}",
-        url::form_urlencoded::byte_serialize(origin.as_bytes()).collect::<String>()
-    );
+    // `code` is validated ([A-Za-z0-9_-]); JSON keeps `origin` safe inside the script.
+    let origin_js = serde_json::to_string(origin).unwrap_or_else(|_| "\"\"".into());
     format!(
         r#"<!doctype html>
 <html lang="es">
@@ -138,16 +159,46 @@ pub fn trailer_page(code: &str, title: &str, origin: &str) -> String {
 <meta charset="utf-8">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>{title}</title>
-<style>html,body{{margin:0;height:100%;background:#000}}iframe{{border:0;width:100%;height:100%;display:block}}</style>
+<style>html,body{{margin:0;height:100%;background:#000;overflow:hidden}}#player,iframe{{border:0;width:100%;height:100%;display:block}}</style>
 </head>
 <body>
-<iframe src="{src}" title="{title}" referrerpolicy="strict-origin-when-cross-origin"
- allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+<div id="player"></div>
+<script>
+(function () {{
+  var targets = [];
+  if (window.parent && window.parent !== window) targets.push(window.parent);
+  if (window.opener) targets.push(window.opener);
+  var sent = {{}};
+  function send(event, code) {{
+    var msg = {{ source: "yts-trailer", event: event }};
+    if (typeof code === "number") msg.code = code;
+    targets.forEach(function (w) {{
+      try {{ w.postMessage(msg, "*"); }} catch (e) {{}}
+    }});
+  }}
+  window.ytsTrailerSend = send;
+  window.onYouTubeIframeAPIReady = function () {{
+    new YT.Player("player", {{
+      host: "https://www.youtube-nocookie.com",
+      videoId: "{code}",
+      playerVars: {{ autoplay: 1, rel: 0, playsinline: 1, enablejsapi: 1, origin: {origin_js} }},
+      events: {{
+        onReady: function () {{ send("ready"); }},
+        onStateChange: function (e) {{
+          if (e.data === YT.PlayerState.PLAYING && !sent.playing) {{ sent.playing = true; send("playing"); }}
+          if (e.data === YT.PlayerState.ENDED) {{ sent.playing = false; send("ended"); }}
+        }},
+        onError: function (e) {{ send("error", Number(e.data)); }}
+      }}
+    }});
+  }};
+}})();
+</script>
+<script src="https://www.youtube.com/iframe_api" onerror="window.ytsTrailerSend('error')"></script>
 </body>
 </html>
 "#,
         title = escape_html(title),
-        src = escape_html(&src),
     )
 }
 
@@ -185,6 +236,12 @@ async fn trailer(
         trailer_page(&code, &title, &format!("http://{host}")),
     )
         .into_response()
+}
+
+/// `MovieDetail.trailerUrl`: the trailer page for a valid code, else `None`.
+pub fn trailer_url_for(local_base: &str, code: Option<&str>, title: &str) -> Option<String> {
+    let code = code?.trim();
+    is_valid_yt_code(code).then(|| trailer_url(local_base, code, title))
 }
 
 /// Local URL of the trailer page (`open_trailer_window`).
@@ -290,17 +347,27 @@ mod tests {
     }
 
     #[test]
-    fn trailer_page_embeds_with_referrer_and_escapes_the_title() {
+    fn trailer_page_uses_the_iframe_api_and_escapes_the_title() {
         let page = trailer_page("9ix7TUGVYIo", "Tom & \"Jerry\" <3", "http://127.0.0.1:4321");
-        assert!(page.contains(
-            "https://www.youtube-nocookie.com/embed/9ix7TUGVYIo?autoplay=1&amp;rel=0&amp;playsinline=1&amp;origin=http%3A%2F%2F127.0.0.1%3A4321"
-        ));
-        assert!(page.contains(r#"referrerpolicy="strict-origin-when-cross-origin""#));
+        assert!(page.contains(r#"videoId: "9ix7TUGVYIo""#));
+        assert!(page.contains(r#"host: "https://www.youtube-nocookie.com""#));
+        assert!(page.contains(r#"enablejsapi: 1, origin: "http://127.0.0.1:4321""#));
+        assert!(page.contains(r#"<script src="https://www.youtube.com/iframe_api""#));
+        assert!(page.contains(r#"source: "yts-trailer""#));
+        for event in ["\"ready\"", "\"playing\"", "\"ended\"", "\"error\""] {
+            assert!(page.contains(event), "{event}");
+        }
+        assert!(page.contains(r#"content="strict-origin-when-cross-origin""#));
         assert!(page.contains("<title>Tom &amp; &quot;Jerry&quot; &lt;3</title>"));
         assert!(!page.contains("<3"));
         assert_eq!(
             trailer_url("http://127.0.0.1:4321/", "9ix7TUGVYIo", "Dune: Parte 2"),
             "http://127.0.0.1:4321/trailer/9ix7TUGVYIo?title=Dune%3A+Parte+2"
         );
+        assert_eq!(
+            trailer_url_for("http://127.0.0.1:1", Some("bad code!"), "x"),
+            None
+        );
+        assert_eq!(trailer_url_for("http://127.0.0.1:1", None, "x"), None);
     }
 }
