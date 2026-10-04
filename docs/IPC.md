@@ -151,7 +151,7 @@ El caché (TTL de unos 30 minutos) y el failover entre URLs base son internos de
 |---|---|---|
 | `start_stream` | `{ movieId: number, infohash: string }` | `StreamSession` |
 | `stop_stream` | `{ infohash: string }` | `void` |
-| `open_external_player` | `{ infohash: string, subtitleId?: string, subtitlePath?: string, subtitleDelayMs?: number }` | `ExternalPlayerResult` |
+| `open_external_player` | `{ infohash: string, subtitleId?: string, subtitlePath?: string, subtitleDelayMs?: number, subtitlesOff?: boolean }` | `ExternalPlayerResult` |
 
 ```ts
 type StreamSession = {
@@ -175,7 +175,8 @@ type StreamSession = {
 - Subtítulos para el reproductor externo (se pasan como archivo local, p. ej. `--sub-file=<ruta>` en VLC, `--sub-file=` en mpv):
   - `subtitleId`: subtítulo de OpenSubtitles ya elegido; se usa el `.vtt` de la caché en disco o se descarga.
   - `subtitlePath`: archivo propio (`.srt`/`.vtt`) que cargó el usuario.
-  - Si no llega ninguno y `autoSubtitles` está activo con key configurada, el backend busca en `subtitleLang` y usa el primero del ranking (con el `infohash` para la coincidencia de release).
+  - `subtitlesOff: true`: el usuario eligió "Desactivados" en el reproductor → se abre sin subtítulos y sin buscar (`subtitle: "none"`).
+  - Si no llega ninguno (ni `subtitlesOff`) y `autoSubtitles` está activo con key configurada, el backend busca en `subtitleLang` y usa el primero del ranking (con el `infohash` para la coincidencia de release).
   - `subtitleDelayMs` se traduce a la opción de retraso del reproductor si la tiene (convención del front: positivo = los subtítulos salen más tarde).
   - Un fallo de subtítulos **nunca** impide abrir el reproductor: se abre sin ellos y se informa en el resultado.
   - Reproductor no reconocido (ni VLC ni mpv): se abre sin subtítulos con `subtitle: "unsupported_player"`.
@@ -183,7 +184,7 @@ type StreamSession = {
 ```ts
 type ExternalPlayerResult = {
   subtitle: "loaded" | "none" | "no_key" | "quota" | "not_found" | "unsupported_player" | "error";
-  // "none" = no se pidió y la carga automática está apagada
+  // "none" = subtitlesOff, o no se pidió y la carga automática está apagada
 };
 ```
 - El progreso **no** lo guarda el backend por su cuenta: el front llama a `save_progress`.
@@ -416,4 +417,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.5** (2026-10-03): `TorrentStats.seeds` = seeds de YTS (estático); pieceMap "3" reservado y sin emitir; `start_stream` usa el `.torrent` de YTS y cae al magnet si falla (la fase `metadata` solo aparece en ese caso).
 - **v0.6** (2026-10-03): `pieceMap` se muestrea sobre una ventana de 64 MB desde la posición de lectura; nuevo `TorrentStats.pieceMapWindow`.
 - **v0.7** (2026-10-04): subtítulos. `SubtitleOption.aiTranslated`, comando `get_subtitles_status` (tipo `SubtitlesStatus`), credenciales opcionales `openSubtitlesUsername`/`openSubtitlesPassword` en `Settings`, caché de `.vtt` en disco y reglas de orden. Sin cambios que rompan.
-- **v0.8** (2026-10-04): `open_external_player` pasa subtítulos al reproductor externo (`subtitleId?`, `subtitlePath?`, `subtitleDelayMs?`) y devuelve `ExternalPlayerResult` en vez de `void`.
+- **v0.8** (2026-10-04): `open_external_player` pasa subtítulos al reproductor externo (`subtitleId?`, `subtitlePath?`, `subtitleDelayMs?`) y devuelve `ExternalPlayerResult` en vez de `void`. `subtitlesOff?` respeta "Desactivados".
