@@ -16,7 +16,7 @@
 | 1 | Base del proyecto y tooling | La app abre una ventana con la estructura de navegación; CI en verde | ✅ Terminada (`fase-1`) |
 | 2 | Catálogo | Home, Búsqueda y Ficha con datos reales de YTS | ✅ Terminada (`fase-2`) |
 | 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | ✅ Terminada (`fase-3`) |
-| 4 | Persistencia: Mi lista, Continuar viendo y Ajustes base | Favoritos y progreso que sobreviven a un reinicio | ⏳ Siguiente |
+| 4 | Persistencia: Mi lista, Continuar viendo, Ajustes base y límite de caché | Favoritos y progreso que sobreviven a un reinicio; la caché no llena el disco | ⏳ Siguiente |
 | 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | — |
 | 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | — |
 | 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | — |
@@ -113,23 +113,32 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
   - Frontend: controles y atajos del reproductor, conversión de `availableRanges` a la barra de progreso, flujo del error de códec.
 - **Cierre:** una película 1080p x264 real empieza en menos de 30 s, se puede adelantar a cualquier punto y la 2160p x265 ofrece VLC. Esta fase **se valida antes de seguir**: si algo de la arquitectura falla (WebKitGTK, librqbit), se replantea aquí. Tag `fase-3`.
 
-## Fase 4: Persistencia (Mi lista, Continuar viendo y Ajustes base)
+## Fase 4: Persistencia (Mi lista, Continuar viendo, Ajustes base y límite de caché)
 
-**Objetivo:** que la app recuerde las cosas entre sesiones.
+**Objetivo:** que la app recuerde las cosas entre sesiones y que la caché de streaming no llene el disco.
+
+> El **límite de la caché** (LRU, `get_storage_usage`, `clear_cache`) se adelantó de la fase 6 a esta por pedido del usuario: probando el streaming se quedó sin disco dos veces.
 
 - **backend:**
-  - `db.rs`: rusqlite con migraciones versionadas y las tablas `favorites`, `progress`, `downloads` y `settings`.
-  - Comandos de Mi lista y Continuar viendo, más `get_settings` y `update_settings` con valores por defecto y validación.
-  - `MovieDetail` pasa a incluir `isFavorite` y `progress`.
+  - `db.rs`: rusqlite (feature `bundled`) en `<dataDir>/yts-player.db`, migraciones versionadas y acceso a la DB fuera del hilo async (`spawn_blocking` o similar). Tablas `favorites`, `progress`, `settings`, `images` (registro hash → URL remota, para que las portadas guardadas sigan funcionando tras reiniciar) y `downloads` (se crea vacía; se usa en la fase 6).
+  - Las películas guardadas (`MovieSummary`) se guardan **sin el origen** `http://127.0.0.1:<port>` y se reescriben con el puerto actual al leerlas (ver convenciones de `IPC.md`).
+  - Comandos de Mi lista (`list_favorites`, `add_favorite`, `remove_favorite`) y de Continuar viendo (`save_progress`, `get_progress`, `list_continue_watching`, `remove_progress`). Se marca como vista (`finished`) a partir del 92 %.
+  - `get_movie` devuelve `isFavorite` y `progress` reales; `start_stream` devuelve `resumeAtS` a partir del progreso guardado (null si está `finished`).
+  - `get_settings` y `update_settings` (`SettingsPatch`: ausente = no tocar, null = borrar) con valores por defecto y validación. **Se aplican ya:** `apiBaseUrls` (en caliente en el cliente YTS), `preferredQuality`, `preferX264`, `externalPlayer`, `bufferTargetBytes` y `cacheLimitBytes`. Se guardan pero se aplican en la fase 6: límites de velocidad, puerto y `seedAfterDownload`; `dataDir` se aplica al reiniciar.
+  - **Límite de caché (adelantado):** `cacheLimitBytes` por defecto 10 GB. Limpieza LRU (por último acceso) al arrancar, al abrir un stream y periódicamente: borra las películas cacheadas menos usadas hasta quedar debajo del límite, **nunca** las que tienen un stream abierto ni nada de `library/`. Comandos `get_storage_usage` y `clear_cache` (vacía `cache/` salvo los streams abiertos y `cache/img`).
+  - **Investigar el espacio en disco:** al vaciar la caché con la app cerrada se liberó en `df` más del doble de lo que medía `du` (5,7 GB en `du` y unos 13,6 GB en `df`). Revisar si quedan archivos borrados pero abiertos (`ls -l /proc/<pid>/fd | grep deleted`), preasignación de librqbit, o el DHT y los archivos de sesión. Corregir o documentar.
 - **frontend:**
-  - Botón ♥ con actualización optimista y página Mi lista.
-  - Fila "Continuar viendo" en la Home con una barra de progreso.
-  - `save_progress` cada 10 s, al pausar y al salir. Al volver a abrir la película, retomar en el segundo exacto.
-  - Pantalla de Ajustes: estructura completa con las secciones que ya tienen backend.
+  - Botón ♥ en la Ficha y en el hero, con actualización optimista y deshacer si falla. Página **Mi lista** con estado vacío.
+  - Fila **Continuar viendo** como primera fila del Inicio, con barra de progreso y opción para quitarla. En la Ficha: **"Continuar (h:mm:ss)"** y **"Desde el principio"**.
+  - Reproductor: `save_progress` cada 10 s, al pausar, al salir y al terminar. Retomar en `resumeAtS`.
+  - **Ajustes** con la estructura completa del prototipo:
+    - Funcionan: **Catálogo** (URLs base con su latencia en vivo vía `get_api_status`), **Reproducción** (calidad preferida, x264, reproductor externo, búfer) y **Almacenamiento** (uso de la caché vs. el límite, editar el límite y el botón **"Vaciar caché ahora"**).
+    - Visibles con "Próximamente": Subtítulos (fase 5) y Torrent (fase 6).
+  - `pickDefaultTorrent` respeta `preferredQuality` y `preferX264` de los ajustes.
 - **Tests:**
-  - Backend: migraciones en una DB temporal (desde cero y entre versiones), CRUD, regla del 92 % para marcar como vista y validación de ajustes.
-  - Frontend: actualización optimista y su deshacer cuando falla, lógica para retomar y formulario de Ajustes.
-- **Cierre:** al reiniciar la app se conservan Mi lista y Continuar viendo, y la película se retoma donde quedó. Tag `fase-4`.
+  - Backend: migraciones en una DB temporal (desde cero y entre versiones), CRUD, regla del 92 %, `SettingsPatch` (null borra, ausente no toca), validación, reescritura de URLs al leer, LRU (respeta streams abiertos y `library/`) y `clear_cache`.
+  - Frontend: ♥ optimista y su deshacer, fila Continuar viendo, temporizador de `save_progress` (fake timers), retomar, formulario de Ajustes, Almacenamiento y versión por defecto según los ajustes.
+- **Cierre:** al reiniciar la app se conservan Mi lista y Continuar viendo (con portadas); la película retoma donde quedó y "Desde el principio" funciona; al pasar el 92 % sale de Continuar viendo; cambiar la calidad o las URLs en Ajustes tiene efecto sin reiniciar; la caché no pasa del límite y "Vaciar caché ahora" libera el espacio. Tag `fase-4`.
 
 ## Fase 5: Subtítulos
 
@@ -158,10 +167,10 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
   - Promover un stream a descarga (se mueve a `library/` sin volver a bajar lo descargado).
   - `start_stream` reproduce desde `library/` si la película ya está descargada.
   - Evento `download://changed`.
-  - Caché LRU con límite, `get_storage_usage` y `clear_cache`.
+  - (El límite de la caché, `get_storage_usage` y `clear_cache` se adelantaron a la fase 4.) Al promover a descarga, el archivo deja de contar para la caché.
   - Límites de velocidad, puerto y seeding aplicados en caliente.
   - Recuperar las descargas al reiniciar la app.
-- **frontend:** página Descargas (estados, progreso, ETA, acciones), el contador en la barra de navegación, el botón Descargar en la Ficha y las secciones Torrent y Almacenamiento de Ajustes.
+- **frontend:** página Descargas (estados, progreso, ETA, acciones), el contador en la barra de navegación, el botón Descargar en la Ficha y la sección Torrent de Ajustes (Almacenamiento ya existe desde la fase 4).
 - **Tests:**
   - Backend: transiciones de estado, promoción de stream a descarga, limpieza LRU y reanudación al reiniciar (integración con un torrent local).
   - Frontend: lista de descargas a partir de los eventos y formularios de límites.
