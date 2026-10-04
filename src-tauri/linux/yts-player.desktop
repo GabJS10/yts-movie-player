@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name={{name}}
+GenericName=Movie player
+GenericName[es]=Reproductor de películas
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Comment[es]=Explora el catálogo de YTS y mira películas en streaming desde torrent
+Exec={{exec}}
+TryExec={{exec}}
+Icon={{icon}}
+Terminal=false
+Categories={{categories}}
+Keywords=movies;films;torrent;streaming;yts;subtitles;peliculas;películas;subtitulos;
+StartupWMClass={{exec}}
+StartupNotify=true

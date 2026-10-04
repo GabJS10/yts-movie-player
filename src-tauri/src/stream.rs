@@ -29,13 +29,26 @@ use crate::images::{ImageError, ImageStore};
 use crate::subtitles::{is_valid_sub_id, vtt_path};
 use crate::torrent::{parse_range, video_mime, TorrentEngine};
 
-/// WebView origins (Linux/macOS, Windows and the Vite dev server).
-const ALLOWED_ORIGINS: [&str; 4] = [
+/// WebView origins (Linux/macOS and Windows).
+const ALLOWED_ORIGINS: [&str; 3] = [
     "tauri://localhost",
     "http://tauri.localhost",
     "https://tauri.localhost",
-    "http://localhost:1420",
 ];
+
+/// The Vite dev server (`npm run tauri dev`); not allowed in release builds.
+const DEV_ORIGIN: &str = "http://localhost:1420";
+
+fn allowed_origins() -> Vec<HeaderValue> {
+    let mut origins: Vec<HeaderValue> = ALLOWED_ORIGINS
+        .iter()
+        .map(|o| HeaderValue::from_static(o))
+        .collect();
+    if cfg!(debug_assertions) {
+        origins.push(HeaderValue::from_static(DEV_ORIGIN));
+    }
+    origins
+}
 
 #[derive(Clone)]
 pub struct ServerState {
@@ -59,9 +72,7 @@ pub fn router(state: ServerState) -> Router {
             header::ACCEPT_RANGES,
             header::CONTENT_LENGTH,
         ])
-        .allow_origin(AllowOrigin::list(
-            ALLOWED_ORIGINS.map(HeaderValue::from_static),
-        ));
+        .allow_origin(AllowOrigin::list(allowed_origins()));
     Router::new()
         .route("/img/{hash}", get(image))
         .route("/stream/{infohash}/{file_idx}", get(stream))

@@ -132,14 +132,22 @@ async fn seeder_prints_json_seeds_through_its_tracker_and_stops_on_sigterm() {
 }
 
 #[test]
-fn data_folder_follows_xdg_data_home() {
+fn folders_follow_xdg_data_home_and_xdg_state_home() {
     let tmp = tempfile::tempdir().unwrap();
-    // The only test in this binary that reads the environment variable.
-    std::env::set_var("XDG_DATA_HOME", tmp.path());
+    // The only test in this binary that touches the environment.
+    std::env::set_var("XDG_DATA_HOME", tmp.path().join("data"));
+    std::env::set_var("XDG_STATE_HOME", tmp.path().join("state"));
     let paths = AppPaths::default_location().unwrap();
-    assert_eq!(paths.data_dir, tmp.path().join("yts-player"));
-    assert_eq!(paths.cache_dir, tmp.path().join("yts-player/cache"));
-    assert_eq!(paths.library_dir, tmp.path().join("yts-player/library"));
+    assert_eq!(paths.data_dir, tmp.path().join("data/yts-player"));
+    assert_eq!(paths.cache_dir, tmp.path().join("data/yts-player/cache"));
+    assert_eq!(
+        paths.library_dir,
+        tmp.path().join("data/yts-player/library")
+    );
+    assert_eq!(
+        yts_player_lib::app::logs_dir(),
+        Some(tmp.path().join("state/yts-player/logs"))
+    );
 }
 
 #[test]

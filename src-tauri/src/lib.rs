@@ -1,3 +1,4 @@
+pub mod app;
 pub mod cache;
 pub mod commands;
 pub mod db;
@@ -34,10 +35,49 @@ use crate::torrent::{kbps_to_bps, EngineConfig, TorrentEngine};
 use crate::types::events;
 use crate::yts::{YtsClient, YtsConfig};
 
+/// Keeps the log file writer alive; dropped on exit so the last lines are flushed.
+static LOG_GUARD: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>> =
+    std::sync::Mutex::new(None);
+
+/// Logs to stderr and to a daily file in `app::logs_dir()` (the last 7 kept). Level `info`
+/// unless `RUST_LOG` says otherwise.
 fn init_logging() {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let file_layer = app::logs_dir().and_then(|dir| {
+        std::fs::create_dir_all(&dir).ok()?;
+        app::prune_logs(&dir, app::LOG_FILES_KEPT);
+        let appender = tracing_appender::rolling::RollingFileAppender::builder()
+            .rotation(tracing_appender::rolling::Rotation::DAILY)
+            .filename_prefix(app::LOG_FILE_PREFIX)
+            .filename_suffix(app::LOG_FILE_SUFFIX)
+            .max_log_files(app::LOG_FILES_KEPT)
+            .build(&dir)
+            .ok()?;
+        let (writer, guard) = tracing_appender::non_blocking(appender);
+        if let Ok(mut g) = LOG_GUARD.lock() {
+            *g = Some(guard);
+        }
+        Some(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(writer),
+        )
+    });
     // try_init: ignore the error if a subscriber is already set.
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    let _ = tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .with(file_layer)
+        .try_init();
+    tracing::info!(version = app::version(), logs = ?app::logs_dir(), "YTS Player starting");
+}
+
+fn flush_logs() {
+    if let Ok(mut g) = LOG_GUARD.lock() {
+        g.take();
+    }
 }
 
 fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
@@ -195,6 +235,7 @@ fn build_state(app: AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         subtitles,
         downloads,
         recommender: recommend::Recommender::default(),
+        updates: app::UpdateChecker::default(),
         server_stop,
     })
 }
@@ -358,6 +399,9 @@ pub fn run() {
             commands::move_downloads,
             commands::cancel_move_downloads,
             commands::open_trailer_window,
+            commands::get_app_info,
+            commands::check_for_update,
+            commands::open_logs_folder,
         ])
         // Closing the main window closes the app (a trailer window left open does not keep
         // it alive).
@@ -380,6 +424,7 @@ pub fn run() {
                     &state.server_stop,
                     lifecycle::SHUTDOWN_TIMEOUT,
                 ));
+                flush_logs();
             }
         });
 }

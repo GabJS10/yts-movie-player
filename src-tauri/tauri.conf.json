@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "YTS Player",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "io.github.gabjs10.ytsplayer",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -27,14 +27,54 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "deb",
+      "rpm",
+      "appimage"
+    ],
+    "category": "Video",
+    "shortDescription": "Explore the YTS catalog and stream movies from torrents",
+    "longDescription": "YTS Player is a Netflix-style desktop app to browse the YTS catalog and watch movies streamed from torrents, with automatic Spanish subtitles (OpenSubtitles), trailers, My List, Continue Watching and downloads for offline viewing. x265/HEVC files open in VLC.",
+    "publisher": "GabJS10",
+    "homepage": "https://github.com/GabJS10/yts-movie-player",
+    "copyright": "© 2026 GabJS10",
     "icon": [
       "icons/32x32.png",
+      "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "section": "video",
+        "depends": [
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad",
+          "gstreamer1.0-libav"
+        ],
+        "recommends": [
+          "vlc"
+        ],
+        "desktopTemplate": "linux/yts-player.desktop"
+      },
+      "rpm": {
+        "depends": [
+          "gstreamer1-plugins-good",
+          "gstreamer1-plugins-bad-free"
+        ],
+        "recommends": [
+          "gstreamer1-plugin-libav",
+          "vlc"
+        ],
+        "desktopTemplate": "linux/yts-player.desktop"
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   },
   "mainBinaryName": "yts-player"
 }

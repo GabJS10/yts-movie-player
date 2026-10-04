@@ -1,6 +1,6 @@
 [package]
 name = "yts-player"
-version = "0.1.0"
+version = "1.0.0"
 description = "Netflix-style desktop player for the YTS catalog"
 authors = ["GabJS10"]
 edition = "2021"
@@ -41,6 +41,7 @@ tokio-util = { version = "0.7.19", features = ["io"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 libc = "0.2.190"
 tauri-plugin-dialog = "2"
+tracing-appender = "0.2"
 
 
 # Smaller debug builds (target/ was 37 GB): line tables only for our crate (backtraces

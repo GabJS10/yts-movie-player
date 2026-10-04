@@ -610,6 +610,25 @@ pub struct DownloadChanged {
     pub download: Option<Download>,
 }
 
+/// `get_app_info`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub version: String,
+    pub logs_dir: String,
+    pub data_dir: String,
+    pub repo_url: String,
+}
+
+/// `check_for_update`: a newer release on GitHub.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub version: String,
+    pub url: String,
+    pub published_at: String,
+}
+
 /// Payload of `downloads://move-progress`.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1426,6 +1445,29 @@ mod tests {
         assert_eq!(
             to_json(&row),
             json!({ "sourceMovieId": 3, "sourceTitle": "C", "movies": [summary_json()] })
+        );
+    }
+
+    #[test]
+    fn app_info_and_update_info() {
+        let info = AppInfo {
+            version: "1.0.0".into(),
+            logs_dir: "/l".into(),
+            data_dir: "/d".into(),
+            repo_url: "https://github.com/GabJS10/yts-movie-player".into(),
+        };
+        assert_eq!(
+            to_json(&info),
+            json!({ "version": "1.0.0", "logsDir": "/l", "dataDir": "/d", "repoUrl": "https://github.com/GabJS10/yts-movie-player" })
+        );
+        let u = UpdateInfo {
+            version: "1.1.0".into(),
+            url: "https://github.com/x".into(),
+            published_at: "2026-11-01T10:00:00Z".into(),
+        };
+        assert_eq!(
+            to_json(&u),
+            json!({ "version": "1.1.0", "url": "https://github.com/x", "publishedAt": "2026-11-01T10:00:00Z" })
         );
     }
 }

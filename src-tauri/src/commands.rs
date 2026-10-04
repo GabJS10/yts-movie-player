@@ -12,10 +12,10 @@ use crate::state::AppState;
 use crate::subtitles::{Credentials, Release};
 use crate::torrent::{kbps_to_bps, StreamRequest};
 use crate::types::{
-    ApiEndpointStatus, ClearCacheResult, ContinueItem, Download, ExternalPlayerResult,
+    ApiEndpointStatus, AppInfo, ClearCacheResult, ContinueItem, Download, ExternalPlayerResult,
     FeaturedItem, HomeProfile, ListMoviesParams, MovieDetail, MoviePage, MovieSummary, Progress,
     Settings, SettingsPatch, StorageUsage, StreamSession, SubtitleOption, SubtitleTrack,
-    SubtitlesStatus,
+    SubtitlesStatus, UpdateInfo,
 };
 
 // ---------------------------------------------------------------------------
@@ -600,6 +600,38 @@ pub async fn open_trailer_window(
         .build()
         .map_err(|e| AppError::Internal(format!("trailer window: {e}")))?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Application
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn get_app_info(state: State<'_, AppState>) -> AppResult<AppInfo> {
+    Ok(AppInfo {
+        version: crate::app::version().to_owned(),
+        logs_dir: crate::app::logs_dir()
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        data_dir: state.paths.data_dir.to_string_lossy().into_owned(),
+        repo_url: crate::app::REPO_URL.to_owned(),
+    })
+}
+
+/// Never fails: `null` when there is nothing newer or GitHub can't be reached.
+#[tauri::command]
+pub async fn check_for_update(state: State<'_, AppState>) -> AppResult<Option<UpdateInfo>> {
+    Ok(state.updates.check().await)
+}
+
+#[tauri::command]
+pub async fn open_logs_folder(app: AppHandle) -> AppResult<()> {
+    let dir = crate::app::logs_dir()
+        .ok_or_else(|| AppError::NotFound("no logs folder on this system".into()))?;
+    std::fs::create_dir_all(&dir)?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| AppError::Internal(format!("opening {}: {e}", dir.display())))
 }
 
 #[cfg(test)]
