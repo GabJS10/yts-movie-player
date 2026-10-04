@@ -5,6 +5,15 @@
 //! lengths: librqbit creates every file at its final length up front (`set_len`, sparse),
 //! so a stream that just started would otherwise count as the whole movie.
 //!
+//! Disk-space investigation (phase 4, `tests/live_cache.rs`): while streaming, `du` and the
+//! drop in `df` match within ~1 % (no hidden preallocation, no librqbit session files).
+//! The gap seen when emptying the cache by hand comes from files deleted while a paused
+//! torrent still had them open: librqbit keeps a paused torrent's files open, so `rm`
+//! makes them vanish from `du` but frees nothing in `df` until the process exits.
+//! Measured: `rm` of a 1759 MB video while paused → `du` 0, `df` still −1777 MB; evicted
+//! through [`TorrentEngine::evict`] (out of the session first) → freed. Hence every
+//! deletion here goes through the engine.
+//!
 //! Never touched: torrents in use (open streams, open readers), `cache/img` and anything
 //! outside `cache/` (so never `library/`).
 

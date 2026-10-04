@@ -550,7 +550,11 @@ async fn cache_lru_keeps_open_streams_and_evicts_stopped_ones_releasing_files() 
     let seeder = start_seeder().await;
     let dl = start_downloader(vec![seeder.addr], |_| {}).await;
     let mut rx = dl.engine.subscribe();
-    let session = dl.engine.start_stream(request(&seeder, None)).await.unwrap();
+    let session = dl
+        .engine
+        .start_stream(request(&seeder, None))
+        .await
+        .unwrap();
     collect_until_done(&mut rx).await;
 
     // One folder per torrent: cache/<infohash>/…
@@ -574,7 +578,13 @@ async fn cache_lru_keeps_open_streams_and_evicts_stopped_ones_releasing_files() 
     assert!(dir.exists());
 
     // Stopped but a reader is still open (e.g. VLC): still protected.
-    let file_idx: usize = session.stream_url.rsplit('/').next().unwrap().parse().unwrap();
+    let file_idx: usize = session
+        .stream_url
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
     let (reader, _) = dl
         .engine
         .open_reader(&seeder.infohash, file_idx, 0)
@@ -599,7 +609,11 @@ async fn cache_lru_keeps_open_streams_and_evicts_stopped_ones_releasing_files() 
 
     // Watching it again downloads it again into a fresh folder.
     let mut rx = dl.engine.subscribe();
-    let again = dl.engine.start_stream(request(&seeder, None)).await.unwrap();
+    let again = dl
+        .engine
+        .start_stream(request(&seeder, None))
+        .await
+        .unwrap();
     collect_until_done(&mut rx).await;
     let (status, _, body) = get(&again.stream_url, Some("bytes=1000-1999")).await;
     assert_eq!(status, 206);
