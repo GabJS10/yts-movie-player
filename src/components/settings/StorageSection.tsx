@@ -11,14 +11,14 @@ export const CACHE_MAX_GB = 100;
 /** The slider saves once it stops moving, not on every step. */
 export const CACHE_COMMIT_MS = 500;
 
-function Usage({
+export function Usage({
   label,
   value,
   note,
   children,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   note?: string;
   children?: ReactNode;
 }) {

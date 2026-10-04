@@ -19,3 +19,13 @@ export function validateBaseUrl(raw: string, existing: readonly string[]): strin
   if (existing.includes(value)) return "Ese servidor ya está en la lista.";
   return null;
 }
+
+/** Empty = null (no limit / automatic). Returns an error message for anything else that isn't valid. */
+export function parseOptionalInt(raw: string, min: number, max: number): number | null | string {
+  const text = raw.trim();
+  if (!text) return null;
+  if (!/^\d+$/.test(text)) return "Escribe un número entero o déjalo vacío.";
+  const n = Number(text);
+  if (n < min || n > max) return `Entre ${min} y ${max}.`;
+  return n;
+}

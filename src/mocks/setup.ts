@@ -10,6 +10,8 @@
 // - Subtitles: the mock starts with an OpenSubtitles key, so they load by themselves. In Ajustes, set the
 //   key to "invalid" (subtitles_auth) or "quota" (quota exhausted), or clear it ("no key" notice).
 //   The Shawshank Redemption has no Spanish subtitles (English fallback offer).
+// - localStorage.setItem("mock:offline", "1") → no network: the catalog fails with `network`, downloaded
+//   movies open from their saved copy and play from the library (reload to apply).
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -35,6 +37,12 @@ function latency(): number {
 
 export function installMocks(): void {
   const backend = createMockBackend();
+  backend.onDownloadChanged((payload) => void emit("download://changed", payload));
+  try {
+    backend.setOffline(localStorage.getItem("mock:offline") === "1");
+  } catch {
+    // storage unavailable: online
+  }
   mockIPC(
     (cmd, args) =>
       new Promise((resolve, reject) => {

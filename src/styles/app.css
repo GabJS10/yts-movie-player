@@ -987,3 +987,99 @@
     margin: 6px 0;
   }
 }
+
+/* ───────── Descargas ───────── */
+@layer components {
+  .dl-bar {
+    position: relative;
+    height: 6px;
+    max-width: 760px;
+    margin-bottom: 8px;
+    border-radius: 3px;
+    background: var(--color-raised-hi);
+    overflow: hidden;
+  }
+  .dl-bar > i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 3px;
+    background: var(--color-green);
+    transition: width 0.9s linear;
+  }
+  .dl-paused .dl-bar > i,
+  .dl-queued .dl-bar > i {
+    background: #7a7a7a;
+  }
+  .dl-stalled .dl-bar > i,
+  .dl-error .dl-bar > i {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--color-danger);
+  }
+  .dl-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    font-size: 13px;
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .dl-status b {
+    color: var(--color-text-2);
+    font-weight: 650;
+  }
+  .dl-done .dl-status b:first-child {
+    color: var(--color-green);
+  }
+  .dl-stalled .dl-status b:first-child,
+  .dl-error .dl-status b:first-child {
+    color: var(--color-danger);
+  }
+  .dl-action {
+    display: inline-grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: var(--radius-md);
+    color: var(--color-text-2);
+    transition:
+      background-color 0.15s,
+      color 0.15s;
+  }
+  .dl-action:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-text);
+  }
+  .dl-action:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dl-bar > i {
+      transition: none;
+    }
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.82);
+  }
+  .modal {
+    width: min(520px, 100%);
+    padding: 24px;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+  }
+  .btn-danger {
+    background: var(--color-danger);
+    color: #fff;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: #f0645c;
+  }
+}

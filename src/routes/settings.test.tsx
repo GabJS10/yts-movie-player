@@ -17,7 +17,7 @@ async function open(options?: Parameters<typeof renderApp>[1]) {
 }
 
 describe("/settings", () => {
-  it("has every section of the prototype; Torrent is 'Próximamente' and disabled", async () => {
+  it("has every section of the prototype, all of them working", async () => {
     await open();
     const nav = screen.getByRole("navigation", { name: "Secciones" });
     expect(
@@ -25,14 +25,70 @@ describe("/settings", () => {
         .getAllByRole("link")
         .map((a) => a.textContent),
     ).toEqual(["Catálogo", "Subtítulos", "Reproducción", "Torrent", "Almacenamiento"]);
-    expect(within(screen.getByRole("region", { name: /Subtítulos/ })).queryByText("Próximamente")).toBeNull();
-    for (const name of [/Torrent/]) {
-      const section = screen.getByRole("region", { name });
-      expect(within(section).getByText("Próximamente")).toBeInTheDocument();
-      const controls = section.querySelectorAll("input, select, [role=switch]");
-      expect(controls.length).toBeGreaterThan(2);
-      for (const control of controls) expect(control).toBeDisabled();
-    }
+    expect(screen.queryByText("Próximamente")).toBeNull();
+    const torrent = screen.getByRole("region", { name: /Torrent/ });
+    for (const control of torrent.querySelectorAll("input, [role=switch]")) expect(control).toBeEnabled();
+  });
+
+  describe("Torrent", () => {
+    it("saves the speed limits on Enter or blur; empty = no limit (null)", async () => {
+      const user = userEvent.setup();
+      const { calls } = await open();
+      const down = screen.getByRole("textbox", { name: "Límite de descarga" });
+      expect(down).toHaveValue("");
+      await user.type(down, "2048{Enter}");
+      expect(patches(calls).at(-1)).toEqual({ downLimitKbps: 2048 });
+
+      const up = screen.getByRole("textbox", { name: "Límite de subida" });
+      expect(up).toHaveValue("512");
+      await user.clear(up);
+      await user.tab();
+      expect(patches(calls).at(-1)).toEqual({ upLimitKbps: null });
+      expect(
+        within(screen.getByRole("region", { name: /Torrent/ })).getAllByText(/Se aplica al momento/),
+      ).toHaveLength(2);
+    });
+
+    it("explains invalid numbers instead of sending them; Esc restores the saved value", async () => {
+      const user = userEvent.setup();
+      const { calls } = await open();
+      const down = screen.getByRole("textbox", { name: "Límite de descarga" });
+      await user.type(down, "rápido{Enter}");
+      expect(down).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByText("Escribe un número entero o déjalo vacío.")).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      expect(down).toHaveValue("");
+      expect(down).not.toHaveAttribute("aria-invalid");
+
+      const port = screen.getByRole("textbox", { name: "Puerto de escucha" });
+      await user.type(port, "80{Enter}");
+      expect(screen.getByText("Entre 1024 y 65535.")).toBeInTheDocument();
+      expect(patches(calls)).toEqual([]);
+    });
+
+    it("the port applies after restarting; seeding toggles at once", async () => {
+      const user = userEvent.setup();
+      const { calls } = await open();
+      const torrent = screen.getByRole("region", { name: /Torrent/ });
+      expect(within(torrent).getByText(/Se aplica al reiniciar la app/)).toBeInTheDocument();
+      await user.type(screen.getByRole("textbox", { name: "Puerto de escucha" }), "51413{Enter}");
+      expect(patches(calls).at(-1)).toEqual({ listenPort: 51413 });
+
+      const seed = screen.getByRole("switch", { name: "Seguir compartiendo al terminar" });
+      expect(seed).toHaveAttribute("aria-checked", "false");
+      await user.click(seed);
+      expect(seed).toHaveAttribute("aria-checked", "true");
+      expect(patches(calls).at(-1)).toEqual({ seedAfterDownload: true });
+    });
+
+    it("rolls back when the backend rejects the value", async () => {
+      const user = userEvent.setup();
+      await open({ fail: { update_settings: { code: "invalid_input", message: "listenPort in use" } } });
+      const port = screen.getByRole("textbox", { name: "Puerto de escucha" });
+      await user.type(port, "51413{Enter}");
+      expect(await screen.findByRole("alert")).toHaveTextContent("No se guardó");
+      await waitFor(() => expect(port).toHaveValue(""));
+    });
   });
 
   describe("Catálogo", () => {

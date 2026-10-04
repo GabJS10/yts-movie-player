@@ -8,6 +8,7 @@ import type {
   CommandResult,
   ContinueItem,
   Download,
+  DownloadChanged,
   MovieDetail,
   MovieSummary,
   Progress,
@@ -19,7 +20,7 @@ import type {
 import catalog from "./catalog.json";
 
 // maxSeeds is derived from the torrents, not stored.
-type CatalogMovie = Omit<MovieDetail, "isFavorite" | "progress" | "download" | "maxSeeds"> & {
+type CatalogMovie = Omit<MovieDetail, "isFavorite" | "progress" | "download" | "maxSeeds" | "offline"> & {
   /** Position in the API's download_count order (mock-only sort key). */
   downloadRank: number;
   /** date_uploaded_unix (mock-only sort key). */
@@ -104,6 +105,15 @@ export type MockBackend = {
   handle: (cmd: string, args?: unknown) => unknown;
   /** Stats for every active torrent, as the backend would emit them each second. */
   tick: () => TorrentStats[];
+  /** Where `download://changed` goes (setup.ts / tests wire it to the mocked event bus). */
+  onDownloadChanged: (emit: (payload: DownloadChanged) => void) => void;
+  /** Test helper: finish a download now, as if its last piece had just arrived. */
+  completeDownload: (infohash: string) => void;
+  /**
+   * No network: the catalog, suggestions and subtitles fail with `network`; get_movie answers with
+   * the saved copy (offline: true) of downloaded movies; only finished downloads play.
+   */
+  setOffline: (offline: boolean) => void;
 };
 
 export function createMockBackend(): MockBackend {
@@ -138,6 +148,13 @@ export function createMockBackend(): MockBackend {
       });
   }
 
+  let offline = false;
+  const requireNetwork = (what: string) => {
+    if (offline) fail("network", `mock: offline (${what})`);
+  };
+  let emitChanged: (payload: DownloadChanged) => void = () => undefined;
+  const changed = (infohash: string) => emitChanged({ infohash, download: downloads.get(infohash) ?? null });
+
   const downloads = new Map<string, Download>();
   const seedDownload = (id: number, quality: string, state: Download["state"], fraction: number) => {
     const m = byId.get(id);
@@ -155,7 +172,7 @@ export function createMockBackend(): MockBackend {
       downSpeedBps: state === "active" ? 5.2 * 1024 * 1024 : 0,
       peers: state === "active" ? 41 : 0,
       etaS: state === "active" ? 240 : null,
-      path: state === "done" ? `~/.local/share/yts-player/library/${m.title} (${m.year})` : null,
+      path: state === "done" ? `~/.local/share/yts-player/library/${m.title} (${m.year}) [${quality}]` : null,
       error: null,
       addedAt: iso(90),
     });
@@ -206,8 +223,14 @@ export function createMockBackend(): MockBackend {
     maxSeeds: Math.max(0, ...m.torrents.map((t) => t.seeds)),
     isFavorite: favorites.some((f) => f.id === m.id),
     progress: progress.get(m.id) ?? null,
-    download: [...downloads.values()].find((d) => d.movie.id === m.id) ?? null,
+    download: downloadOf(m.id),
+    offline: false,
   });
+  // A finished version first, then whichever is in progress.
+  const downloadOf = (movieId: number) => {
+    const mine = [...downloads.values()].filter((d) => d.movie.id === movieId);
+    return mine.find((d) => d.state === "done") ?? mine[0] ?? null;
+  };
 
   const handlers: Handlers = {
     list_movies: ({ params }) => {
@@ -217,6 +240,7 @@ export function createMockBackend(): MockBackend {
       // Magic queries to exercise error states in the browser: "!api", "!net".
       if (q === "!api") fail("api_unavailable", "mock: every base URL failed");
       if (q === "!net") fail("network", "mock: offline");
+      requireNetwork("list_movies");
       let list = CATALOG.movies.filter(
         (m) =>
           (!q || m.title.toLowerCase().includes(q) || String(m.year) === q || m.imdbCode === q) &&
@@ -256,8 +280,14 @@ export function createMockBackend(): MockBackend {
         hasMore: start + limit < list.length,
       };
     },
-    get_movie: ({ movieId }) => detail(movie(movieId)),
+    get_movie: ({ movieId }) => {
+      if (!offline) return detail(movie(movieId));
+      // The copy saved by start_download, or nothing.
+      if (!downloadOf(movieId)) fail("network", `mock: offline, movie ${movieId} not downloaded`);
+      return { ...detail(movie(movieId)), offline: true };
+    },
     get_suggestions: ({ movieId }) => {
+      requireNetwork("get_suggestions");
       const m = movie(movieId);
       const shared = (x: CatalogMovie) => x.genres.filter((g) => m.genres.includes(g)).length;
       return CATALOG.movies
@@ -267,10 +297,18 @@ export function createMockBackend(): MockBackend {
         .map(toSummary);
     },
     get_api_status: () => [
-      { baseUrl: settings.apiBaseUrls[0] ?? "", role: "active", latencyMs: 182, ok: true },
-      ...settings.apiBaseUrls
-        .slice(1)
-        .map((baseUrl) => ({ baseUrl, role: "fallback" as const, latencyMs: 240, ok: true })),
+      {
+        baseUrl: settings.apiBaseUrls[0] ?? "",
+        role: "active",
+        latencyMs: offline ? null : 182,
+        ok: !offline,
+      },
+      ...settings.apiBaseUrls.slice(1).map((baseUrl) => ({
+        baseUrl,
+        role: "fallback" as const,
+        latencyMs: offline ? null : 240,
+        ok: !offline,
+      })),
     ],
 
     start_stream: ({ movieId, infohash }) => {
@@ -278,6 +316,7 @@ export function createMockBackend(): MockBackend {
       if (existing) return existing.session;
       const { t } = torrentOf(infohash);
       const done = downloads.get(infohash)?.state === "done";
+      if (!done) requireNetwork("start_stream");
       const session: StreamSession = {
         infohash,
         movieId,
@@ -316,6 +355,7 @@ export function createMockBackend(): MockBackend {
     },
 
     search_subtitles: ({ movieId, lang, infohash }) => {
+      requireNetwork("search_subtitles");
       const m = movie(movieId);
       requireKey();
       if (lang === "es" && NO_SPANISH.has(movieId)) return [];
@@ -432,23 +472,29 @@ export function createMockBackend(): MockBackend {
         addedAt: new Date().toISOString(),
       };
       downloads.set(infohash, d);
+      changed(infohash);
       return d;
     },
     list_downloads: () => [...downloads.values()],
     pause_download: ({ infohash }) => {
       const d = downloads.get(infohash) ?? fail("not_found", `download ${infohash} not found`);
+      if (d.state === "done") return d;
       const next: Download = { ...d, state: "paused", downSpeedBps: 0, peers: 0, etaS: null };
       downloads.set(infohash, next);
+      changed(infohash);
       return next;
     },
     resume_download: ({ infohash }) => {
       const d = downloads.get(infohash) ?? fail("not_found", `download ${infohash} not found`);
-      const next: Download = { ...d, state: "active" };
+      if (d.state === "done") return d;
+      const next: Download = { ...d, state: "active", peers: 12, error: null };
       downloads.set(infohash, next);
+      changed(infohash);
       return next;
     },
     remove_download: ({ infohash }) => {
-      downloads.delete(infohash);
+      if (!downloads.delete(infohash)) fail("not_found", `download ${infohash} not found`);
+      changed(infohash);
     },
     open_download_folder: ({ infohash }) => {
       if (!downloads.has(infohash)) fail("not_found", `download ${infohash} not found`);
@@ -467,6 +513,17 @@ export function createMockBackend(): MockBackend {
         fail("invalid_input", "cacheLimitBytes below 1 GB");
       if (patch.bufferTargetBytes !== undefined && patch.bufferTargetBytes <= 0)
         fail("invalid_input", "bufferTargetBytes must be positive");
+      for (const key of ["downLimitKbps", "upLimitKbps"] as const) {
+        const v = patch[key];
+        if (v !== undefined && v !== null && (!Number.isInteger(v) || v <= 0))
+          fail("invalid_input", `${key} must be a positive integer or null`);
+      }
+      if (
+        patch.listenPort !== undefined &&
+        patch.listenPort !== null &&
+        (!Number.isInteger(patch.listenPort) || patch.listenPort < 1024 || patch.listenPort > 65535)
+      )
+        fail("invalid_input", "listenPort must be within 1024–65535 or null");
       if (patch.externalPlayer !== undefined && !patch.externalPlayer.trim())
         fail("invalid_input", "externalPlayer must not be empty");
       settings = { ...settings, ...patch };
@@ -551,9 +608,31 @@ export function createMockBackend(): MockBackend {
     };
   };
 
+  /** A download reaches 100 %: it moves to library/ (readable folder) and stops. */
+  const finish = (d: Download) => {
+    const m = byId.get(d.movie.id);
+    downloads.set(d.infohash, {
+      ...d,
+      state: "done",
+      progress: 1,
+      downloadedBytes: d.sizeBytes,
+      downSpeedBps: 0,
+      peers: 0,
+      etaS: null,
+      path: m ? `~/.local/share/yts-player/library/${m.title} (${m.year}) [${d.quality}]` : null,
+    });
+    changed(d.infohash);
+  };
+
   const tick = (): TorrentStats[] => {
     const out: TorrentStats[] = [];
     for (const d of downloads.values()) {
+      // The queue starts right away in the mock.
+      if (d.state === "queued") {
+        downloads.set(d.infohash, { ...d, state: "active", peers: 12, downSpeedBps: 2 * 1048576 });
+        changed(d.infohash);
+        continue;
+      }
       if (d.state !== "active") continue;
       const speed = Math.max(0.4, d.downSpeedBps / 1048576 + (Math.random() - 0.5) * 0.6) * 1048576;
       const downloadedBytes = Math.min(d.sizeBytes, d.downloadedBytes + speed);
@@ -566,6 +645,7 @@ export function createMockBackend(): MockBackend {
         etaS: Math.round((d.sizeBytes - downloadedBytes) / speed),
       };
       downloads.set(d.infohash, next);
+      if (next.state === "done") finish(next);
       out.push({
         infohash: d.infohash,
         phase: next.state === "done" ? "done" : "ready",
@@ -585,5 +665,18 @@ export function createMockBackend(): MockBackend {
     return out;
   };
 
-  return { handle, tick };
+  return {
+    handle,
+    tick,
+    onDownloadChanged: (emit) => {
+      emitChanged = emit;
+    },
+    completeDownload: (infohash) => {
+      const d = downloads.get(infohash);
+      if (d) finish(d);
+    },
+    setOffline: (on) => {
+      offline = on;
+    },
+  };
 }

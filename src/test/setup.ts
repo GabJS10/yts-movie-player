@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { afterEach } from "vitest";
+import { resetConnectivity } from "../store/connectivity";
 import { clearQuota } from "../store/subtitlesQuota";
 import { useToastStore } from "../store/toast";
 import { installIntersectionObserver } from "./intersection";
@@ -16,6 +17,7 @@ afterEach(() => {
   clearMocks();
   useToastStore.setState({ toast: null });
   clearQuota();
+  resetConnectivity();
 });
 
 // jsdom has no media playback: play()/pause() flip `paused` and fire the matching events.

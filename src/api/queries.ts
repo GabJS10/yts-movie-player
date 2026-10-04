@@ -7,7 +7,8 @@ import {
   useInfiniteQuery,
   type QueryClient,
 } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { DOWNLOAD_POLL_MS, downloadForMovie } from "../lib/downloads";
 import { formatBytes } from "../lib/format";
 import type { TorrentPrefs } from "../lib/versions";
 import { showToast } from "../store/toast";
@@ -21,15 +22,23 @@ import {
   getStorageUsage,
   getSuggestions,
   listContinueWatching,
+  listDownloads,
   listFavorites,
   listMovies,
+  onDownloadChanged,
+  openDownloadFolder,
+  pauseDownload,
+  removeDownload,
   removeFavorite,
   removeProgress,
+  resumeDownload,
+  startDownload,
   updateSettings,
 } from "./tauri";
 import type {
   AppError,
   ContinueItem,
+  Download,
   ListMoviesParams,
   MovieDetail,
   MovieSummary,
@@ -48,6 +57,7 @@ export const queryKeys = {
   continueWatching: ["continue-watching"] as const,
   settings: ["settings"] as const,
   storage: ["storage"] as const,
+  downloads: ["downloads"] as const,
 };
 
 /** Errors that a retry cannot fix. */
@@ -110,11 +120,12 @@ export function useMovie(movieId: number, options: { enabled?: boolean } = {}) {
   });
 }
 
-export function useSuggestions(movieId: number) {
+export function useSuggestions(movieId: number, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.suggestions(movieId),
     queryFn: () => getSuggestions(movieId),
     retry,
+    enabled: options.enabled ?? true,
   });
 }
 
@@ -259,6 +270,7 @@ export function useUpdateSettings() {
     },
     onSuccess: (settings, patch) => {
       qc.setQueryData(queryKeys.settings, settings);
+      if (patch.seedAfterDownload !== undefined) void qc.invalidateQueries({ queryKey: queryKeys.downloads });
       if (patch.apiBaseUrls) for (const key of CATALOG_KEYS) void qc.invalidateQueries({ queryKey: key });
       if (patch.cacheLimitBytes !== undefined) void qc.invalidateQueries({ queryKey: queryKeys.storage });
     },
@@ -287,5 +299,110 @@ export function useClearCache() {
       ),
     onError: (err: AppError) => showToast(describeError(err).title, "error"),
     onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.storage }),
+  });
+}
+
+// ───────── Descargas ─────────
+
+/** list_downloads; `poll` refetches every second (only while the window is visible). */
+export function useDownloads(options: { poll?: boolean } = {}) {
+  return useQuery({
+    queryKey: queryKeys.downloads,
+    queryFn: listDownloads,
+    retry,
+    staleTime: 0,
+    refetchInterval: options.poll ? DOWNLOAD_POLL_MS : false,
+  });
+}
+
+/**
+ * A download changed (command answer or `download://changed`; `null` = removed): patch the list and the
+ * movie page right away, then let the backend confirm.
+ */
+export function applyDownload(qc: QueryClient, infohash: string, download: Download | null) {
+  const list = qc.getQueryData<Download[]>(queryKeys.downloads);
+  const previous = list?.find((d) => d.infohash === infohash) ?? null;
+  if (list) {
+    const rest = list.filter((d) => d.infohash !== infohash);
+    qc.setQueryData<Download[]>(queryKeys.downloads, download ? [download, ...rest] : rest);
+  }
+  const movieId = download?.movie.id ?? previous?.movie.id;
+  const updated = qc.getQueryData<Download[]>(queryKeys.downloads);
+  for (const [key, detail] of qc.getQueriesData<MovieDetail>({ queryKey: ["movie"] })) {
+    if (!detail) continue;
+    const mine = detail.download?.infohash === infohash;
+    if (detail.id !== movieId && !mine) continue;
+    let next = detail.download;
+    if (updated) next = downloadForMovie(updated, detail.id);
+    else if (download) next = !next || mine || download.state === "done" ? download : next;
+    else if (mine) next = null;
+    qc.setQueryData<MovieDetail>(key, { ...detail, download: next });
+  }
+  if (!download || download.state === "done") void qc.invalidateQueries({ queryKey: queryKeys.storage });
+}
+
+/** Keeps the downloads cache in step with `download://changed`. Mounted once, in the app shell. */
+export function useDownloadEvents() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let gone = false;
+    onDownloadChanged(({ infohash, download }) => applyDownload(qc, infohash, download))
+      .then((fn) => (gone ? fn() : (unlisten = fn)))
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, [qc]);
+}
+
+const failToast = (what: string) => (err: AppError) =>
+  showToast(`${what}. ${describeError(err).action}`, "error");
+
+export function useStartDownload() {
+  const qc = useQueryClient();
+  return useMutation<Download, AppError, { movie: MovieSummary; infohash: string }>({
+    mutationFn: ({ movie, infohash }) => startDownload(movie, infohash),
+    onSuccess: (download) => {
+      applyDownload(qc, download.infohash, download);
+      showToast(`Descargando ${download.movie.title} · ${download.quality}`);
+    },
+    onError: failToast("No se pudo descargar"),
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.downloads }),
+  });
+}
+
+/** Pausar / Reanudar. */
+export function useToggleDownload() {
+  const qc = useQueryClient();
+  return useMutation<Download, AppError, { infohash: string; pause: boolean }>({
+    mutationFn: ({ infohash, pause }) => (pause ? pauseDownload(infohash) : resumeDownload(infohash)),
+    onSuccess: (download) => applyDownload(qc, download.infohash, download),
+    onError: (err, { pause }) => failToast(pause ? "No se pudo pausar" : "No se pudo reanudar")(err),
+  });
+}
+
+export function useRemoveDownload() {
+  const qc = useQueryClient();
+  return useMutation<void, AppError, { download: Download; deleteFiles: boolean }>({
+    mutationFn: ({ download, deleteFiles }) => removeDownload(download.infohash, deleteFiles),
+    onSuccess: (_void, { download, deleteFiles }) => {
+      applyDownload(qc, download.infohash, null);
+      showToast(
+        deleteFiles
+          ? `${download.movie.title} borrada del disco`
+          : `${download.movie.title} quitada; los archivos siguen en su carpeta`,
+      );
+    },
+    onError: failToast("No se pudo quitar la descarga"),
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.downloads }),
+  });
+}
+
+export function useOpenDownloadFolder() {
+  return useMutation<void, AppError, string>({
+    mutationFn: openDownloadFolder,
+    onError: failToast("No se pudo abrir la carpeta"),
   });
 }

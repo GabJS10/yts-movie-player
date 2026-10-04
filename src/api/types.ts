@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.9); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.10); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -85,7 +85,10 @@ export type MovieDetail = MovieSummary & {
   torrents: Torrent[];
   isFavorite: boolean;
   progress: Progress | null;
+  /** Any version of this movie being downloaded or already downloaded. */
   download: Download | null;
+  /** The copy saved when downloading (no network): fields missing from it come empty. */
+  offline: boolean;
 };
 
 export type MoviePage = {

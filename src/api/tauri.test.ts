@@ -1,19 +1,27 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { toSummary } from "../lib/movie";
 import { createMockBackend } from "../mocks/backend";
 import {
   getMovie,
   getSubtitlesStatus,
+  listDownloads,
   listMovies,
   loadSubtitleFile,
+  onDownloadChanged,
   onTorrentStats,
+  openDownloadFolder,
+  pauseDownload,
   pickSubtitleFile,
+  removeDownload,
+  resumeDownload,
   searchSubtitles,
+  startDownload,
   toAppError,
   updateSettings,
 } from "./tauri";
-import type { TorrentStats } from "./types";
+import type { DownloadChanged, TorrentStats } from "./types";
 
 describe("tauri api (mock backend)", () => {
   beforeEach(() => {
@@ -108,5 +116,85 @@ describe("subtitles wrappers", () => {
     });
     answer = null;
     expect(await pickSubtitleFile()).toBeNull();
+  });
+});
+
+describe("downloads wrappers (IPC v0.10)", () => {
+  const calls: { cmd: string; args: unknown }[] = [];
+  let backend: ReturnType<typeof createMockBackend>;
+  beforeEach(() => {
+    calls.length = 0;
+    backend = createMockBackend();
+    backend.onDownloadChanged((p) => void emit("download://changed", p));
+    mockIPC(
+      (cmd, args) => {
+        calls.push({ cmd, args });
+        return backend.handle(cmd, args);
+      },
+      { shouldMockEvents: true },
+    );
+  });
+
+  it("send the contract arguments and return Download", async () => {
+    const movie = await getMovie(1632);
+    const t = movie.torrents[0]!;
+    const summary = toSummary(movie);
+    const d = await startDownload(summary, t.infohash);
+    expect(d).toMatchObject({ infohash: t.infohash, state: "queued", progress: 0, quality: t.quality });
+    expect(calls.at(-1)).toEqual({ cmd: "start_download", args: { movie: summary, infohash: t.infohash } });
+
+    expect((await listDownloads()).some((x) => x.infohash === t.infohash)).toBe(true);
+    expect((await pauseDownload(t.infohash)).state).toBe("paused");
+    expect((await resumeDownload(t.infohash)).state).toBe("active");
+    await openDownloadFolder(t.infohash);
+    expect(calls.at(-1)).toEqual({ cmd: "open_download_folder", args: { infohash: t.infohash } });
+    await removeDownload(t.infohash, true);
+    expect(calls.at(-1)).toEqual({
+      cmd: "remove_download",
+      args: { infohash: t.infohash, deleteFiles: true },
+    });
+    await expect(pauseDownload(t.infohash)).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("download://changed carries the new state, and null once removed", async () => {
+    const handler = vi.fn<(p: DownloadChanged) => void>();
+    const unlisten = await onDownloadChanged(handler);
+    const movie = await getMovie(1632);
+    const infohash = movie.torrents[0]!.infohash;
+    await startDownload(toSummary(movie), infohash);
+    await vi.waitFor(() =>
+      expect(handler).toHaveBeenLastCalledWith({
+        infohash,
+        download: expect.objectContaining({ state: "queued" }),
+      }),
+    );
+    backend.tick(); // the mock's queue starts at once
+    await vi.waitFor(() =>
+      expect(handler).toHaveBeenLastCalledWith({
+        infohash,
+        download: expect.objectContaining({ state: "active" }),
+      }),
+    );
+    backend.completeDownload(infohash);
+    await vi.waitFor(() =>
+      expect(handler).toHaveBeenLastCalledWith({
+        infohash,
+        download: expect.objectContaining({ state: "done", progress: 1, path: expect.stringContaining("[") }),
+      }),
+    );
+    await removeDownload(infohash, false);
+    await vi.waitFor(() => expect(handler).toHaveBeenLastCalledWith({ infohash, download: null }));
+    unlisten();
+  });
+
+  it("offline: get_movie answers with the saved copy of downloaded movies only", async () => {
+    backend.setOffline(true);
+    const copy = await getMovie(3304);
+    expect(copy.offline).toBe(true);
+    expect(copy.download?.state).toBe("done");
+    await expect(getMovie(1632)).rejects.toMatchObject({ code: "network" });
+    await expect(listMovies({})).rejects.toMatchObject({ code: "network" });
+    backend.setOffline(false);
+    expect((await getMovie(1632)).offline).toBe(false);
   });
 });

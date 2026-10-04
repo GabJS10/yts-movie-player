@@ -4,9 +4,9 @@ import { useSettings } from "../api/queries";
 import { ErrorState } from "../components/ErrorState";
 import { CatalogSection } from "../components/settings/CatalogSection";
 import { PlaybackSection } from "../components/settings/PlaybackSection";
-import { TorrentSection } from "../components/settings/SoonSections";
 import { StorageSection } from "../components/settings/StorageSection";
 import { SubtitlesSection } from "../components/settings/SubtitlesSection";
+import { TorrentSection } from "../components/settings/TorrentSection";
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
 

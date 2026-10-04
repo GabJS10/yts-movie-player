@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { listDownloads } from "../api/tauri";
-import { DOWNLOADS_READY } from "../lib/features";
+import { useDownloadEvents, useDownloads } from "../api/queries";
+import { activeCount as countActive } from "../lib/downloads";
 import { formatSpeed } from "../lib/format";
+import { useConnectivityWatch } from "../lib/useConnectivityWatch";
+import { useConnectivity } from "../store/connectivity";
 import { useSwarmStore } from "../store/swarm";
 import { Icon, type IconName } from "./Icon";
 import { ToastHost } from "./Toast";
@@ -44,10 +45,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const overArtwork = pathname === "/" || pathname.startsWith("/movie/");
   const solid = scrolled || !overArtwork;
 
-  // list_downloads arrives with phase 6; until then only the mock backend (browser) answers it.
-  const downloads = useQuery({ queryKey: ["downloads"], queryFn: listDownloads, enabled: DOWNLOADS_READY });
-  const activeCount = downloads.data?.filter((d) => d.state === "active" || d.state === "queued").length ?? 0;
+  // The counter follows download://changed; the list itself is polled only on the Downloads page.
+  useDownloadEvents();
+  useConnectivityWatch();
+  const activeCount = countActive(useDownloads().data);
   const speed = useSwarmStore((s) => s.totalBps);
+  const offline = useConnectivity((s) => s.offline);
 
   if (isPlayer) return <main id="main">{children}</main>;
 
@@ -87,7 +90,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="ml-auto flex items-center gap-1">
-          {activeCount > 0 && (
+          <span role="status" className="contents">
+            {offline && (
+              <Link
+                to="/downloads"
+                className="mr-2 inline-flex h-8 items-center gap-2 rounded-full border border-line px-3 text-xs text-text-2 hover:border-line-hi hover:text-text"
+                title="El catálogo no responde. Lo que descargaste se ve sin conexión desde Descargas."
+              >
+                <span className="size-1.5 rounded-full shadow-[inset_0_0_0_1.5px_var(--color-muted)]" />
+                Sin conexión
+              </Link>
+            )}
+          </span>
+          {!offline && activeCount > 0 && (
             <span
               className="mr-2 inline-flex h-8 items-center gap-2 rounded-full border border-line px-3 text-xs text-text-2 tnum max-[900px]:hidden"
               title="Actividad del motor torrent"
@@ -102,7 +117,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <Link
             to="/downloads"
-            aria-label={`Descargas${activeCount ? `, ${activeCount} activas` : ""}`}
+            aria-label={`Descargas${activeCount ? `, ${activeCount} ${activeCount === 1 ? "activa" : "activas"}` : ""}`}
             className={iconBtn}
           >
             <Icon name="download" />

@@ -7,6 +7,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { render } from "@testing-library/react";
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ReactNode } from "react";
 import { App } from "../App";
@@ -36,6 +37,8 @@ export function installBackend(options: Options = {}) {
     },
     { shouldMockEvents: true },
   );
+  // After `before` (seeding is not an event) and once IPC exists; a late emit after teardown is dropped.
+  backend.onDownloadChanged((payload) => void emit("download://changed", payload).catch(() => undefined));
   /** Make `cmd` fail from now on (or succeed again with `null`). */
   const setFailure = (cmd: string, error: { code: string; message: string } | null) => {
     if (error) fail[cmd] = error;

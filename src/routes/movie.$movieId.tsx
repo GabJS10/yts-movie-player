@@ -1,7 +1,7 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useMovie, useSuggestions, useTorrentPrefs } from "../api/queries";
-import type { MovieDetail } from "../api/types";
+import { useDownloads, useMovie, useStartDownload, useSuggestions, useTorrentPrefs } from "../api/queries";
+import type { Download, MovieDetail, MovieSummary, Torrent } from "../api/types";
 import { ErrorState } from "../components/ErrorState";
 import { FavoriteButton } from "../components/FavoriteButton";
 import { Icon } from "../components/Icon";
@@ -9,10 +9,12 @@ import { MovieMeta } from "../components/MovieMeta";
 import { Poster } from "../components/Poster";
 import { StaticMovieRow } from "../components/MovieRow";
 import { VersionsTable } from "../components/VersionsTable";
+import { downloadForMovie, roundPercent } from "../lib/downloads";
 import { genreLabel } from "../lib/genres";
 import { toSummary } from "../lib/movie";
 import { formatClock } from "../lib/player";
 import { pickDefaultTorrent, sortForDisplay } from "../lib/versions";
+import { useConnectivity } from "../store/connectivity";
 
 export const Route = createFileRoute("/movie/$movieId")({
   params: {
@@ -29,7 +31,9 @@ export const Route = createFileRoute("/movie/$movieId")({
 function MoviePage() {
   const { movieId } = Route.useParams();
   const movie = useMovie(movieId);
-  const suggestions = useSuggestions(movieId);
+  // Without network (or from the saved copy) there are no suggestions to ask for.
+  const offline = useConnectivity((s) => s.offline) || !!movie.data?.offline;
+  const suggestions = useSuggestions(movieId, { enabled: !offline });
 
   if (movie.isError) {
     return (
@@ -42,21 +46,38 @@ function MoviePage() {
     <>
       {movie.data ? <MovieBody key={movie.data.id} movie={movie.data} /> : <MovieSkeleton />}
       <div className="mt-12 pb-20">
-        <StaticMovieRow title="Similares" movies={suggestions.data} loading={suggestions.isPending} />
+        {!offline && (
+          <StaticMovieRow title="Similares" movies={suggestions.data} loading={suggestions.isPending} />
+        )}
       </div>
     </>
   );
 }
 
-const soon = "Disponible en una próxima versión";
-
 function MovieBody({ movie }: { movie: MovieDetail }) {
-  const torrents = useMemo(() => sortForDisplay(movie.torrents), [movie.torrents]);
-  // Until the user picks a row, the default follows the settings (they may load after the movie).
+  // The live download: list_downloads (polled while it's in progress) once loaded, else get_movie's.
+  const [polling, setPolling] = useState(false);
+  const downloads = useDownloads({ poll: polling });
+  const download = downloads.data ? downloadForMovie(downloads.data, movie.id) : movie.download;
+  const inProgress = !!download && download.state !== "done";
+  if (polling !== inProgress) setPolling(inProgress);
+  const library = download?.state === "done" ? download.infohash : null;
+
+  // The saved copy (offline) can only play the downloaded version.
+  const torrents = useMemo(() => {
+    const all = sortForDisplay(movie.torrents);
+    const local = movie.offline ? all.filter((t) => t.infohash === movie.download?.infohash) : [];
+    return local.length > 0 ? local : all;
+  }, [movie.torrents, movie.offline, movie.download?.infohash]);
+  // Until the user picks a row: the downloaded version (starts at once from the library), else the
+  // default from the settings (they may load after the movie).
   const prefs = useTorrentPrefs();
   const [picked, setPicked] = useState<string | null>(null);
   const chosen =
-    torrents.find((t) => t.infohash === picked) ?? pickDefaultTorrent(movie.torrents, prefs) ?? undefined;
+    torrents.find((t) => t.infohash === picked) ??
+    torrents.find((t) => t.infohash === library) ??
+    pickDefaultTorrent(torrents, prefs) ??
+    undefined;
   const resume = movie.progress && !movie.progress.finished ? movie.progress : null;
   const summary = useMemo(() => toSummary(movie), [movie]);
   // Sharp still first; the blurred background next; the poster (blurred further) as a last resort.
@@ -126,11 +147,14 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
               </button>
             )}
             <FavoriteButton movie={summary} isFavorite={movie.isFavorite} />
-            <button type="button" className="btn btn-line" disabled title={soon}>
-              <Icon name="download" size={22} />
-              Descargar
-            </button>
+            <DownloadButton movie={summary} download={download} torrent={chosen} />
           </div>
+          {movie.offline && (
+            <p className="-mt-3 mb-5 flex items-center gap-2 text-[13.5px] text-muted" role="status">
+              <Icon name="info" size={16} />
+              Sin conexión: es la copia guardada al descargarla. Se reproduce desde tu biblioteca.
+            </p>
+          )}
 
           <p className="m-0 mb-5 max-w-[68ch] text-lead text-text-2">
             {movie.summary || "Sin sinopsis disponible."}
@@ -168,6 +192,58 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
         </section>
       </div>
     </article>
+  );
+}
+
+/** Descargar → "Descargando 45 %" → "Descargada ✓". Once started, it leads to the Downloads page. */
+function DownloadButton({
+  movie,
+  download,
+  torrent,
+}: {
+  movie: MovieSummary;
+  download: Download | null;
+  torrent: Torrent | undefined;
+}) {
+  const start = useStartDownload();
+  if (!download) {
+    return (
+      <button
+        type="button"
+        className="btn btn-line"
+        disabled={!torrent || start.isPending}
+        title={torrent ? `Guardar la versión ${torrent.quality} para verla sin conexión` : undefined}
+        onClick={() => torrent && start.mutate({ movie, infohash: torrent.infohash })}
+      >
+        <Icon name="download" size={22} />
+        {start.isPending ? "Preparando…" : "Descargar"}
+      </button>
+    );
+  }
+  const label =
+    download.state === "done"
+      ? "Descargada"
+      : download.state === "queued"
+        ? "En cola"
+        : download.state === "paused"
+          ? `En pausa ${roundPercent(download.progress)}`
+          : download.state === "error"
+            ? "Falló la descarga"
+            : `Descargando ${roundPercent(download.progress)}`;
+  return (
+    <Link
+      to="/downloads"
+      className="btn btn-line tnum"
+      title={`${download.quality} · ver en Descargas`}
+      aria-label={`${label} (${download.quality}), ver en Descargas`}
+    >
+      <Icon
+        name={download.state === "done" ? "check" : download.state === "error" ? "alert" : "download"}
+        size={22}
+        className={download.state === "done" ? "text-green" : undefined}
+      />
+      {label}
+    </Link>
   );
 }
 
