@@ -12,6 +12,8 @@ export function ErrorState({ error, onRetry, compact = false }: Props) {
   return (
     <div
       role="alert"
+      data-testid="error-state"
+      data-code={error.code}
       className={`grid max-w-[520px] justify-items-start gap-3 ${compact ? "py-4" : "py-16"}`}
     >
       <h2 className={`m-0 font-extrabold ${compact ? "text-base" : "text-[22px]"}`}>{copy.title}</h2>

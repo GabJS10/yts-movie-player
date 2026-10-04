@@ -68,6 +68,7 @@ function SearchPage() {
           onChange={(e) => setText(e.target.value)}
           placeholder="Título, año o código IMDb"
           aria-label="Buscar películas"
+          data-testid="search-input"
           autoComplete="off"
           autoFocus={!filtered}
           className="h-[72px] w-full border-0 border-b-2 border-line-hi bg-transparent pl-[46px] text-[clamp(28px,3vw,40px)] font-bold outline-none stretch-semi transition-colors focus:border-green"

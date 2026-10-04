@@ -254,6 +254,9 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
 
   return (
     <li
+      data-testid="download-row"
+      data-infohash={d.infohash}
+      data-state={d.state}
       className={`dl-${d.state} grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-5 border-b border-line py-4 max-[640px]:grid-cols-[48px_minmax(0,1fr)] max-[640px]:gap-3`}
     >
       <Link
@@ -286,6 +289,7 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
           className="dl-bar"
           role="progressbar"
           aria-label={`Progreso de ${movie.title}`}
+          data-testid="download-progress"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
@@ -303,6 +307,7 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
             className="dl-action"
             aria-label={`Reproducir ${name}`}
             title={lockedWhy}
+            data-testid="download-play"
             disabled
           >
             <Icon name="play" />
@@ -315,6 +320,7 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
             className="dl-action"
             aria-label={`Reproducir ${name}`}
             title="Reproducir"
+            data-testid="download-play"
           >
             <Icon name="play" />
           </Link>
@@ -323,6 +329,7 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
             type="button"
             className="dl-action"
             aria-label={`${pause ? "Pausar" : "Reanudar"} ${name}`}
+            data-testid="download-toggle"
             title={locked ? lockedWhy : pause ? "Pausar" : "Reanudar"}
             disabled={locked || toggle.isPending}
             onClick={() => toggle.mutate({ infohash: d.infohash, pause })}
@@ -334,6 +341,7 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
           type="button"
           className="dl-action"
           aria-label={`Abrir la carpeta de ${name}`}
+          data-testid="download-folder"
           title={locked ? lockedWhy : d.path ? "Abrir carpeta" : "La carpeta se crea al empezar a bajar"}
           disabled={locked || !d.path}
           onClick={() => folder.mutate(d.infohash)}
@@ -344,6 +352,7 @@ function DownloadRow({ download: d, onRemove }: { download: Download; onRemove: 
           type="button"
           className="dl-action"
           aria-label={`Quitar ${name}`}
+          data-testid="download-remove"
           title={d.state === "moving" ? lockedWhy : "Quitar"}
           disabled={d.state === "moving"}
           onClick={onRemove}

@@ -55,6 +55,7 @@ export function ScrubBar({
       role="slider"
       tabIndex={0}
       aria-label="Posición"
+      data-testid="player-scrub"
       aria-valuemin={0}
       aria-valuemax={Math.round(duration) || 0}
       aria-valuenow={Math.round(currentTime)}
@@ -108,7 +109,13 @@ export function PlayerControls(p: Props) {
   return (
     <div className="pointer-events-none absolute inset-0 flex flex-col justify-between [&>*]:pointer-events-auto">
       <div className="flex items-center gap-[18px] bg-linear-to-b from-black/75 to-transparent px-gutter pt-[22px] pb-[60px]">
-        <button type="button" className="ctrl-btn" aria-label="Salir del reproductor" onClick={p.onBack}>
+        <button
+          type="button"
+          className="ctrl-btn"
+          aria-label="Salir del reproductor"
+          data-testid="player-back"
+          onClick={p.onBack}
+        >
           <Icon name="back" size={22} />
         </button>
         <h1 className="m-0 text-xl font-[750]">{p.title}</h1>
@@ -133,6 +140,7 @@ export function PlayerControls(p: Props) {
             type="button"
             className="ctrl-btn"
             aria-label={p.playing ? "Pausar (Espacio)" : "Reproducir (Espacio)"}
+            data-testid="player-play-toggle"
             onClick={p.onToggle}
           >
             <Icon name={p.playing ? "pause" : "play"} size={26} />
@@ -141,6 +149,7 @@ export function PlayerControls(p: Props) {
             type="button"
             className="ctrl-btn"
             aria-label="Retroceder 10 segundos (←)"
+            data-testid="player-back-10"
             onClick={() => p.onSkip(-10)}
           >
             <Icon name="rew10" size={26} />
@@ -149,6 +158,7 @@ export function PlayerControls(p: Props) {
             type="button"
             className="ctrl-btn"
             aria-label="Adelantar 10 segundos (→)"
+            data-testid="player-forward-10"
             onClick={() => p.onSkip(10)}
           >
             <Icon name="fwd10" size={26} />
@@ -184,6 +194,7 @@ export function PlayerControls(p: Props) {
             type="button"
             className="ctrl-btn"
             aria-label={p.fullscreen ? "Salir de pantalla completa (F)" : "Pantalla completa (F)"}
+            data-testid="player-fullscreen"
             onClick={p.onFullscreen}
           >
             <Icon name={p.fullscreen ? "fullscreen-exit" : "fullscreen"} size={26} />

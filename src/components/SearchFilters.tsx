@@ -42,6 +42,7 @@ export function SearchFilters({ value, onChange }: Props) {
         <select
           id="f-genre"
           className="select"
+          data-testid="filter-genre"
           value={value.genre ?? ""}
           onChange={(e) => onChange({ genre: e.target.value || undefined })}
         >
@@ -54,7 +55,7 @@ export function SearchFilters({ value, onChange }: Props) {
         </select>
       </Field>
       <Field label="Calidad">
-        <div className="seg" role="group" aria-label="Calidad">
+        <div className="seg" role="group" aria-label="Calidad" data-testid="filter-quality">
           {QUALITY_OPTIONS.map(([v, label]) => (
             <button
               key={v}
@@ -68,7 +69,7 @@ export function SearchFilters({ value, onChange }: Props) {
         </div>
       </Field>
       <Field label="Valoración mínima">
-        <div className="seg" role="group" aria-label="Valoración mínima">
+        <div className="seg" role="group" aria-label="Valoración mínima" data-testid="filter-rating">
           {RATING_OPTIONS.map((r) => (
             <button
               key={r}
@@ -85,6 +86,7 @@ export function SearchFilters({ value, onChange }: Props) {
         <select
           id="f-sort"
           className="select"
+          data-testid="filter-sort"
           value={value.sortBy ?? "download_count"}
           onChange={(e) => {
             const opt = SORT_OPTIONS.find((o) => o.value === e.target.value);

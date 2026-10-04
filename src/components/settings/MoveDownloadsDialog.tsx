@@ -23,7 +23,7 @@ export function MoveDownloadsDialog() {
     const failed = progress.failed;
     const moved = progress.cancelled ? null : progress.total - failed.length;
     return (
-      <Modal labelledBy="move-title" describedBy="move-desc" onClose={hide}>
+      <Modal testId="move-dialog" labelledBy="move-title" describedBy="move-desc" onClose={hide}>
         <h2 id="move-title" className="m-0 mb-2 text-[20px] font-extrabold">
           {progress.cancelled ? "Movimiento cancelado" : "Descargas movidas"}
         </h2>
@@ -52,7 +52,7 @@ export function MoveDownloadsDialog() {
           </div>
         )}
         <div className="flex justify-end">
-          <button type="button" className="btn btn-line btn-sm" onClick={hide}>
+          <button type="button" className="btn btn-line btn-sm" data-testid="move-close" onClick={hide}>
             Cerrar
           </button>
         </div>
@@ -62,7 +62,7 @@ export function MoveDownloadsDialog() {
 
   const fraction = progress && progress.bytesTotal > 0 ? progress.bytesDone / progress.bytesTotal : 0;
   return (
-    <Modal labelledBy="move-title" describedBy="move-desc" onClose={hide}>
+    <Modal testId="move-dialog" labelledBy="move-title" describedBy="move-desc" onClose={hide}>
       <h2 id="move-title" className="m-0 mb-2 text-[20px] font-extrabold">
         Moviendo descargas
       </h2>
@@ -86,13 +86,20 @@ export function MoveDownloadsDialog() {
         {" · "}Puedes seguir usando la app mientras tanto.
       </p>
       <div className="flex flex-wrap justify-end gap-2.5">
-        <button type="button" className="btn btn-line btn-sm" data-autofocus onClick={hide}>
+        <button
+          type="button"
+          className="btn btn-line btn-sm"
+          data-autofocus
+          data-testid="move-background"
+          onClick={hide}
+        >
           Seguir en segundo plano
         </button>
         <button
           type="button"
           className="btn btn-line btn-sm"
           disabled={cancel.isPending || cancel.isSuccess}
+          data-testid="move-cancel"
           onClick={() => cancel.mutate()}
         >
           {cancel.isPending || cancel.isSuccess ? "Cancelando…" : "Cancelar"}

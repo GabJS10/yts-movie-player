@@ -41,7 +41,13 @@ export function RowShell({ title, note, more, children, trackRef, busy }: RowShe
   const titleId = `row-${title.replace(/\W+/g, "-").toLowerCase()}`;
 
   return (
-    <section className="group/row mb-[34px]" aria-labelledby={titleId} aria-busy={busy || undefined}>
+    <section
+      className="group/row mb-[34px]"
+      aria-labelledby={titleId}
+      aria-busy={busy || undefined}
+      data-testid="movie-row"
+      data-title={title}
+    >
       <div className="mb-1 flex items-baseline gap-4 px-gutter">
         <h2 id={titleId} className="m-0 text-title font-[750]">
           {title}

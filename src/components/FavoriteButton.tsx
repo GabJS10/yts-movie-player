@@ -8,10 +8,11 @@ type Props = {
   isFavorite: boolean | null;
   /** "full": labelled outline button (movie page). "round": icon-only ghost button (hero). */
   variant?: "full" | "round";
+  testId?: string;
 };
 
 /** ♥ Mi lista: optimistic, rolled back with a toast if the backend fails. */
-export function FavoriteButton({ movie, isFavorite, variant = "full" }: Props) {
+export function FavoriteButton({ movie, isFavorite, variant = "full", testId }: Props) {
   const toggle = useToggleFavorite();
   const on = isFavorite === true;
   const onClick = () => {
@@ -29,6 +30,7 @@ export function FavoriteButton({ movie, isFavorite, variant = "full" }: Props) {
         className="btn btn-ghost w-12 rounded-full p-0"
         aria-pressed={on}
         aria-label={on ? "Quitar de Mi lista" : "Añadir a Mi lista"}
+        data-testid={testId}
         title={on ? "En Mi lista" : "Añadir a Mi lista"}
         disabled={isFavorite === null}
         onClick={onClick}
@@ -42,6 +44,7 @@ export function FavoriteButton({ movie, isFavorite, variant = "full" }: Props) {
       type="button"
       className="btn btn-line"
       aria-pressed={on}
+      data-testid={testId}
       disabled={isFavorite === null}
       onClick={onClick}
     >

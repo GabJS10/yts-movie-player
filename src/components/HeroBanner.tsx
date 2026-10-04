@@ -31,7 +31,11 @@ export function HeroBanner() {
 
   if (hero.isError) {
     return (
-      <section className={`${heroFrame} grid items-end px-gutter pb-28`} aria-label="Destacada">
+      <section
+        className={`${heroFrame} grid items-end px-gutter pb-28`}
+        aria-label="Destacada"
+        data-testid="hero"
+      >
         <ErrorState error={hero.error} onRetry={() => void hero.refetch()} />
       </section>
     );
@@ -39,7 +43,12 @@ export function HeroBanner() {
   if (hero.isSuccess && !movie) return <div className="h-[calc(var(--spacing-nav)+24px)]" />;
 
   return (
-    <section className={heroFrame} aria-label="Destacada" aria-busy={hero.isPending || undefined}>
+    <section
+      className={heroFrame}
+      aria-label="Destacada"
+      aria-busy={hero.isPending || undefined}
+      data-testid="hero"
+    >
       {art ? (
         <img
           src={art}
@@ -54,7 +63,10 @@ export function HeroBanner() {
       <div className={bodyPos}>
         {movie ? (
           <>
-            <h1 className="m-0 mb-3.5 text-display font-[850] text-balance uppercase stretch-condensed">
+            <h1
+              className="m-0 mb-3.5 text-display font-[850] text-balance uppercase stretch-condensed"
+              data-testid="hero-title"
+            >
               {movie.title}
             </h1>
             <MovieMeta movie={movie} mpaRating={detail.data?.mpaRating} genres={3} />
@@ -75,15 +87,26 @@ export function HeroBanner() {
                 params={{ movieId: movie.id }}
                 search={best ? { infohash: best.infohash } : {}}
                 className="btn btn-play"
+                data-testid="hero-play"
               >
                 <Icon name="play" size={22} />
                 Reproducir
               </Link>
-              <Link to="/movie/$movieId" params={{ movieId: movie.id }} className="btn btn-ghost">
+              <Link
+                to="/movie/$movieId"
+                params={{ movieId: movie.id }}
+                className="btn btn-ghost"
+                data-testid="hero-info"
+              >
                 <Icon name="info" size={22} />
                 Más info
               </Link>
-              <FavoriteButton movie={movie} isFavorite={detail.data?.isFavorite ?? null} variant="round" />
+              <FavoriteButton
+                movie={movie}
+                isFavorite={detail.data?.isFavorite ?? null}
+                variant="round"
+                testId="hero-favorite"
+              />
             </div>
           </>
         ) : (

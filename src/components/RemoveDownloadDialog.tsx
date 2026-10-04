@@ -17,7 +17,12 @@ export function RemoveDownloadDialog({ download, busy, onCancel, onConfirm }: Pr
   const bytes = done ? download.sizeBytes : download.downloadedBytes;
 
   return (
-    <Modal labelledBy="remove-dl-title" describedBy="remove-dl-desc" onClose={onCancel}>
+    <Modal
+      testId="remove-dialog"
+      labelledBy="remove-dl-title"
+      describedBy="remove-dl-desc"
+      onClose={onCancel}
+    >
       <h2 id="remove-dl-title" className="m-0 mb-2 text-[20px] font-extrabold text-balance">
         ¿Quitar {movie.title} ({download.quality})?
       </h2>
@@ -27,13 +32,20 @@ export function RemoveDownloadDialog({ download, busy, onCancel, onConfirm }: Pr
         {download.path ? <code className="break-all text-text-2">{download.path}</code> : "su carpeta"}.
       </p>
       <div className="flex flex-wrap justify-end gap-2.5">
-        <button type="button" className="btn btn-line btn-sm" data-autofocus onClick={onCancel}>
+        <button
+          type="button"
+          className="btn btn-line btn-sm"
+          data-autofocus
+          data-testid="remove-cancel"
+          onClick={onCancel}
+        >
           Cancelar
         </button>
         <button
           type="button"
           className="btn btn-line btn-sm"
           disabled={busy}
+          data-testid="remove-keep"
           onClick={() => onConfirm(false)}
         >
           Conservar archivos
@@ -42,6 +54,7 @@ export function RemoveDownloadDialog({ download, busy, onCancel, onConfirm }: Pr
           type="button"
           className="btn btn-danger btn-sm"
           disabled={busy}
+          data-testid="remove-delete"
           onClick={() => onConfirm(true)}
         >
           <Icon name="trash" size={18} />

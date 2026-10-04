@@ -17,6 +17,8 @@ export function MovieCard({ movie }: { movie: MovieSummary }) {
       className="card"
       aria-label={`${movie.title} (${movie.year})`}
       data-card
+      data-testid="movie-card"
+      data-movie-id={movie.id}
     >
       <Poster src={movie.coverUrl} title={movie.title} />
       <div className="card-info" aria-hidden="true">

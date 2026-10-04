@@ -2,6 +2,7 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 
 type Props = {
   labelledBy: string;
+  testId?: string;
   describedBy?: string;
   /** Esc and a click on the backdrop. */
   onClose: () => void;
@@ -12,7 +13,7 @@ type Props = {
  * Dialog over an 82 % black backdrop (DESIGN.md). Focus goes to the element marked `data-autofocus`
  * (else the first button), Tab stays inside, and focus returns to the opener on close.
  */
-export function Modal({ labelledBy, describedBy, onClose, children }: Props) {
+export function Modal({ labelledBy, describedBy, onClose, children, testId }: Props) {
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export function Modal({ labelledBy, describedBy, onClose, children }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
+        data-testid={testId}
         aria-describedby={describedBy}
         onKeyDown={onKeyDown}
       >

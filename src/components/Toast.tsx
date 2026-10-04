@@ -26,6 +26,8 @@ export function ToastHost() {
       {toast && (
         <div
           key={toast.id}
+          data-testid="toast"
+          data-tone={toast.tone}
           className="toast-in flex items-center gap-2.5 rounded-lg bg-raised-hi px-[18px] py-3 text-[14.5px] font-semibold shadow-[0_12px_32px_rgba(0,0,0,.5)]"
         >
           <Icon

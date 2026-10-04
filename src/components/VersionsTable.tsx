@@ -72,6 +72,8 @@ export function VersionsTable({ torrents, selected, onSelect, labelledBy }: Prop
                 }}
                 role="radio"
                 aria-checked={checked}
+                data-testid="version-row"
+                data-infohash={t.infohash}
                 aria-label={`${t.quality} ${SOURCE_LABEL[t.source]} ${t.videoCodec}, ${formatBytes(t.sizeBytes)}, ${formatCount(t.seeds)} seeds`}
                 tabIndex={i === current ? 0 : -1}
                 onClick={() => onSelect(t.infohash)}

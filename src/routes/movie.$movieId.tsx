@@ -107,7 +107,10 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
         </div>
 
         <div>
-          <h1 className="m-0 mb-3.5 text-display-detail font-[850] text-balance uppercase stretch-condensed">
+          <h1
+            data-testid="movie-title"
+            className="m-0 mb-3.5 text-display-detail font-[850] text-balance uppercase stretch-condensed"
+          >
             {movie.title}
           </h1>
           <MovieMeta movie={movie} mpaRating={movie.mpaRating} />
@@ -125,6 +128,7 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
                   params={{ movieId: movie.id }}
                   search={{ infohash: chosen.infohash }}
                   className="btn btn-play"
+                  data-testid="movie-play"
                 >
                   <Icon name="play" size={22} />
                   {resume ? `Continuar (${formatClock(resume.positionS)})` : `Reproducir ${chosen.quality}`}
@@ -135,6 +139,7 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
                     params={{ movieId: movie.id }}
                     search={{ infohash: chosen.infohash, from: "start" }}
                     className="btn btn-line"
+                    data-testid="movie-restart"
                   >
                     <Icon name="refresh" size={22} />
                     Desde el principio
@@ -147,7 +152,7 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
                 Reproducir
               </button>
             )}
-            <FavoriteButton movie={summary} isFavorite={movie.isFavorite} />
+            <FavoriteButton movie={summary} isFavorite={movie.isFavorite} testId="movie-favorite" />
             <DownloadButton movie={summary} download={download} torrent={chosen} />
           </div>
           {movie.offline && (
@@ -212,6 +217,8 @@ function DownloadButton({
       <button
         type="button"
         className="btn btn-line"
+        data-testid="movie-download"
+        data-state="none"
         disabled={!torrent || start.isPending}
         title={torrent ? `Guardar la versión ${torrent.quality} para verla sin conexión` : undefined}
         onClick={() => torrent && start.mutate({ movie, infohash: torrent.infohash })}
@@ -239,6 +246,8 @@ function DownloadButton({
     <Link
       to="/downloads"
       className="btn btn-line tnum"
+      data-testid="movie-download"
+      data-state={download.state}
       title={`${download.quality} · ver en Descargas`}
       aria-label={`${label} (${download.quality}), ver en Descargas`}
     >
