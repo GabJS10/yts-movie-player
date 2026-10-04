@@ -14,7 +14,13 @@
   <a href="docs/PLAN.md">Arquitectura</a>
 </p>
 
-<!-- SCREENSHOTS -->
+<p align="center">
+  <img src="docs/screenshots/inicio.png" width="860" alt="Inicio: banner rotativo con recomendaciones y filas de películas" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/ficha.png" width="425" alt="Ficha de una película con versiones y reparto" />
+  <img src="docs/screenshots/buscar.png" width="425" alt="Búsqueda con filtros" />
+</p>
 
 ## Qué hace
 - **Inicio que cambia contigo:** banner rotativo con recomendaciones según lo que viste, tu lista y tus géneros, más filas de tendencias, recientes y mejor valoradas.
