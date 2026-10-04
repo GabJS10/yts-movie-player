@@ -936,10 +936,7 @@ impl TorrentEngine {
         let active = self.activate(&infohash, &entry).await?;
 
         if active.handle.is_paused() {
-            self.session
-                .unpause(&active.handle)
-                .await
-                .map_err(|e| torrent_err("resuming torrent", e))?;
+            self.unpause(active).await?;
         }
         if entry.stopped.swap(false, Ordering::Relaxed) {
             if let Ok(mut t) = entry.stream_started.lock() {
@@ -1218,6 +1215,12 @@ impl TorrentEngine {
         Ok(())
     }
 
+    /// A stream is open on the torrent or something is reading it.
+    pub fn is_streaming(&self, infohash: &str) -> bool {
+        self.entry(&infohash.to_ascii_lowercase())
+            .is_some_and(|e| !e.stopped.load(Ordering::Relaxed) || e.readers.has_open())
+    }
+
     /// Whether the torrent is in the engine (stream or download).
     pub fn has_torrent(&self, infohash: &str) -> bool {
         self.entry(&infohash.to_ascii_lowercase()).is_some()
@@ -1379,6 +1382,34 @@ impl TorrentEngine {
         self.reconcile(&entry).await
     }
 
+    /// Resumes a paused torrent, first requeueing every missing piece of its video.
+    ///
+    /// librqbit 9.0.1 loses a piece when the torrent is paused while that piece's hash is
+    /// being checked: it has already left `inflight` (which `pause` requeues) and the
+    /// result can't be recorded any more ("chunk tracker empty, torrent was paused"). The
+    /// piece is then neither had nor queued, nobody asks for it again and the download
+    /// sits at the last piece forever, even with peers connected. Deselecting and
+    /// reselecting the file while paused requeues every selected piece we don't have
+    /// (and clears its chunk state); only the chunk tracker changes, no file is touched.
+    async fn unpause(&self, active: &Active) -> AppResult<()> {
+        let video: HashSet<usize> = [active.file_idx].into();
+        let requeue = async {
+            self.session
+                .update_only_files(&active.handle, &HashSet::new())
+                .await?;
+            self.session.update_only_files(&active.handle, &video).await
+        };
+        if let Err(e) = requeue.await {
+            // Not fatal: the file selection is put back below and resuming still works.
+            tracing::warn!(error = %e, "could not requeue missing pieces");
+            let _ = self.session.update_only_files(&active.handle, &video).await;
+        }
+        self.session
+            .unpause(&active.handle)
+            .await
+            .map_err(|e| torrent_err("resuming torrent", e))
+    }
+
     /// Runs or pauses the torrent: it runs while a stream is open or while its download
     /// wants it. Called with the entry's `control` lock held.
     async fn reconcile(&self, entry: &Entry) -> AppResult<()> {
@@ -1388,10 +1419,7 @@ impl TorrentEngine {
         let want = !entry.stopped.load(Ordering::Relaxed) || entry.download() == Some(true);
         let paused = active.handle.is_paused();
         if want && paused {
-            self.session
-                .unpause(&active.handle)
-                .await
-                .map_err(|e| torrent_err("resuming torrent", e))?;
+            self.unpause(active).await?;
             entry.mark_alive();
         } else if !want && !paused {
             self.session

@@ -1041,3 +1041,48 @@ async fn a_download_that_fails_in_the_background_is_reported() {
     );
     wait_for(&app, &ih, "error", |d| d.state == DownloadState::Error).await;
 }
+
+/// librqbit 9.0.1 drops a piece paused while its hash is being checked (out of
+/// `inflight`, never requeued): with the peer still connected the download sat at the
+/// last missing piece forever. Many pauses during a download must still finish it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn many_pauses_never_lose_a_piece() {
+    let seeder = start_seeder().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let app = start_app(
+        tmp.path(),
+        vec![seeder.addr],
+        false,
+        unlimited_space(),
+        |c| c.download_limit_bps = NonZeroU32::new(3_000_000),
+    )
+    .await;
+    let ih = seeder.infohash.clone();
+    app.downloads
+        .start(summary(), &detail(), torrent_info(&seeder))
+        .await
+        .unwrap();
+    wait_for(&app, &ih, "active", |d| d.state == DownloadState::Active).await;
+    for i in 0..25u64 {
+        if app
+            .downloads
+            .get(&ih)
+            .is_some_and(|d| d.state == DownloadState::Done)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(40 + (i * 13) % 50)).await;
+        app.downloads.pause(&ih).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(5 + (i * 7) % 20)).await;
+        app.downloads.resume(&ih).await.unwrap();
+    }
+    app.engine.set_rate_limits(None, None);
+    wait_for(&app, &ih, "done after many pauses", |d| {
+        d.state == DownloadState::Done
+    })
+    .await;
+    assert_eq!(
+        std::fs::read(app.library().join(FOLDER).join(VIDEO_NAME)).unwrap(),
+        seeder.video
+    );
+}

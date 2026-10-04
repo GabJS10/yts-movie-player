@@ -53,8 +53,10 @@ const COPY_CHUNK: usize = 1024 * 1024;
 /// `downloads://move-progress` at most this often while copying.
 const MOVE_PROGRESS_EVERY: Duration = Duration::from_millis(250);
 
-/// A stalled download without peers is restarted (re-announce, known peers again) at most
-/// this often: librqbit does not reconnect to a lost peer by itself.
+/// A stalled download is restarted at most this often. With peers but 0 B/s (e.g.
+/// choked): pause + resume, which re-announces and requeues missing pieces (see
+/// `TorrentEngine::unpause`). Without peers: out of the session and back, because
+/// librqbit does not reconnect to a peer address it has already seen.
 const KICK_EVERY: Duration = Duration::from_secs(60);
 
 /// How often (in ticks) the progress of active downloads is written to the DB.
@@ -1131,7 +1133,6 @@ impl DownloadManager {
                     if row.state == ACTIVE
                         && s.resolved
                         && s.stalled
-                        && s.peers == 0
                         && self
                             .with_record(&infohash, |r| {
                                 r.last_kick.is_none_or(|t| t.elapsed() >= KICK_EVERY)
@@ -1141,8 +1142,20 @@ impl DownloadManager {
                     self.with_record(&infohash, |r| {
                         r.last_kick = Some(tokio::time::Instant::now())
                     });
-                    tracing::info!(%infohash, "stalled without peers, looking for peers again");
-                    if let Err(e) = self.cfg.engine.restart_torrent(&infohash).await {
+                    // No peers left: librqbit won't reconnect to addresses it has seen,
+                    // so the torrent goes out of the session and back (fresh peer list,
+                    // pieces on disk checked). A stream open on it only gets a restart.
+                    let readd =
+                        s.peers == 0 && !in_cache && !self.cfg.engine.is_streaming(&infohash);
+                    tracing::info!(%infohash, peers = s.peers, readd, "download stalled, restarting the torrent");
+                    if readd {
+                        match self.cfg.engine.remove_torrent(&infohash).await {
+                            Ok(()) => self.spawn_resolve(&infohash),
+                            Err(e) => {
+                                tracing::warn!(%infohash, error = %e, "could not re-add the torrent")
+                            }
+                        }
+                    } else if let Err(e) = self.cfg.engine.restart_torrent(&infohash).await {
                         tracing::warn!(%infohash, error = %e, "could not restart the torrent");
                     }
                 }

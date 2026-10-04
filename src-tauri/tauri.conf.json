@@ -38,6 +38,8 @@
     "publisher": "GabJS10",
     "homepage": "https://github.com/GabJS10/yts-movie-player",
     "copyright": "© 2026 GabJS10",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
