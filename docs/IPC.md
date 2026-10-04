@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.11 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.12 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -121,6 +121,8 @@ type Progress = {
 | `get_movie` | `{ movieId: number }` | `MovieDetail` |
 | `get_suggestions` | `{ movieId: number }` | `MovieSummary[]` |
 | `get_api_status` | — | `ApiEndpointStatus[]` |
+| `get_featured` | — | `FeaturedItem[]` |
+| `get_home_profile` | — | `HomeProfile` |
 
 ```ts
 type ListMoviesParams = {
@@ -143,6 +145,27 @@ type ApiEndpointStatus = {
 ```
 
 **Géneros:** no hay comando para listarlos (la API de YTS no los expone). El front tiene una lista fija en `src/lib/genres.ts` de pares `{ value, label }`: `value` es lo que se manda en `ListMoviesParams.genre` (minúsculas, p. ej. `"sci-fi"`) y `label` es el texto en español. Géneros de YTS: action, adventure, animation, biography, comedy, crime, documentary, drama, family, fantasy, film-noir, history, horror, music, musical, mystery, romance, sci-fi, sport, thriller, war, western.
+
+**Recomendaciones (banner y personalización del Inicio):**
+
+```ts
+type FeaturedReason =
+  | { kind: "because_watched"; sourceMovieId: number; sourceTitle: string }
+  | { kind: "because_list"; sourceMovieId: number; sourceTitle: string }
+  | { kind: "genre"; genre: string }   // valor en minúsculas, como en ListMoviesParams.genre
+  | { kind: "trending" };
+
+type FeaturedItem = { movie: MovieDetail; reason: FeaturedReason };
+
+type HomeProfile = {
+  becauseWatched: { sourceMovieId: number; sourceTitle: string; movies: MovieSummary[] } | null; // fila "Porque viste X"
+  genreOrder: string[];            // géneros (minúsculas) ordenados por afinidad; vacío = sin historial (orden por defecto del front)
+};
+```
+
+- `get_featured` devuelve hasta 6 películas para el banner rotativo. Fuentes: el historial reciente (progreso, terminadas, Mi lista, descargas) → `movie_suggestions` de esas películas, más películas bien valoradas de los géneros más vistos (página al azar). Se descartan las ya vistas o en curso, las repetidas y las sin seeds; se reparten los motivos (no más de 2 con la misma `sourceMovieId`). Sin historial suficiente se completa con tendencias y recientes al azar (`trending`).
+- El resultado de `get_featured` y de `get_home_profile` es **estable durante la sesión** (se calcula una vez y se guarda en memoria) y **cambia en cada arranque** de la app. Cada `movie` es una ficha completa (`screenshotUrls`, `summary`, `ytTrailerCode`), así que el banner no necesita más llamadas.
+- Sin red, `get_featured` devuelve `[]` y `get_home_profile` `{ becauseWatched: null, genreOrder: [] }`, sin fallar.
 
 El caché (TTL de unos 30 minutos) y el failover entre URLs base son internos del backend y no cambian el contrato. `get_api_status` alimenta la sección "Catálogo" de Ajustes.
 
@@ -355,6 +378,8 @@ type StorageUsage = {
   cacheDirAvailable: boolean;      // false = no existe o no se puede escribir (se usa la carpeta por defecto)
   downloadsDirAvailable: boolean;
   downloadsOutsideDir: number;     // descargas que siguen en otra carpeta (para ofrecer "Mover")
+  defaultDownloadsDir: string;     // para "Restablecer" y saber si la carpeta es la de por defecto
+  defaultCacheDir: string;
 };
 
 type ClearCacheResult = { freedBytes: number };
@@ -413,6 +438,7 @@ type StreamPhase =
   | "buffering"    // por debajo de bufferTargetBytes
   | "ready"        // se puede reproducir
   | "stalled"      // sin peers o velocidad 0 durante más de 30 s
+  | "no_peers"     // 60 s desde start_stream sin haber conectado nunca a un peer: el front ofrece otra versión, seguir esperando o volver (el torrent sigue intentando)
   | "seeding"
   | "done";
 ```
@@ -447,6 +473,16 @@ Errores en segundo plano que no responden a ningún comando, como que se caiga e
 type BackgroundError = AppError & { infohash: string | null };
 ```
 
+## Entorno de pruebas (E2E)
+
+Solo para los E2E; la app normal no los necesita.
+
+| Variable | Efecto |
+|---|---|
+| `XDG_DATA_HOME` | La carpeta de datos (`yts-player/`: DB, ajustes, caché, biblioteca, subtítulos) cuelga de aquí, así un E2E no toca los datos del usuario |
+| `YTS_PLAYER_API_BASE_URLS` | Lista separada por comas que reemplaza a `apiBaseUrls` (apunta al servidor falso de YTS) |
+| `YTS_PLAYER_NO_DHT=1` | Sin DHT ni trackers públicos: el torrent solo usa los trackers del `.torrent` (el del seeder local) |
+
 ## Servidor HTTP local
 
 Lo usa el front de forma indirecta, a través de las URLs que recibe. Se documenta aquí para depurar:
@@ -473,3 +509,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.10** (2026-10-04): descargas. `MovieDetail.offline`; reglas de carpeta legible, comprobación de espacio, ficha sin conexión, reproducción directa desde `library/`, recuperación al reiniciar y seeding. Progreso por polling de `list_downloads`. `listenPort` se aplica al reiniciar.
 - **v0.10.1** (2026-10-04): aclaraciones: límites en KiB/s; `torrent://stats` solo para el stream abierto; una segunda versión con el mismo nombre de carpeta lleva el sufijo ` (2)`; al promover se mueve toda la carpeta del torrent cuando se cierra el stream (mientras se verifica: `queued`).
 - **v0.11** (2026-10-04): carpetas elegibles. `dataDir` → `downloadsDir` + `cacheDir` (en caliente, migración del valor viejo); `StorageUsage` por disco y disponibilidad; `DownloadState` `unavailable` y `moving`; comandos `move_downloads`/`cancel_move_downloads` y evento `downloads://move-progress`. Rompe `dataDir`/`freeDiskBytes`, que ninguna versión publicada usaba.
+- **v0.12** (2026-10-04): fase 7. `get_featured` (banner rotativo con motivo) y `get_home_profile` (fila "Porque viste X" y orden de géneros); `StreamPhase` `no_peers` (60 s sin peers); `StorageUsage.defaultDownloadsDir`/`defaultCacheDir`; variables de entorno para los E2E.

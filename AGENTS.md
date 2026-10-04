@@ -19,7 +19,7 @@ El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia t
 
 | Agente (nombre en Herdr) | Tab | Responsabilidad | Es dueño de |
 |---|---|---|---|
-| `plan` | `plan` | Orquestación, planificación general, decisiones de arquitectura, contrato entre front y back, tareas comunes (CI/CD, empaquetado, releases, tooling de la raíz) | `docs/`, `AGENTS.md`, `CLAUDE.md`, `.github/`, configs de la raíz no específicas del front |
+| `plan` | `plan` | Orquestación, planificación general, decisiones de arquitectura, contrato entre front y back, tareas comunes (CI/CD, E2E, empaquetado, releases, tooling de la raíz) | `docs/`, `AGENTS.md`, `CLAUDE.md`, `.github/`, `e2e/`, configs de la raíz no específicas del front |
 | `frontend` | `frontend` | UI en React, diseño, prototipo, estado del cliente y wrappers de `invoke()` | `src/`, `design/`, `DESIGN.md`, `PRODUCT.md`, `index.html`, `vite.config.*`, `tailwind.config.*`, `tsconfig*.json`, dependencias npm |
 | `backend` | `backend` | Core en Rust: API YTS, torrent, servidor de streaming, subtítulos, DB y comandos Tauri | `src-tauri/` (incluye `Cargo.toml` y `tauri.conf.json`) |
 

@@ -203,23 +203,38 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 
 ## Fase 7: Tráilers, pulido, robustez y E2E
 
+**Objetivo:** una app que se siente terminada, que no deja al usuario sin salida, con un Inicio que cambia y con E2E en el CI. Contrato: IPC v0.12.
+
 **Problemas conocidos que se arrastran (el usuario los aceptó en la fase 2, se arreglan aquí):**
 - Buscar: los filtros se pierden al ir a Inicio y volver por la navegación (atrás/adelante sí los conserva). Recordar la última búsqueda (p. ej. en Zustand) al volver a `/search`.
 - Teclado: en la app real las flechas solo desplazan la página y no mueven el foco entre tarjetas ni filas (los tests unitarios pasan, así que revisar el foco inicial y el manejo de eventos dentro de la WebView).
 
-**Objetivo:** una app que se siente terminada y que no deja al usuario sin salida.
-
-- **backend:** `open_trailer_window` (plan B), evento `app://error`, timeout de "sin peers" (`no_peers`/`stalled`), cierre ordenado (pausar torrents y liberar el puerto) y revisión de rendimiento (memoria y CPU con varios torrents).
+- **backend:**
+  - **Recomendaciones:** `get_featured` (6 películas con su motivo, a partir del historial + `movie_suggestions` + géneros más vistos; estable en la sesión y distinto en cada arranque) y `get_home_profile` (fila "Porque viste X" y orden de géneros por afinidad). Sin red, vacíos sin fallar.
+  - **Tráiler:** revisar `open_trailer_window` (ventana aparte) y si un `Referer`/origen correcto evita el error 153 de YouTube; documentar lo que funciona.
+  - **Sin peers:** fase `no_peers` a los 60 s sin haber conectado nunca a un peer.
+  - **`app://error`** donde todavía falte (disco lleno durante una descarga, servidor local caído…).
+  - **Cierre ordenado:** al cerrar la ventana, pausar torrents, guardar el estado de las descargas, liberar el puerto y cerrar la DB, con un tiempo máximo.
+  - **Rendimiento:** memoria y CPU con 3–4 descargas + un stream; ninguna tarea en segundo plano huérfana. Anotar las cifras.
+  - `StorageUsage.defaultDownloadsDir`/`defaultCacheDir`.
+  - **Soporte E2E:** respetar `XDG_DATA_HOME`, `YTS_PLAYER_API_BASE_URLS` y `YTS_PLAYER_NO_DHT`, y un seeder de prueba (`cargo run --example e2e_seeder -- <archivo>`: crea el `.torrent`, siembra en localhost e imprime el infohash y la ruta del `.torrent`).
 - **frontend:**
-  - Modal del tráiler (youtube-nocookie) con el plan B.
-  - Pantallas de error con su acción (sin conexión, API caída, sin peers, códec, disco lleno).
-  - Accesibilidad: foco visible, navegación completa con teclado, `prefers-reduced-motion` y contraste AA.
-  - Micro-interacciones según `DESIGN.md` y revisión contra el prototipo.
+  - **Banner rotativo:** las 6 de `get_featured` con su motivo ("Porque viste X", "Porque está en tu lista", "Para ti: <género>", "Tendencia"); avanza cada ~8 s con fundido y precarga de la siguiente; se pausa con hover, foco o ventana oculta; puntos, flechas y teclado; sin avance automático con `prefers-reduced-motion`; si viene vacío, el banner de siempre.
+  - **Inicio personalizado:** fila "Porque viste X" y filas de géneros en el orden de `genreOrder`.
+  - **Tráiler:** primero comprobar en la WebView real qué funciona. Cadena: modal (iframe con la API de YouTube para detectar errores) → `open_trailer_window` → abrir en el navegador; siempre un botón "Ver en YouTube".
+  - **Errores:** una pantalla o mensaje con acción para cada `ErrorCode`, más la pantalla `no_peers` (otra versión con más seeds / seguir esperando / volver).
+  - Los dos problemas de la fase 2 (filtros de Buscar y flechas).
+  - **Accesibilidad:** foco visible, toda la app con teclado, `prefers-reduced-motion`, contraste AA.
+  - **Pulido:** micro-interacciones según `DESIGN.md` y revisión de cada pantalla contra el prototipo.
+  - "Restablecer" carpetas con `defaultDownloadsDir`/`defaultCacheDir` (sin adivinar por el sufijo).
+  - `data-testid` estables en lo que usan los E2E (los pide `plan`).
 - **plan:**
-  - Configurar los E2E con WebdriverIO + `tauri-driver` en el CI, con un torrent local de prueba.
-  - Escribir los flujos E2E: navegar → reproducir → progreso → Mi lista → descarga.
-  - Pasada de QA manual completa.
-- **Cierre:** E2E en verde en el CI, cada `ErrorCode` tiene su pantalla o mensaje y el checklist de QA está completo. Tag `fase-7`.
+  - **E2E capa 1, app real:** `e2e/app/` con WebdriverIO + `tauri-driver` (+ `WebKitWebDriver`), un servidor falso de YTS que sirve fixtures con los `.torrent` del seeder local y un MP4 H.264 corto generado con ffmpeg. Flujos: Inicio → Ficha → Reproducir → progreso guardado → Mi lista → Descargar → reproducir sin red.
+  - **E2E capa 2, interfaz:** `e2e/ui/` con Playwright (WebKit) contra Vite con los mocks del front: teclado y foco, banner, filtros de Buscar, pantallas de error, accesibilidad (axe) y capturas.
+  - **CI:** job de Playwright en cada push; job de la app real con Xvfb, `webkit2gtk-driver`, GStreamer y el seeder.
+  - `docs/QA.md`: lista de verificación manual completa, que se repasa con el usuario al final.
+- **Tests:** cada bug corregido con su test. Backend: recomendaciones (mezcla de motivos, descartes, sin historial, sin red), `no_peers`, cierre ordenado, variables de entorno y seeder. Frontend: carrusel (avance, pausa, reduced-motion), cadena del tráiler, pantallas de error, foco con flechas y filtros que se conservan.
+- **Cierre:** E2E de las dos capas en verde en el CI, el banner rota con recomendaciones y cambia entre arranques, cada `ErrorCode` tiene su pantalla o mensaje con acción, el tráiler se ve de alguna forma, los dos problemas de la fase 2 están resueltos y `QA.md` está repasado. Tag `fase-7`.
 
 ## Fase 8: Empaquetado y release v1.0
 
