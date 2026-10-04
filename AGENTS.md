@@ -10,6 +10,7 @@ Guía para agentes de IA (y personas) que trabajen en este repositorio.
 - Contrato IPC frontend ⇄ backend: [`docs/IPC.md`](docs/IPC.md)
 - Referencia de la API de YTS: [`docs/YTS-API.md`](docs/YTS-API.md)
 - Sistema de diseño (tokens, tipografía, componentes): [`DESIGN.md`](DESIGN.md); contexto de producto: [`PRODUCT.md`](PRODUCT.md)
+- QA manual (lista de verificación antes de cada release): [`docs/QA.md`](docs/QA.md); E2E en `e2e/` (`npm run ui` Playwright con mocks, `npm run app` WebdriverIO sobre la app real tras `e2e/scripts/build-app.sh`)
 - Prototipo navegable de todas las pantallas: `design/prototype/index.html` (servir con `python3 -m http.server` desde esa carpeta)
 
 **Estado actual:** fase 6 (Descargas) terminada, tag `fase-6`. Siguiente: fase 7 (Tráilers, pulido, robustez y E2E) de `docs/ROADMAP.md`.
