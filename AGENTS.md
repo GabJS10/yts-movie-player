@@ -26,14 +26,19 @@ El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia t
 ### Reglas de coordinación
 - **Cada agente edita solo sus archivos.** Si necesitas un cambio en otra área, pídeselo a su dueño (o a `plan`) en lugar de hacerlo tú.
 - **Contrato IPC en `docs/IPC.md`**: los comandos Tauri (nombre, parámetros, tipo de retorno y errores) y los eventos (`torrent://stats`, etc.) con sus payloads. `backend` lo propone o actualiza al crear o cambiar un comando, y `frontend` lo implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes a través de `plan`.
-- **`plan` reparte el trabajo** siguiendo las fases de `docs/PLAN.md`, y cada agente avisa a `plan` cuando termina una tarea o queda bloqueado.
+- **`plan` reparte el trabajo** siguiendo las fases de `docs/PLAN.md`.
+- **Al terminar una tarea o quedar bloqueado, avisa a `plan` por Herdr** (no basta con escribir el reporte en tu propia pantalla, porque `plan` no la está mirando). Último paso obligatorio, después del commit:
+  ```bash
+  herdr agent prompt plan "<agente>: <tarea> lista, commit <hash>. <notas breves o 'bloqueado: motivo'>"
+  ```
+  Sin `--wait`. Después comprueba con `herdr agent get plan` que el mensaje llegó (si `plan` estaba ocupado, queda en cola y lo procesa al terminar).
 - Comunicación entre agentes con la CLI de Herdr, usando el nombre del agente (no el ID del pane):
   ```bash
   herdr agent list
   herdr agent prompt backend "..." --wait --timeout 600000
   herdr agent read frontend --source recent-unwrapped --lines 120
   ```
-- No mandes un prompt a un agente que está `working` o `blocked` sin revisar antes su estado (`herdr agent get <nombre>`).
+- No mandes un prompt a un agente que está `working` o `blocked` sin revisar antes su estado (`herdr agent get <nombre>`). Excepción: el aviso de "terminé / bloqueado" a `plan` se manda siempre.
 - Decisiones de arquitectura nuevas: las registra `plan` en `docs/PLAN.md` (o en `docs/decisions/`).
 - No cerrar ni mover tabs/panes de otros agentes.
 
