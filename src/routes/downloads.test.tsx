@@ -60,6 +60,8 @@ describe("/downloads", () => {
       within(screen.getByRole("navigation", { name: "Principal" })).getByRole("link", { name: "Mi lista" }),
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/my-list"));
+    // A poll already in flight when the page closed may still land: count from a moment later.
+    await new Promise((r) => setTimeout(r, 300));
     const after = count(calls, "list_downloads");
     await new Promise((r) => setTimeout(r, 1500));
     expect(count(calls, "list_downloads")).toBe(after);

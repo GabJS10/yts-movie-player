@@ -44,9 +44,9 @@ describe("Tráiler: modal → separate window → browser", () => {
     expect(calls.some((c) => c.cmd === "open_trailer_window")).toBe(false);
   });
 
-  it("an error from YouTube (153) opens the trailer window and closes the modal", async () => {
+  it("a page that can't load YouTube (error without code) opens the trailer window and closes the modal", async () => {
     const { calls } = await openTrailer();
-    post({ source: "yts-trailer", event: "error", code: 153 });
+    post({ source: "yts-trailer", event: "error" });
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "open_trailer_window")?.args).toEqual({
         ytTrailerCode: CODE,
@@ -68,8 +68,17 @@ describe("Tráiler: modal → separate window → browser", () => {
     const { calls } = await openTrailer({
       fail: { open_trailer_window: { code: "internal", message: "no window" } },
     });
+    post({ source: "yts-trailer", event: "error" });
+    await waitFor(() => expect(openedUrls(calls)).toEqual([youtubeWatchUrl(CODE)]));
+    expect(await screen.findByText("El tráiler se abrió en el navegador")).toBeInTheDocument();
+  });
+
+  it("a video YouTube refuses (ready, then error 150) goes straight to youtube.com, not to the window", async () => {
+    const { calls } = await openTrailer();
+    post({ source: "yts-trailer", event: "ready" });
     post({ source: "yts-trailer", event: "error", code: 150 });
     await waitFor(() => expect(openedUrls(calls)).toEqual([youtubeWatchUrl(CODE)]));
+    expect(calls.some((c) => c.cmd === "open_trailer_window")).toBe(false);
     expect(await screen.findByText("El tráiler se abrió en el navegador")).toBeInTheDocument();
   });
 

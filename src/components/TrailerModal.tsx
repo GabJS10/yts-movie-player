@@ -13,7 +13,12 @@ type Props = {
   onClose: () => void;
 };
 
-type Phase = "loading" | "ok" | "fallback" | "stuck";
+/**
+ * fallback: the modal failed to load (timeout, blocked, no API) → the separate window, then the browser.
+ * browser: YouTube itself refused the video (an error code: 100 not found, 101/150 no embedding…); the
+ * window shows the same page, so it goes straight to youtube.com.
+ */
+type Phase = "loading" | "ok" | "fallback" | "browser" | "stuck";
 
 /**
  * Trailer: the embed in a dialog; if the player reports an error or isn't ready within 8 s, the next
@@ -31,7 +36,8 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
       if (e.origin !== origin || e.source !== frame.current?.contentWindow) return;
       const signal = parseTrailerMessage(e.data);
       if (!signal) return;
-      setPhase((p) => (signal.event === "error" ? "fallback" : p === "loading" ? "ok" : p));
+      if (signal.event === "error") setPhase(signal.code !== undefined ? "browser" : "fallback");
+      else setPhase((p) => (p === "loading" ? "ok" : p));
     };
     window.addEventListener("message", onMessage);
     const timer =
@@ -44,10 +50,11 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
 
   // The rest of the chain, once: separate window → browser → (nothing worked) a message here.
   useEffect(() => {
-    if (phase !== "fallback") return;
+    if (phase !== "fallback" && phase !== "browser") return;
     let gone = false;
     (async () => {
       try {
+        if (phase === "browser") throw new Error("YouTube refused the embed");
         await openTrailerWindow(ytTrailerCode, title);
         if (!gone) showToast("El tráiler se abrió en otra ventana");
       } catch {
@@ -102,7 +109,7 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
           <Icon name="x" />
         </button>
       </div>
-      {src && phase !== "fallback" && phase !== "stuck" ? (
+      {src && (phase === "loading" || phase === "ok") ? (
         <iframe
           ref={frame}
           src={src}
@@ -124,7 +131,11 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
               No se pudo abrir el tráiler aquí ni en otra ventana. Prueba con «Ver en YouTube».
             </p>
           ) : (
-            <p className="m-0 text-text-2">Abriendo el tráiler en otra ventana…</p>
+            <p className="m-0 text-text-2">
+              {phase === "browser"
+                ? "Abriendo el tráiler en YouTube…"
+                : "Abriendo el tráiler en otra ventana…"}
+            </p>
           )}
         </div>
       )}

@@ -18,7 +18,8 @@ describe("AppShell", () => {
 
   it("navigates between routes", async () => {
     const user = userEvent.setup();
-    const { router } = await renderApp("/");
+    // Starts on a light page: rendering the whole Inicio isn't what this checks.
+    const { router } = await renderApp("/search");
     const nav = screen.getByRole("navigation", { name: "Principal" });
 
     await user.click(within(nav).getByRole("link", { name: "Mi lista" }));
@@ -30,7 +31,7 @@ describe("AppShell", () => {
   });
 
   it("counts active downloads (queued, downloading, stalled) and follows download://changed", async () => {
-    const { backend } = await renderApp("/");
+    const { backend } = await renderApp("/my-list");
     // Mock: two downloading, one stalled, one paused, one done.
     expect(await screen.findByRole("link", { name: "Descargas, 3 activas" })).toBeInTheDocument();
     const list = backend.handle("list_downloads") as Download[];

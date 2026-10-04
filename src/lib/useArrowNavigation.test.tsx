@@ -12,14 +12,15 @@ describe("arrow keys over the posters", () => {
   it("with nothing focused, the first arrow enters the first row on screen", async () => {
     const user = userEvent.setup();
     await renderApp("/");
-    await screen.findByRole("heading", { name: "Continuar viendo" });
+    // findByText: *ByRole over the whole Inicio is very slow in jsdom.
+    await screen.findByText("Continuar viendo", { selector: "h2" });
     (document.activeElement as HTMLElement | null)?.blur();
     expect(document.activeElement).toBe(document.body);
     await user.keyboard("{ArrowDown}");
     const focused = document.activeElement as HTMLElement;
     expect(focused).toHaveAttribute("data-card");
     // The first row on Inicio is Continuar viendo.
-    expect(focused).toHaveAccessibleName(/^Continuar /);
+    expect(focused.getAttribute("aria-label")).toMatch(/^Continuar /);
   });
 
   it("starts from the card under the pointer", async () => {
@@ -59,8 +60,9 @@ describe("arrow keys over the posters", () => {
   it("↑ from the first row goes to the banner, ↓ from the banner back to the posters", async () => {
     const user = userEvent.setup();
     await renderApp("/");
-    await screen.findByRole("heading", { name: "Continuar viendo" });
-    const first = (await screen.findAllByRole("link", { name: /^Continuar / }))[0]!;
+    // findByText: *ByRole over the whole Inicio is very slow in jsdom.
+    await screen.findByText("Continuar viendo", { selector: "h2" });
+    const first = document.querySelector<HTMLElement>("[data-row-track] [data-card]")!;
     first.focus();
     await user.keyboard("{ArrowUp}");
     expect(document.activeElement).toBe(screen.getByTestId("hero-play"));

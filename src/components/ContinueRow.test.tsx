@@ -8,10 +8,14 @@ describe("Continuar viendo", () => {
   // Renders the whole home (hero + 9 catalog rows): slow under a loaded parallel run.
   it("is the first row on Inicio, then 'Porque viste X' and Mi lista", { timeout: 15_000 }, async () => {
     await renderApp("/");
-    await screen.findByRole("heading", { name: "Continuar viendo" }, { timeout: 5000 });
-    await screen.findByRole("heading", { name: "Mi lista" });
-    await screen.findByRole("heading", { name: /^Porque viste / });
-    const rows = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    // Text/testid queries: *ByRole over the whole Inicio (10 rows of posters) is very slow in jsdom.
+    const titles = () =>
+      [...document.querySelectorAll("[data-testid=movie-row] h2, section h2")].map((h) => h.textContent);
+    await waitFor(() => expect(titles()).toEqual(expect.arrayContaining(["Continuar viendo", "Mi lista"])), {
+      timeout: 8000,
+    });
+    await waitFor(() => expect(titles().some((t) => t?.startsWith("Porque viste "))).toBe(true));
+    const rows = [...new Set(titles())];
     // Mock: the most recent progress is Spider-Verse.
     expect(rows.slice(0, 3)).toEqual([
       "Continuar viendo",
