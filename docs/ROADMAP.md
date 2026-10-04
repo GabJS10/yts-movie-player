@@ -18,8 +18,8 @@
 | 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | ✅ Terminada (`fase-3`) |
 | 4 | Persistencia: Mi lista, Continuar viendo, Ajustes base y límite de caché | Favoritos y progreso que sobreviven a un reinicio; la caché no llena el disco | ✅ Terminada (`fase-4`) |
 | 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | ✅ Terminada (`fase-5`) |
-| 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | ⏳ Siguiente |
-| 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | — |
+| 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | ✅ Terminada (`fase-6`) |
+| 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | ⏳ Siguiente |
 | 8 | Empaquetado y release v1.0 | `.deb` y AppImage publicados en GitHub Releases | — |
 
 ## Cómo se trabaja cada fase
@@ -170,7 +170,9 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Añadido al cierre (IPC v0.9): cupo agotado.** Con el cupo agotado, el clic en un subtítulo no cacheado del menú abre su página de OpenSubtitles en el navegador, para descargarlo a mano y soltarlo sobre el reproductor; los cacheados se siguen cargando.
 - **Cierre:** al reproducir aparecen solos los subtítulos en español y sincronizados, el retraso funciona, se puede cargar un `.srt` manual, sin key la app explica qué hacer y VLC se abre con los subtítulos. Tag `fase-5`.
 
-## Fase 6: Descargas y Ajustes de torrent
+## Fase 6: Descargas y Ajustes de torrent ✅
+
+**Resultado real:** descargas con pausa/reanudación que sobreviven al reinicio, reproducción sin red desde la biblioteca, promoción de stream a descarga sin rebajar, límites de velocidad en caliente, y carpetas de descargas y caché elegibles con movimiento entre discos (progreso y cancelación). Perfil dev con `debug = "line-tables-only"`: binarios de test de ~460 MB a ~86 MB.
 
 **Objetivo:** guardar películas para verlas sin conexión y controlar la red. (El límite de la caché, `get_storage_usage` y `clear_cache` ya se hicieron en la fase 4.) Contrato: IPC v0.10, sección Descargas.
 

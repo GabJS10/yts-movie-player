@@ -12,7 +12,7 @@ Guía para agentes de IA (y personas) que trabajen en este repositorio.
 - Sistema de diseño (tokens, tipografía, componentes): [`DESIGN.md`](DESIGN.md); contexto de producto: [`PRODUCT.md`](PRODUCT.md)
 - Prototipo navegable de todas las pantallas: `design/prototype/index.html` (servir con `python3 -m http.server` desde esa carpeta)
 
-**Estado actual:** fase 5 (Subtítulos) terminada, tag `fase-5`. Siguiente: fase 6 (Descargas) de `docs/ROADMAP.md`.
+**Estado actual:** fase 6 (Descargas) terminada, tag `fase-6`. Siguiente: fase 7 (Tráilers, pulido, robustez y E2E) de `docs/ROADMAP.md`.
 
 ## Forma de trabajo (multi-agente)
 El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia tab del workspace `yts-movie-player` de [Herdr](https://herdr.dev). Hoy los tres son Claude Code, pero el flujo no depende del harness (puede entrar Codex u otro): **este `AGENTS.md` es la fuente de verdad**, y `CLAUDE.md` solo lo importa.
