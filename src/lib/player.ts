@@ -20,8 +20,11 @@ export type PlayerState = {
   error: AppError | null;
   /** Why we're in "waiting": the <video> said so, or the swarm stalled. null otherwise. */
   waitingCause: "video" | "stalled" | null;
-  /** currentTime baseline while waiting, to notice playback moving again. */
-  waitingSince: number | null;
+  /**
+   * currentTime baseline while "waiting" or "paused": the clock moving past it with the element not
+   * paused means it is really playing, whatever events WebKitGTK did or didn't fire.
+   */
+  clockBaseline: number | null;
 };
 
 export type PlayerEvent =
@@ -30,6 +33,7 @@ export type PlayerEvent =
   | { type: "force-start" }
   | { type: "start-failed"; error: AppError }
   | { type: "video-playing" }
+  | { type: "video-play" }
   | { type: "video-pause" }
   | { type: "video-waiting" }
   // canplay / canplaythrough / seeked while not paused. WebKitGTK often skips `playing` after a stall.
@@ -45,7 +49,7 @@ export const initialPlayerState: PlayerState = {
   stats: null,
   error: null,
   waitingCause: null,
-  waitingSince: null,
+  clockBaseline: null,
 };
 
 /** Enough contiguous data to start, or the backend says so; a downloaded file starts right away. */
@@ -63,14 +67,19 @@ const toWaiting = (state: PlayerState, cause: "video" | "stalled"): PlayerState 
   ...state,
   status: "waiting",
   waitingCause: cause,
-  waitingSince: null,
+  clockBaseline: null,
 });
 const toPlaying = (state: PlayerState): PlayerState => ({
   ...state,
   status: "playing",
   waitingCause: null,
-  waitingSince: null,
+  clockBaseline: null,
 });
+
+// Statuses the <video> can be in while it may silently be playing again. WebKitGTK/GStreamer often
+// skips the `playing` event (after a seek, after a stall), so neither may depend on it to be left:
+// both also exit on `play`/canplay/seeked with the element not paused, or on the clock advancing.
+const isHeld = (s: PlayerStatus) => s === "waiting" || s === "paused";
 
 export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerState {
   if (event.type === "retry") return initialPlayerState;
@@ -96,21 +105,24 @@ export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerSta
       return { ...state, status: "failed", error: event.error };
     case "video-playing":
       return isPreroll(state.status) ? state : toPlaying(state);
+    case "video-play":
+      // play() accepted: from a pause it's playing; from a stall it still has to find data.
+      return state.status === "paused" ? toPlaying(state) : state;
     case "video-resumed":
-      return state.status === "waiting" ? toPlaying(state) : state;
+      return isHeld(state.status) ? toPlaying(state) : state;
     case "video-seeking":
       // A seek jumps currentTime: restart the baseline so the jump isn't read as playback.
-      return state.status === "waiting" && state.waitingSince !== null
-        ? { ...state, waitingSince: null }
-        : state;
+      return isHeld(state.status) && state.clockBaseline !== null ? { ...state, clockBaseline: null } : state;
     case "video-timeupdate": {
-      if (state.status !== "waiting" || event.paused) return state;
-      if (state.waitingSince !== null && event.currentTime > state.waitingSince) return toPlaying(state);
-      return state.waitingSince === event.currentTime ? state : { ...state, waitingSince: event.currentTime };
+      if (!isHeld(state.status) || event.paused) return state;
+      if (state.clockBaseline !== null && event.currentTime > state.clockBaseline) return toPlaying(state);
+      return state.clockBaseline === event.currentTime
+        ? state
+        : { ...state, clockBaseline: event.currentTime };
     }
     case "video-pause":
       return state.status === "playing" || state.status === "waiting"
-        ? { ...state, status: "paused", waitingCause: null, waitingSince: null }
+        ? { ...state, status: "paused", waitingCause: null, clockBaseline: null }
         : state;
     case "video-waiting":
       if (state.status === "playing") return toWaiting(state, "video");

@@ -66,6 +66,9 @@ export function Player({ movie, torrent }: Props) {
   // ── <video> mirror state ──
   const [time, setTime] = useState({ current: 0, duration: 0 });
   const [buffered, setBuffered] = useState<TimeRanges | null>(null);
+  // The element's real paused flag drives the play/pause icon: the reducer status can lag behind
+  // when WebKitGTK skips events (e.g. a seek fires `pause` and resumes without `playing`).
+  const [isPaused, setIsPaused] = useState(true);
   const { volume, muted, setVolume, toggleMuted } = useUiStore();
   const [fullscreen, setFs] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
@@ -238,6 +241,7 @@ export function Player({ movie, torrent }: Props) {
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
             setTime({ current: v.currentTime, duration: v.duration });
+            setIsPaused(v.paused);
             dispatch({ type: "video-timeupdate", currentTime: v.currentTime, paused: v.paused });
           }}
           onDurationChange={(e) => {
@@ -245,11 +249,17 @@ export function Player({ movie, torrent }: Props) {
             setTime((t) => ({ ...t, duration }));
           }}
           onProgress={(e) => setBuffered(e.currentTarget.buffered)}
-          onPlaying={() => {
+          onPlay={(e) => {
+            setIsPaused(e.currentTarget.paused);
+            dispatch({ type: "video-play" });
+          }}
+          onPlaying={(e) => {
+            setIsPaused(e.currentTarget.paused);
             dispatch({ type: "video-playing" });
             showChrome();
           }}
-          onPause={() => {
+          onPause={(e) => {
+            setIsPaused(e.currentTarget.paused);
             dispatch({ type: "video-pause" });
             setChromeVisible(true);
           }}
@@ -309,7 +319,7 @@ export function Player({ movie, torrent }: Props) {
             title={movie.title}
             torrent={torrent}
             stats={state.stats}
-            playing={state.status === "playing" || state.status === "waiting"}
+            playing={!isPaused}
             currentTime={time.current}
             duration={time.duration}
             layers={layers}

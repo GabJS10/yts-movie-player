@@ -82,7 +82,7 @@ describe("playerReducer", () => {
       expect(s.status).toBe("waiting");
       expect(run([{ type: "video-timeupdate", currentTime: 43, paused: true }], s).status).toBe("waiting");
       s = run([{ type: "video-timeupdate", currentTime: 42.3, paused: false }], s);
-      expect(s).toMatchObject({ status: "playing", waitingCause: null, waitingSince: null });
+      expect(s).toMatchObject({ status: "playing", waitingCause: null, clockBaseline: null });
     });
 
     it("a seek resets the baseline so the jump isn't mistaken for playback", () => {
@@ -121,6 +121,50 @@ describe("playerReducer", () => {
       expect(s.status).toBe("waiting");
       s = run([{ type: "video-resumed" }], s);
       expect(s.status).toBe("playing");
+    });
+
+    it("paused by a seek → timeupdate advancing (no playing event) → playing", () => {
+      let s = run([{ type: "video-pause" }], playing());
+      expect(s.status).toBe("paused");
+      s = run([{ type: "video-seeking" }, { type: "video-timeupdate", currentTime: 600, paused: false }], s);
+      expect(s.status).toBe("paused"); // the seek's jump only sets the baseline
+      s = run([{ type: "video-timeupdate", currentTime: 600.3, paused: false }], s);
+      expect(s.status).toBe("playing");
+    });
+
+    it("paused → play without playing → playing; a really paused clock stays paused", () => {
+      const paused = run([{ type: "video-pause" }], playing());
+      expect(run([{ type: "video-play" }], paused).status).toBe("playing");
+      expect(run([{ type: "video-resumed" }], paused).status).toBe("playing");
+      const still = run(
+        [
+          { type: "video-timeupdate", currentTime: 5, paused: true },
+          { type: "video-timeupdate", currentTime: 9, paused: true },
+        ],
+        paused,
+      );
+      expect(still.status).toBe("paused");
+      // play while stalled on data is not playing yet
+      expect(run([{ type: "video-waiting" }, { type: "video-play" }], playing()).status).toBe("waiting");
+    });
+
+    it("no held status depends on the playing event alone", () => {
+      // Every status a <video> event can leave the player in must be exitable by the clock.
+      const held = [
+        run([{ type: "video-pause" }], playing()),
+        run([{ type: "video-waiting" }], playing()),
+        run([{ type: "stats", stats: stats({ phase: "stalled" }) }], playing()),
+      ];
+      for (const h of held) {
+        const s = run(
+          [
+            { type: "video-timeupdate", currentTime: 1, paused: false },
+            { type: "video-timeupdate", currentTime: 2, paused: false },
+          ],
+          h,
+        );
+        expect(s.status).toBe("playing");
+      }
     });
 
     it("pausing while waiting clears the cause", () => {

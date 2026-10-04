@@ -97,6 +97,38 @@ describe("Player", () => {
     expect(screen.queryByText(/Esperando datos…/)).not.toBeInTheDocument();
   });
 
+  it("after a seek's pause, the button follows the real element (no playing event)", async () => {
+    await startPlaying(x264);
+    const v = video() as HTMLVideoElement & { _paused?: boolean };
+    act(() => void v.play());
+    expect(screen.getByRole("button", { name: "Pausar (Espacio)" })).toBeInTheDocument();
+
+    // WebKitGTK: seeking fires `pause`, then resumes silently.
+    act(() => v.pause());
+    await waitFor(() => expect(status()).toBe("paused"));
+    expect(screen.getByRole("button", { name: "Reproducir (Espacio)" })).toBeInTheDocument();
+    fireEvent.seeking(v);
+    v._paused = false; // resumed, no play/playing event
+    v.currentTime = 300;
+    fireEvent.timeUpdate(v);
+    expect(screen.getByRole("button", { name: "Pausar (Espacio)" })).toBeInTheDocument();
+    v.currentTime = 300.3;
+    fireEvent.timeUpdate(v);
+    await waitFor(() => expect(status()).toBe("playing"));
+  });
+
+  it("a play event without playing restores the pause icon and the status", async () => {
+    await startPlaying(x264);
+    const v = video() as HTMLVideoElement & { _paused?: boolean };
+    act(() => void v.play());
+    act(() => v.pause());
+    await waitFor(() => expect(status()).toBe("paused"));
+    v._paused = false;
+    fireEvent.play(v);
+    await waitFor(() => expect(status()).toBe("playing"));
+    expect(screen.getByRole("button", { name: "Pausar (Espacio)" })).toBeInTheDocument();
+  });
+
   it("clears it on canplay after a seek", async () => {
     await startPlaying(x264);
     const v = video();
