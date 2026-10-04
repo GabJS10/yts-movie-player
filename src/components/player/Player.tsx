@@ -296,6 +296,7 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
       className={`fixed inset-0 z-[100] overflow-hidden bg-black ${!chromeVisible ? "cursor-none" : ""}`}
       onMouseMove={showChrome}
       data-status={state.status}
+      data-player
     >
       {(preroll || state.status === "codec-error" || state.status === "failed") && art && (
         <img

@@ -58,4 +58,23 @@ describe("/search filters ↔ URL", () => {
     await waitFor(() => expect(searchOf(router)).toEqual({}));
     expect(screen.getByLabelText("Buscar películas")).toHaveValue("");
   });
+
+  it("keeps the search and its filters when leaving through the navigation and coming back", async () => {
+    const user = userEvent.setup();
+    const { router } = await renderApp("/search?query=the&genre=action&quality=1080p");
+    await screen.findByRole("searchbox", { name: "Buscar películas" });
+    const nav = screen.getByRole("navigation", { name: "Principal" });
+    await user.click(within(nav).getByRole("link", { name: "Inicio" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+
+    await user.click(within(nav).getByRole("link", { name: "Buscar" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/search"));
+    expect(router.state.location.search).toMatchObject({ query: "the", genre: "action", quality: "1080p" });
+    expect(screen.getByRole("searchbox", { name: "Buscar películas" })).toHaveValue("the");
+    expect(screen.getByTestId("filter-genre")).toHaveValue("action");
+    expect(
+      within(screen.getByTestId("filter-quality")).getByRole("button", { name: "1080p" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(within(nav).getByRole("link", { name: "Buscar" })).toHaveAttribute("aria-current", "page");
+  });
 });

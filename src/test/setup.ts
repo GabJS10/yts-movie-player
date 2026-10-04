@@ -4,6 +4,7 @@ import { clearMocks } from "@tauri-apps/api/mocks";
 import { afterEach } from "vitest";
 import { resetConnectivity } from "../store/connectivity";
 import { resetMove } from "../store/moveDownloads";
+import { resetSearchMemory } from "../store/searchMemory";
 import { clearQuota } from "../store/subtitlesQuota";
 import { useToastStore } from "../store/toast";
 import { installIntersectionObserver } from "./intersection";
@@ -20,6 +21,7 @@ afterEach(() => {
   clearQuota();
   resetConnectivity();
   resetMove();
+  resetSearchMemory();
 });
 
 // jsdom has no media playback: play()/pause() flip `paused` and fire the matching events.

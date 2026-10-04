@@ -3,8 +3,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useDownloadEvents, useDownloads, useMoveEvents } from "../api/queries";
 import { activeCount as countActive } from "../lib/downloads";
 import { formatSpeed } from "../lib/format";
+import { useArrowNavigation } from "../lib/useArrowNavigation";
 import { useConnectivityWatch } from "../lib/useConnectivityWatch";
 import { useConnectivity } from "../store/connectivity";
+import { useSearchMemory } from "../store/searchMemory";
 import { useSwarmStore } from "../store/swarm";
 import { Icon, type IconName } from "./Icon";
 import { ToastHost } from "./Toast";
@@ -54,10 +56,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   useDownloadEvents();
   useMoveEvents();
   useConnectivityWatch();
+  useArrowNavigation();
   const activeCount = countActive(useDownloads().data);
   // torrent://stats only covers the open stream (IPC v0.10.1); downloads alone show just the count.
   const speed = useSwarmStore((s) => s.totalBps);
   const offline = useConnectivity((s) => s.offline);
+  // "Buscar" goes back to the last search and its filters (src/store/searchMemory.ts).
+  const lastSearch = useSearchMemory((s) => s.last);
+  const linkSearch = (to: NavItem["to"]) => (to === "/search" ? lastSearch : undefined);
 
   if (isPlayer) return <main id="main">{children}</main>;
 
@@ -89,7 +95,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               key={item.to}
               to={item.to}
               data-testid={`nav-${item.id}`}
-              activeOptions={{ exact: item.to === "/" }}
+              search={linkSearch(item.to)}
+              activeOptions={{ exact: item.to === "/", includeSearch: false }}
               className="relative rounded-md px-3 py-2 text-sm font-medium text-text-2 transition-colors hover:text-text data-[status=active]:font-bold data-[status=active]:text-text data-[status=active]:after:absolute data-[status=active]:after:inset-x-3 data-[status=active]:after:bottom-0 data-[status=active]:after:h-0.5 data-[status=active]:after:rounded-xs data-[status=active]:after:bg-green"
             >
               {item.label}
@@ -122,7 +129,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               {activeCount} {activeCount === 1 ? "activa" : "activas"}
             </span>
           )}
-          <Link to="/search" aria-label="Buscar" className={iconBtn} data-testid="nav-search-icon">
+          <Link
+            to="/search"
+            search={lastSearch}
+            aria-label="Buscar"
+            className={iconBtn}
+            data-testid="nav-search-icon"
+          >
             <Icon name="search" />
           </Link>
           <Link
@@ -161,7 +174,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             key={item.to}
             to={item.to}
             data-testid={`tab-${item.id}`}
-            activeOptions={{ exact: item.to === "/" }}
+            search={linkSearch(item.to)}
+            activeOptions={{ exact: item.to === "/", includeSearch: false }}
             className="grid justify-items-center gap-0.5 px-2.5 py-1.5 text-[11px] text-muted data-[status=active]:text-green"
           >
             <Icon name={item.icon} />

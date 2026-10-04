@@ -7,6 +7,7 @@ import { MovieCard, MovieCardSkeleton } from "../components/MovieCard";
 import { SearchFilters } from "../components/SearchFilters";
 import { validateCatalogSearch, type CatalogSearch } from "../lib/searchParams";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
+import { useSearchMemory } from "../store/searchMemory";
 import { useInView } from "../lib/useInView";
 
 export const Route = createFileRoute("/search")({
@@ -23,6 +24,8 @@ function SearchPage() {
   const [text, setText] = useState(search.query ?? "");
   const debounced = useDebouncedValue(text, SEARCH_DEBOUNCE_MS);
   const lastPushed = useRef(search.query ?? "");
+  const remember = useSearchMemory((s) => s.remember);
+  useEffect(() => remember(search), [search, remember]);
 
   // Typing → URL (replace: one history entry per search, not per keystroke).
   useEffect(() => {
