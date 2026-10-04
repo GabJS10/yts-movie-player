@@ -256,7 +256,7 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
   - Que `e2e/app` pueda usar un binario instalado: respetar `E2E_APP_BINARY` en la config (lo hace `plan`), y que el binario no dependa de nada del repo.
 - **frontend:**
   - **Icono de la app**: diseño propio en SVG (`design/icon/app-icon.svg`, 1024×1024, legible a 32 px), coherente con `DESIGN.md`.
-  - **Acerca de** (en Ajustes): versión, repo, aviso legal, créditos (YTS, OpenSubtitles, librqbit, Tauri), "Abrir carpeta de logs".
+  - **Acerca de** (en Ajustes): versión, repo, aviso legal, créditos (YTS, OpenSubtitles, librqbit, Tauri), "Abrir carpeta de registros".
   - Aviso discreto de **nueva versión disponible** (una vez por sesión, se puede descartar) con enlace a la release.
   - Revisión final de todos los textos en español.
 - **Tests:** smoke test de instalación en el CI (arriba); backend: comparación semver y parseo de la respuesta de GitHub (wiremock), rotación de logs; frontend: Acerca de y aviso de actualización.

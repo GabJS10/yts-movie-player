@@ -51,7 +51,7 @@ Sin iniciar sesión, OpenSubtitles permite unas 5 descargas al día; con usuario
 | Ajustes, Mi lista, progreso, subtítulos | `~/.local/share/yts-player/` |
 | Caché de streaming (con límite, 10 GB por defecto) | `~/.local/share/yts-player/cache/` o la carpeta que elijas |
 | Descargas | `~/.local/share/yts-player/library/` o la carpeta que elijas |
-| Logs | `~/.local/state/yts-player/logs/` (Ajustes → Acerca de → Abrir carpeta de logs) |
+| Logs | `~/.local/state/yts-player/logs/` (Ajustes → Acerca de → Abrir carpeta de registros) |
 
 ## Compilar desde el código
 Requisitos: Node 24, Rust estable y, en Ubuntu/Mint:
