@@ -404,6 +404,8 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
               dispatch({ type: "retry" });
               setAttempt((n) => n + 1);
             }}
+            onBack={back}
+            backLabel="Volver a la ficha"
           />
         </div>
       )}

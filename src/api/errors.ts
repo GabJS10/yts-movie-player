@@ -35,3 +35,38 @@ export const ERROR_COPY: Record<ErrorCode, { title: string; action: string }> = 
 };
 
 export const describeError = (error: AppError) => ERROR_COPY[error.code];
+
+/** Where to go from each error, besides (or instead of) retrying. */
+export type ErrorNext = {
+  /** A retry can help (temporary failures). */
+  retry: boolean;
+  link?: { to: "/" | "/downloads" | "/settings"; hash?: string; label: string };
+};
+
+export const ERROR_NEXT: Record<ErrorCode, ErrorNext> = {
+  network: { retry: true, link: { to: "/downloads", label: "Ver mis descargas" } },
+  api_unavailable: {
+    retry: true,
+    link: { to: "/settings", hash: "s-catalogo", label: "Servidores del catálogo" },
+  },
+  not_found: { retry: false, link: { to: "/", label: "Volver al inicio" } },
+  invalid_input: { retry: true },
+  torrent: { retry: true },
+  no_peers: { retry: true },
+  subtitles_auth: {
+    retry: false,
+    link: { to: "/settings", hash: "s-subs", label: "Ir a Ajustes › Subtítulos" },
+  },
+  // With an OpenSubtitles account the daily quota is larger.
+  subtitles_quota: {
+    retry: false,
+    link: { to: "/settings", hash: "s-subs", label: "Más cupo con una cuenta" },
+  },
+  external_player_missing: {
+    retry: true,
+    link: { to: "/settings", hash: "s-play", label: "Ir a Ajustes › Reproducción" },
+  },
+  io: { retry: true, link: { to: "/settings", hash: "s-disk", label: "Ir a Ajustes › Almacenamiento" } },
+  db: { retry: true },
+  internal: { retry: true },
+};

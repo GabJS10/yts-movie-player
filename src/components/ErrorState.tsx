@@ -1,14 +1,26 @@
 import { Link } from "@tanstack/react-router";
-import { describeError } from "../api/errors";
+import { describeError, ERROR_NEXT } from "../api/errors";
 import type { AppError } from "../api/types";
 import { Icon } from "./Icon";
 
-type Props = { error: AppError; onRetry?: () => void; compact?: boolean };
+type Props = {
+  error: AppError;
+  onRetry?: () => void;
+  /** A way back that fits the place (e.g. the player back to the movie page). */
+  onBack?: () => void;
+  backLabel?: string;
+  compact?: boolean;
+};
 
-/** Error with its Spanish explanation and a next action. Never shows `message` (technical, English). */
-export function ErrorState({ error, onRetry, compact = false }: Props) {
+/**
+ * Error with its Spanish explanation and the next actions for its code (ERROR_NEXT): retry when it can
+ * help, and where to fix it. Never shows `message` (technical, English).
+ */
+export function ErrorState({ error, onRetry, onBack, backLabel = "Volver", compact = false }: Props) {
   const copy = describeError(error);
-  const goHome = error.code === "not_found";
+  const next = ERROR_NEXT[error.code];
+  const retry = next.retry && onRetry;
+  const btn = `btn btn-sm ${retry ? "btn-ghost" : "btn-line"}`;
   return (
     <div
       role="alert"
@@ -18,18 +30,25 @@ export function ErrorState({ error, onRetry, compact = false }: Props) {
     >
       <h2 className={`m-0 font-extrabold ${compact ? "text-base" : "text-[22px]"}`}>{copy.title}</h2>
       <p className="m-0 text-muted">{copy.action}</p>
-      {goHome ? (
-        <Link to="/" className="btn btn-line btn-sm">
-          Volver al inicio
-        </Link>
-      ) : (
-        onRetry && (
-          <button type="button" className="btn btn-line btn-sm" onClick={onRetry}>
+      <div className="flex flex-wrap gap-2.5">
+        {retry && (
+          <button type="button" className="btn btn-line btn-sm" data-testid="error-retry" onClick={onRetry}>
             <Icon name="refresh" size={18} />
             Reintentar
           </button>
-        )
-      )}
+        )}
+        {next.link && (
+          <Link to={next.link.to} hash={next.link.hash} className={btn} data-testid="error-link">
+            {next.link.label}
+          </Link>
+        )}
+        {onBack && (
+          <button type="button" className={btn} data-testid="error-back" onClick={onBack}>
+            <Icon name="back" size={18} />
+            {backLabel}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -29,10 +29,3 @@ export function parseOptionalInt(raw: string, min: number, max: number): number 
   if (n < min || n > max) return `Entre ${min} y ${max}.`;
   return n;
 }
-
-/** The default data folders end like this (the backend sends absolute paths: ~/.local/share/yts-player/…). */
-const DEFAULT_FOLDER_SUFFIX = { downloadsDir: "/yts-player/library", cacheDir: "/yts-player/cache" } as const;
-
-/** Whether the folder is the default one (no "Restablecer" then). */
-export const isDefaultFolder = (field: keyof typeof DEFAULT_FOLDER_SUFFIX, path: string) =>
-  path.replace(/\/+$/, "").endsWith(DEFAULT_FOLDER_SUFFIX[field]);

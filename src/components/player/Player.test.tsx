@@ -250,4 +250,33 @@ describe("Player", () => {
       );
     });
   });
+
+  describe("no_peers (60 s without any peer)", () => {
+    const lonely = { ...x264, seeds: 0 };
+    const lonelyMovie = {
+      ...movie,
+      torrents: movie.torrents.map((t) => (t.infohash === x264.infohash ? lonely : t)),
+    };
+
+    it("offers the best-seeded other version, waiting, or going back", async () => {
+      const user = userEvent.setup();
+      const r = await renderWithProviders(<Player movie={lonelyMovie} torrent={lonely} />);
+      await waitFor(() => expect(r.calls.some((c) => c.cmd === "start_stream")).toBe(true));
+      push(stats(lonely, { phase: "no_peers", peers: 0, downSpeedBps: 0 }));
+      const panel = await screen.findByTestId("no-peers");
+      expect(panel).toHaveTextContent("Nadie está compartiendo esta versión");
+      // Interstellar: the x264 with most seeds besides this one (never 3D, x264 before x265).
+      const best = lonelyMovie.torrents
+        .filter((t) => t.infohash !== lonely.infohash && t.videoCodec === "x264" && t.quality !== "3D")
+        .sort((a, b) => b.seeds - a.seeds)[0]!;
+      expect(screen.getByTestId("no-peers-alternative")).toHaveAttribute(
+        "href",
+        `/play/1632?infohash=${best.infohash}`,
+      );
+      await user.click(screen.getByTestId("no-peers-wait"));
+      expect(screen.queryByTestId("no-peers")).toBeNull();
+      expect(screen.getByTestId("phase")).toHaveTextContent("Nadie está compartiendo esta versión");
+      expect(screen.getByText("Seguimos buscando a alguien que la comparta.")).toBeInTheDocument();
+    });
+  });
 });

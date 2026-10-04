@@ -3,7 +3,6 @@ import { useClearCache, useMoveDownloads, useStorageUsage, useUpdateSettings } f
 import { pickFolder, toAppError } from "../../api/tauri";
 import type { Settings, StorageUsage } from "../../api/types";
 import { formatBytes } from "../../lib/format";
-import { isDefaultFolder } from "../../lib/settings";
 import { moveRunning, useMoveStore } from "../../store/moveDownloads";
 import { showToast } from "../../store/toast";
 import { Icon } from "../Icon";
@@ -51,6 +50,8 @@ const FOLDERS: Record<
     used: (u: StorageUsage) => number;
     free: (u: StorageUsage) => number;
     available: (u: StorageUsage) => boolean;
+    /** The default folder (StorageUsage.default*Dir): no "Restablecer" when already there. */
+    fallback: (u: StorageUsage) => string;
   }
 > = {
   downloadsDir: {
@@ -61,6 +62,7 @@ const FOLDERS: Record<
     used: (u) => u.libraryBytes,
     free: (u) => u.downloadsFreeBytes,
     available: (u) => u.downloadsDirAvailable,
+    fallback: (u) => u.defaultDownloadsDir,
   },
   cacheDir: {
     title: "Carpeta de la caché de streaming",
@@ -70,6 +72,7 @@ const FOLDERS: Record<
     used: (u) => u.cacheBytes,
     free: (u) => u.cacheFreeBytes,
     available: (u) => u.cacheDirAvailable,
+    fallback: (u) => u.defaultCacheDir,
   },
 };
 
@@ -114,7 +117,8 @@ function FolderRow({
           <Icon name="folder" size={18} />
           Cambiar…
         </button>
-        {!isDefaultFolder(field, path) && (
+        {/* Only once the backend says which folder is the default one. */}
+        {usage && path !== meta.fallback(usage) && (
           <button
             type="button"
             className="btn btn-line btn-sm"

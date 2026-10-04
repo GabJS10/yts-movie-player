@@ -39,6 +39,18 @@ export function pickDefaultTorrent(
   );
 }
 
+/**
+ * When nobody shares this version (no_peers): the best-seeded other one, x264 first (it plays here), and
+ * only if it has more seeds than this one. 3D is never offered.
+ */
+export function betterSwarm(torrents: readonly Torrent[], current: Torrent): Torrent | null {
+  const others = torrents.filter(
+    (t) => t.infohash !== current.infohash && t.quality !== "3D" && t.seeds > current.seeds,
+  );
+  const x264 = (t: Torrent) => (t.videoCodec === "x264" ? 0 : 1);
+  return [...others].sort((a, b) => x264(a) - x264(b) || b.seeds - a.seeds)[0] ?? null;
+}
+
 /** Display order for the versions table: quality ascending, x264 before x265, 3D last. */
 export function sortForDisplay(torrents: readonly Torrent[]): Torrent[] {
   const key = (t: Torrent) => (t.quality === "3D" ? 99 : qualityRank(t.quality));
