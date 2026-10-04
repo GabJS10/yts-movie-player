@@ -15,8 +15,8 @@
 | 0 | Planificación y diseño | Plan, contrato IPC y prototipo navegable | ✅ Terminada |
 | 1 | Base del proyecto y tooling | La app abre una ventana con la estructura de navegación; CI en verde | ✅ Terminada (`fase-1`) |
 | 2 | Catálogo | Home, Búsqueda y Ficha con datos reales de YTS | ✅ Terminada (`fase-2`) |
-| 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | ⏳ Siguiente |
-| 4 | Persistencia: Mi lista, Continuar viendo y Ajustes base | Favoritos y progreso que sobreviven a un reinicio | — |
+| 3 | Streaming (**hito crítico**) | Se reproduce una película desde el torrent y se puede adelantar | ✅ Terminada (`fase-3`) |
+| 4 | Persistencia: Mi lista, Continuar viendo y Ajustes base | Favoritos y progreso que sobreviven a un reinicio | ⏳ Siguiente |
 | 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | — |
 | 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | — |
 | 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | — |
@@ -92,7 +92,9 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
   - Frontend: componentes (tarjeta, fila, filtros), el hook `useMovies` con `mockIPC` y la selección de la mejor versión.
 - **Cierre:** con la app real se busca "Matrix", se abre la ficha y se ven las versiones. Si la URL base primaria falla, la app pasa sola a la de respaldo. Tag `fase-2`.
 
-## Fase 3: Streaming (hito crítico)
+## Fase 3: Streaming (hito crítico) ✅
+
+**Resultado real:** 1080p x264 con 100 seeds → `.torrent` en 1,4 s, 8 MB de búfer en 9,0 s (~39 MB/s, 16 peers); adelantar funciona y HEVC → VLC. WebKitGTK + GStreamer reproduce H.264 sin problemas, así que la arquitectura queda validada. Lección: en WebKitGTK no hay que depender del evento `playing` para salir de pausa o espera.
 
 **Objetivo:** pulsar Reproducir y ver la película en menos de 30 segundos, pudiendo adelantar.
 
