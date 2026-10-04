@@ -164,6 +164,14 @@ async fn search_ranks_and_flags_results() {
     assert!(by_id("9006").ai_translated);
     assert_eq!(by_id("9008").lang, "pt");
     assert_eq!(by_id("9003").label, "The.Matrix.1999.1080p.BrRip.x264.YIFY");
+    // pageUrl from attributes.url; missing or not an opensubtitles https page → null.
+    assert_eq!(
+        by_id("9003").page_url.as_deref(),
+        Some("https://www.opensubtitles.com/es/subtitles/103")
+    );
+    assert_eq!(by_id("9006").page_url, None);
+    assert_eq!(by_id("9008").page_url, None);
+    assert!(results.iter().all(|o| !o.cached));
     // Without a release nothing "matches": plain by downloads, then HI/AI.
     let plain = h.client.search(IMDB, "es", None).await.unwrap();
     assert!(plain.iter().all(|o| !o.matches_release));
@@ -252,6 +260,16 @@ async fn download_converts_and_disk_cache_avoids_a_second_download() {
     assert!(status.configured && !status.logged_in);
     assert_eq!(status.remaining_downloads, Some(2));
     assert_eq!(status.reset_at.as_deref(), Some("2026-10-04T13:03:16.000Z"));
+
+    // The search now reports it as cached (loading it is free).
+    let results = h
+        .client
+        .search(IMDB, "es", Some(BLURAY_1080))
+        .await
+        .unwrap();
+    for o in &results {
+        assert_eq!(o.cached, o.id == "9003", "{}", o.id);
+    }
 
     // Second load: from disk, no API call, no quota.
     let again = h.client.load("9003").await.unwrap();

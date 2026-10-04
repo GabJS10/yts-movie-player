@@ -287,7 +287,6 @@
      "imdb_id": 133093,
      "tmdb_id": 603
     },
-    "url": "https://www.opensubtitles.com/es/subtitles/106",
     "related_links": [],
     "files": [
      {
@@ -379,7 +378,7 @@
      "imdb_id": 133093,
      "tmdb_id": 603
     },
-    "url": "https://www.opensubtitles.com/es/subtitles/108",
+    "url": "javascript:alert(1)",
     "related_links": [],
     "files": [
      {

@@ -235,6 +235,10 @@ pub struct SubtitleOption {
     pub matches_release: bool,
     /// Translated by AI or by machine.
     pub ai_translated: bool,
+    /// Its page on opensubtitles.com (to download it by hand when the quota is gone).
+    pub page_url: Option<String>,
+    /// Already in the disk cache: loading it costs no quota.
+    pub cached: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -948,6 +952,8 @@ mod tests {
             hearing_impaired: false,
             matches_release: true,
             ai_translated: false,
+            page_url: Some("https://www.opensubtitles.com/es/subtitles/x".into()),
+            cached: true,
         };
         assert_eq!(
             to_json(&option),
@@ -958,9 +964,16 @@ mod tests {
                 "downloads": 5,
                 "hearingImpaired": false,
                 "matchesRelease": true,
-                "aiTranslated": false
+                "aiTranslated": false,
+                "pageUrl": "https://www.opensubtitles.com/es/subtitles/x",
+                "cached": true
             })
         );
+        let no_page = SubtitleOption {
+            page_url: None,
+            ..option
+        };
+        assert_eq!(to_json(&no_page)["pageUrl"], Value::Null);
         let track = SubtitleTrack {
             track_url: "http://127.0.0.1:1/subs/123.vtt".into(),
             lang: None,

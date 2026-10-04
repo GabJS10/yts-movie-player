@@ -56,6 +56,8 @@ fn option(id: &str) -> SubtitleOption {
         hearing_impaired: false,
         matches_release: true,
         ai_translated: false,
+        page_url: None,
+        cached: false,
     }
 }
 

@@ -121,6 +121,17 @@ pub fn normalize_lang(code: &str) -> String {
     }
 }
 
+/// The subtitle's page, only if it is an https page on opensubtitles (the front opens it
+/// in the system browser).
+pub fn page_url(raw: &str) -> Option<String> {
+    let url = Url::parse(raw.trim()).ok()?;
+    let host = url.host_str()?.to_ascii_lowercase();
+    let ours = ["opensubtitles.com", "opensubtitles.org"]
+        .iter()
+        .any(|d| host == *d || host.ends_with(&format!(".{d}")));
+    (url.scheme() == "https" && ours).then(|| url.to_string())
+}
+
 /// `tt0133093` → `133093` (the API wants no prefix and no leading zeros).
 pub fn imdb_number(imdb_code: &str) -> Option<String> {
     let digits = imdb_code.trim().trim_start_matches("tt");
@@ -157,6 +168,7 @@ struct Attributes {
     machine_translated: Option<bool>,
     foreign_parts_only: Option<bool>,
     release: Option<String>,
+    url: Option<String>,
     files: Vec<ApiFile>,
 }
 
@@ -526,6 +538,8 @@ impl SubtitlesClient {
                     hearing_impaired: a.hearing_impaired.unwrap_or(false),
                     ai_translated: a.ai_translated.unwrap_or(false)
                         || a.machine_translated.unwrap_or(false),
+                    page_url: a.url.as_deref().and_then(page_url),
+                    cached: self.cached_file(&id).is_file(),
                     id,
                     label,
                 })
@@ -787,6 +801,8 @@ mod tests {
             hearing_impaired: hi,
             matches_release: matches,
             ai_translated: ai,
+            page_url: None,
+            cached: false,
         }
     }
 
@@ -873,5 +889,19 @@ mod tests {
             assert!(!is_valid_sub_id(bad), "{bad}");
         }
         assert!(user_agent().starts_with("YTSPlayer v"));
+        assert_eq!(
+            page_url(" https://www.opensubtitles.com/es/subtitles/x ").as_deref(),
+            Some("https://www.opensubtitles.com/es/subtitles/x")
+        );
+        assert!(page_url("https://opensubtitles.org/a").is_some());
+        for bad in [
+            "http://www.opensubtitles.com/a",
+            "https://evil.example/a",
+            "https://opensubtitles.com.evil.example/a",
+            "javascript:alert(1)",
+            "",
+        ] {
+            assert_eq!(page_url(bad), None, "{bad}");
+        }
     }
 }
