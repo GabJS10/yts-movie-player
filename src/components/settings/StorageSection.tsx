@@ -30,9 +30,12 @@ export function Usage({
   return (
     <div className="py-3.5 pr-6 [&+div]:border-l [&+div]:border-line [&+div]:pl-6 max-[640px]:[&+div]:border-t max-[640px]:[&+div]:border-l-0 max-[640px]:[&+div]:pl-0">
       <dt className="field-label">{label}</dt>
-      <dd className="m-0 mt-1 mb-2.5 text-base font-bold tnum">{value}</dd>
-      {children}
-      {note && <p className="m-0 mt-2 text-[12.5px] text-muted">{note}</p>}
+      {/* Only <dt>/<dd> may sit in a <dl> group: the meter and the note live inside the <dd>. */}
+      <dd className="m-0 mt-1">
+        <span className="mb-2.5 block text-base font-bold tnum">{value}</span>
+        {children}
+        {note && <span className="mt-2 block text-[12.5px] text-muted">{note}</span>}
+      </dd>
     </div>
   );
 }

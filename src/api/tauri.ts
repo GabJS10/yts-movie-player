@@ -76,6 +76,8 @@ export const listMovies = (params: ListMoviesParams) => call("list_movies", { pa
 export const getMovie = (movieId: number) => call("get_movie", { movieId });
 export const getSuggestions = (movieId: number) => call("get_suggestions", { movieId });
 export const getApiStatus = () => call("get_api_status");
+export const getFeatured = () => call("get_featured");
+export const getHomeProfile = () => call("get_home_profile");
 
 // ───────── Streaming ─────────
 export const startStream = (movieId: number, infohash: string) => call("start_stream", { movieId, infohash });

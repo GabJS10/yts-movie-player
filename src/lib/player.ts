@@ -139,6 +139,7 @@ export const PHASE_TEXT: Record<StreamPhase, string> = {
   buffering: "Llenando el búfer…",
   ready: "Listo",
   stalled: "Sin datos: nadie está enviando piezas",
+  no_peers: "Nadie está compartiendo esta versión",
   seeding: "Listo",
   done: "Listo",
 };

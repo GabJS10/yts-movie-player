@@ -18,6 +18,8 @@ import {
   addFavorite,
   clearCache,
   getApiStatus,
+  getFeatured,
+  getHomeProfile,
   getMovie,
   getSettings,
   getStorageUsage,
@@ -56,6 +58,8 @@ export const queryKeys = {
   movie: (id: number) => ["movie", id] as const,
   suggestions: (id: number) => ["suggestions", id] as const,
   hero: ["hero"] as const,
+  featured: ["featured"] as const,
+  homeProfile: ["home-profile"] as const,
   apiStatus: ["api-status"] as const,
   favorites: ["favorites"] as const,
   continueWatching: ["continue-watching"] as const,
@@ -113,6 +117,16 @@ export function useHeroMovie() {
     },
     retry,
   });
+}
+
+/** The rotating banner's 6 with their reason; stable for the session (the backend computes it once). */
+export function useFeatured() {
+  return useQuery({ queryKey: queryKeys.featured, queryFn: getFeatured, retry, staleTime: Infinity });
+}
+
+/** "Porque viste X" row and the genre order for Inicio; stable for the session. */
+export function useHomeProfile() {
+  return useQuery({ queryKey: queryKeys.homeProfile, queryFn: getHomeProfile, retry, staleTime: Infinity });
 }
 
 export function useMovie(movieId: number, options: { enabled?: boolean } = {}) {

@@ -1,12 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useDownloads, useFavorites } from "../api/queries";
+import { useDownloads, useFavorites, useHomeProfile } from "../api/queries";
 import { ContinueRow } from "../components/ContinueRow";
 import { HeroBanner } from "../components/HeroBanner";
 import { MovieRow, StaticMovieRow } from "../components/MovieRow";
-import type { ListMoviesParams } from "../api/types";
+import { orderRows, type RowDef } from "../lib/home";
 import { useConnectivity } from "../store/connectivity";
-
-type RowDef = { title: string; params: Omit<ListMoviesParams, "page">; note?: string };
 
 const ROWS: RowDef[] = [
   { title: "Tendencias en YTS", note: "Más descargadas", params: { sortBy: "download_count" } },
@@ -26,17 +24,22 @@ function HomePage() {
   const favorites = useFavorites();
   // Without network only what's stored locally stays: Continuar viendo, Mi lista and the library.
   const offline = useConnectivity((s) => s.offline);
+  const profile = useHomeProfile().data;
+  const because = profile?.becauseWatched;
   return (
     <>
       {offline ? <OfflineHeader /> : <HeroBanner />}
       <div className={`relative z-[2] pb-20 ${offline ? "" : "-mt-10 max-[520px]:-mt-6"}`}>
         {offline && <LibraryRow />}
         <ContinueRow />
+        {!offline && because && because.movies.length > 0 && (
+          <StaticMovieRow title={`Porque viste ${because.sourceTitle}`} movies={because.movies} />
+        )}
         {favorites.data && favorites.data.length > 0 && (
           <StaticMovieRow title="Mi lista" movies={favorites.data} more={{ to: "/my-list" }} />
         )}
         {!offline &&
-          ROWS.map((r) => (
+          orderRows(ROWS, profile?.genreOrder ?? []).map((r) => (
             <MovieRow
               key={r.title}
               title={r.title}

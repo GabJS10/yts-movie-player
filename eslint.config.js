@@ -24,5 +24,14 @@ export default tseslint.config(
     rules: { "react-refresh/only-export-components": "off" },
   },
   { files: ["*.config.{js,ts}"], languageOptions: { globals: globals.node } },
+  {
+    // E2E (plan's e2e/): Node + Playwright/WebdriverIO, not React. Their fixtures call `use()`.
+    files: ["e2e/**/*.{ts,tsx}"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
+      "react-refresh/only-export-components": "off",
+    },
+  },
   prettier,
 );

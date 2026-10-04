@@ -6,12 +6,18 @@ import { ContinueRow } from "./ContinueRow";
 
 describe("Continuar viendo", () => {
   // Renders the whole home (hero + 9 catalog rows): slow under a loaded parallel run.
-  it("is the first row on Inicio, before Mi lista", { timeout: 15_000 }, async () => {
+  it("is the first row on Inicio, then 'Porque viste X' and Mi lista", { timeout: 15_000 }, async () => {
     await renderApp("/");
     await screen.findByRole("heading", { name: "Continuar viendo" }, { timeout: 5000 });
     await screen.findByRole("heading", { name: "Mi lista" });
+    await screen.findByRole("heading", { name: /^Porque viste / });
     const rows = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(rows.slice(0, 2)).toEqual(["Continuar viendo", "Mi lista"]);
+    // Mock: the most recent progress is Spider-Verse.
+    expect(rows.slice(0, 3)).toEqual([
+      "Continuar viendo",
+      "Porque viste Spider-Man: Into the Spider-Verse",
+      "Mi lista",
+    ]);
   });
 
   it("shows time left and progress, and links to the player", async () => {

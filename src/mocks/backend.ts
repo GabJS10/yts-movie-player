@@ -9,6 +9,7 @@ import type {
   ContinueItem,
   Download,
   EventMap,
+  FeaturedReason,
   EventName,
   MoveProgress,
   MovieDetail,
@@ -116,6 +117,8 @@ export const FULL_DIR_MARK = "lleno";
 /** What the folder picker answers in the mock: another disk. */
 export const MOCK_PICKED_FOLDER = "/media/usb/Películas";
 const GiB = 1024 ** 3;
+/** Ticks (seconds in dev) without any peer before `no_peers`; the real backend waits 60 s. */
+export const NO_PEERS_TICKS = 10;
 /** Bytes a move copies per tick in the mock. */
 const MOVE_BYTES_PER_TICK = 1.5 * GiB;
 
@@ -247,6 +250,59 @@ export function createMockBackend(): MockBackend {
     cacheLimitBytes: 10 * 1024 ** 3,
   };
 
+  /** Same-genre movies by shared genres, then rating (the mock's movie_suggestions). */
+  const similar = (movieId: number, limit = 4) => {
+    const m = movie(movieId);
+    const shared = (x: CatalogMovie) => x.genres.filter((g) => m.genres.includes(g)).length;
+    return CATALOG.movies
+      .filter((x) => x.id !== m.id && shared(x) >= 2)
+      .sort((a, b) => shared(b) - shared(a) || b.rating - a.rating)
+      .slice(0, limit);
+  };
+
+  /**
+   * The banner's 6, computed once per backend (a "session"), like the real one: suggestions of what was
+   * watched and of Mi lista, a liked genre, then trending. Skips what's in progress, repeats and movies
+   * without seeds or stills; at most 2 per source.
+   */
+  let featured: { id: number; reason: FeaturedReason }[] | null = null;
+  const computeFeatured = () => {
+    const out: { id: number; reason: FeaturedReason }[] = [];
+    const taken = new Set<number>([...progress.keys()]);
+    const ok = (m: CatalogMovie) =>
+      !taken.has(m.id) &&
+      m.torrents.some((t) => t.seeds > 0) &&
+      (m.screenshotUrls.length > 0 || !!m.backgroundUrl);
+    const push = (m: CatalogMovie, reason: FeaturedReason) => {
+      if (out.length >= 6 || !ok(m)) return false;
+      taken.add(m.id);
+      out.push({ id: m.id, reason });
+      return true;
+    };
+    const fromSource = (sourceId: number, kind: "because_watched" | "because_list") => {
+      const src = byId.get(sourceId);
+      if (!src) return;
+      let n = 0;
+      for (const m of similar(sourceId, 12))
+        if (n < 2 && push(m, { kind, sourceMovieId: src.id, sourceTitle: src.title })) n++;
+    };
+    const recent = [...progress.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    if (recent[0]) fromSource(recent[0].movieId, "because_watched");
+    const fav = favorites.find((f) => !taken.has(f.id));
+    if (fav) fromSource(fav.id, "because_list");
+    const genre = recent[0] ? byId.get(recent[0].movieId)?.genres[0] : undefined;
+    if (genre) {
+      const g = genre.toLowerCase();
+      const best = CATALOG.movies
+        .filter((m) => m.genres.some((x) => x.toLowerCase() === g) && m.rating >= 7)
+        .sort((a, b) => b.rating - a.rating);
+      for (const m of best) if (push(m, { kind: "genre", genre: g })) break;
+    }
+    for (const m of [...CATALOG.movies].sort((a, b) => a.downloadRank - b.downloadRank))
+      push(m, { kind: "trending" });
+    return out;
+  };
+
   const detail = ({ downloadRank: _r, addedAt: _a, ...m }: CatalogMovie): MovieDetail => ({
     ...m,
     maxSeeds: Math.max(0, ...m.torrents.map((t) => t.seeds)),
@@ -317,13 +373,37 @@ export function createMockBackend(): MockBackend {
     },
     get_suggestions: ({ movieId }) => {
       requireNetwork("get_suggestions");
-      const m = movie(movieId);
-      const shared = (x: CatalogMovie) => x.genres.filter((g) => m.genres.includes(g)).length;
-      return CATALOG.movies
-        .filter((x) => x.id !== m.id && shared(x) >= 2)
-        .sort((a, b) => shared(b) - shared(a) || b.rating - a.rating)
-        .slice(0, 4)
-        .map(toSummary);
+      return similar(movieId).map(toSummary);
+    },
+    get_featured: () => {
+      if (offline) return [];
+      if (featured === null) featured = computeFeatured();
+      return featured.map(({ id, reason }) => ({ movie: detail(movie(id)), reason }));
+    },
+    get_home_profile: () => {
+      if (offline) return { becauseWatched: null, genreOrder: [] };
+      const recent = [...progress.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+      const source = recent ? byId.get(recent.movieId) : undefined;
+      // Affinity: genres of what was watched (×2) and of Mi lista.
+      const score = new Map<string, number>();
+      const add = (id: number, w: number) => {
+        for (const g of byId.get(id)?.genres ?? [])
+          score.set(g.toLowerCase(), (score.get(g.toLowerCase()) ?? 0) + w);
+      };
+      for (const p of progress.values()) add(p.movieId, 2);
+      for (const f of favorites) add(f.id, 1);
+      return {
+        becauseWatched: source
+          ? {
+              sourceMovieId: source.id,
+              sourceTitle: source.title,
+              movies: similar(source.id, 12).map(toSummary),
+            }
+          : null,
+        genreOrder: [...score.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([g]) => g),
+      };
     },
     get_api_status: () => [
       {
@@ -613,6 +693,8 @@ export function createMockBackend(): MockBackend {
         cacheDirAvailable: !settings.cacheDir.includes(UNMOUNTED_DIR_MARK),
         downloadsDirAvailable: !settings.downloadsDir.includes(UNMOUNTED_DIR_MARK),
         downloadsOutsideDir: all.filter((d) => d.path && !inDir(d.path, downloadsDir)).length,
+        defaultDownloadsDir: DEFAULT_DOWNLOADS_DIR,
+        defaultCacheDir: DEFAULT_CACHE_DIR,
       };
     },
     clear_cache: () => {
@@ -640,15 +722,18 @@ export function createMockBackend(): MockBackend {
   /**
    * One second of a simulated stream, as IPC v0.5 describes it: the .torrent is fetched up front, so
    * connecting → buffering (~2 MB/s) → ready; `metadata` only on the magnet fallback (not simulated).
-   * Versions with fewer than 5 seeds never get peers and stall, to show that state.
+   * Versions with 3–4 seeds never get data and stall; with 2 or fewer no peer ever connects, and after
+   * NO_PEERS_TICKS (60 s in the real backend) the phase becomes `no_peers` (e.g. Captain Marvel 3D).
    */
   const streamTick = (sim: StreamSim): TorrentStats => {
     sim.ticks += 1;
     const { session } = sim;
     const target = session.bufferTargetBytes;
     const starving = sim.seeds < 5;
+    const lonely = sim.seeds <= 2;
     let phase: TorrentStats["phase"];
     if (session.source === "library") phase = "done";
+    else if (lonely) phase = sim.ticks > NO_PEERS_TICKS ? "no_peers" : "connecting";
     else if (sim.ticks <= 1) phase = "connecting";
     else if (starving) phase = "stalled";
     else {

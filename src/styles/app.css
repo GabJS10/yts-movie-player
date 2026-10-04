@@ -1093,3 +1093,21 @@
     background: #f0645c;
   }
 }
+
+/* ───────── Banner rotativo ───────── */
+@layer components {
+  .hero-in {
+    animation: hero-in 0.6s var(--ease-out, ease-out) both;
+  }
+  @keyframes hero-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-in {
+      animation: none;
+    }
+  }
+}

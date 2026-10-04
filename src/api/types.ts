@@ -1,4 +1,4 @@
-// IPC contract types. Mirror of docs/IPC.md (v0.11); keep both in sync in the same change.
+// IPC contract types. Mirror of docs/IPC.md (v0.12); keep both in sync in the same change.
 // Optional outputs are `T | null` (never undefined); optional inputs are `field?: T` (omit = default).
 
 // ───────── Errors ─────────
@@ -122,6 +122,25 @@ export type ApiEndpointStatus = {
   role: "active" | "fallback";
   latencyMs: number | null;
   ok: boolean;
+};
+
+// ───────── Recommendations ─────────
+
+export type FeaturedReason =
+  | { kind: "because_watched"; sourceMovieId: number; sourceTitle: string }
+  | { kind: "because_list"; sourceMovieId: number; sourceTitle: string }
+  /** Lowercase, as in ListMoviesParams.genre. */
+  | { kind: "genre"; genre: string }
+  | { kind: "trending" };
+
+/** A full movie (stills, summary, trailer) so the banner needs no more calls. */
+export type FeaturedItem = { movie: MovieDetail; reason: FeaturedReason };
+
+export type HomeProfile = {
+  /** "Porque viste X" row. */
+  becauseWatched: { sourceMovieId: number; sourceTitle: string; movies: MovieSummary[] } | null;
+  /** Lowercase genres by affinity; empty = no history (the front's default order). */
+  genreOrder: string[];
 };
 
 // ───────── Streaming ─────────
@@ -267,11 +286,16 @@ export type StorageUsage = {
   downloadsDirAvailable: boolean;
   /** Downloads still in another folder (to offer "Mover"). */
   downloadsOutsideDir: number;
+  /** For "Restablecer" and to tell whether a folder is the default one. */
+  defaultDownloadsDir: string;
+  defaultCacheDir: string;
 };
 
 // ───────── Events ─────────
 
-export type StreamPhase = "connecting" | "metadata" | "buffering" | "ready" | "stalled" | "seeding" | "done";
+/** no_peers: 60 s after start_stream without ever connecting to a peer (the torrent keeps trying). */
+export type StreamPhase =
+  "connecting" | "metadata" | "buffering" | "ready" | "stalled" | "no_peers" | "seeding" | "done";
 
 export type PieceMapWindow = { startByte: number; endByte: number };
 
@@ -331,6 +355,8 @@ export type CommandMap = {
   get_movie: { args: { movieId: number }; result: MovieDetail };
   get_suggestions: { args: { movieId: number }; result: MovieSummary[] };
   get_api_status: { args: undefined; result: ApiEndpointStatus[] };
+  get_featured: { args: undefined; result: FeaturedItem[] };
+  get_home_profile: { args: undefined; result: HomeProfile };
 
   start_stream: { args: { movieId: number; infohash: string }; result: StreamSession };
   stop_stream: { args: { infohash: string }; result: void };
