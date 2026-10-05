@@ -2,7 +2,9 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado [semántico](https://semver.org/lang/es/).
 
-## [Sin publicar]
+## [1.1.0] - 2026-10-05
+
+Soporte de Windows 10/11.
 
 ### Windows
 - Instalador para Windows 10/11 (`.exe`, por usuario, sin administrador).
@@ -47,4 +49,5 @@ Primera versión pública. Linux: `.deb`, `.rpm` y AppImage.
 - Logs a archivo con rotación, "Acerca de" y aviso de nuevas versiones.
 - Tests: unitarios e integración en Rust (torrent local sin internet), Vitest en el front, E2E con WebdriverIO sobre la app real y Playwright + axe sobre la interfaz.
 
+[1.1.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.0
 [1.0.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.0.0

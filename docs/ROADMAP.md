@@ -21,7 +21,7 @@
 | 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | ✅ Terminada (`fase-6`) |
 | 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | ✅ Terminada (`fase-7`) |
 | 8 | Empaquetado y release v1.0 | `.deb`, `.rpm` y AppImage publicados en GitHub Releases | ✅ Terminada (`v1.0.0`) |
-| 9 | Soporte de Windows (v1.1) | Instalador `.exe` para Windows 10/11 con las mismas funciones | 🚧 En curso |
+| 9 | Soporte de Windows (v1.1) | Instalador `.exe` para Windows 10/11 con las mismas funciones | ✅ Terminada (`v1.1.0`) |
 
 ## Cómo se trabaja cada fase
 
@@ -265,7 +265,9 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Tests:** smoke test de instalación en el CI (arriba); backend: comparación semver y parseo de la respuesta de GitHub (wiremock), rotación de logs; frontend: Acerca de y aviso de actualización.
 - **Cierre:** release `v1.0.0` publicada con `.deb`, `.rpm` y AppImage, el smoke test en verde y el usuario la instala en su máquina (la app abre, el catálogo carga y se reproduce una película). Tag `v1.0.0`.
 
-## Fase 9: Soporte de Windows (v1.1) 🚧
+## Fase 9: Soporte de Windows (v1.1) ✅
+
+**Resultado real:** instalador NSIS de 5 MB (por usuario, en español), compilado en `windows-latest` y con smoke test en el CI (instalación silenciosa + E2E sobre la app instalada en WebView2). El CI corre `fmt`/`clippy`/`cargo test` y el E2E de la app real también en Windows. Probar en Windows real encontró tres bugs que en Linux no se veían (URLs de la API del entorno ignoradas, el LRU sin registrar accesos, tamaño en disco) y el aviso de privacidad encontró rutas del runner en el código C de `aws-lc` (`/d1trimfile`). Los jobs de WebDriver van en `windows-2022`: WebView2 152+ ignora las variables `WEBVIEW2_*` que usa `msedgedriver`. Ronda manual del usuario sobre `v1.1.0-rc.1` en un portátil con Windows: todo igual que en Linux.
 
 **Objetivo:** instalador `.exe` (NSIS) para Windows 10/11 x64 con las mismas funciones que en Linux, compilado y probado en el CI (`windows-latest`) y probado a mano por el usuario en su Windows (dual boot). macOS queda fuera. Contrato: IPC v0.14.
 

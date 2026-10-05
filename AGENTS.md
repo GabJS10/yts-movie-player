@@ -13,7 +13,7 @@ Guía para agentes de IA (y personas) que trabajen en este repositorio.
 - QA manual (lista de verificación antes de cada release): [`docs/QA.md`](docs/QA.md); E2E en `e2e/` (`npm run ui` Playwright con mocks, `npm run app` WebdriverIO sobre la app real tras `e2e/scripts/build-app.sh`)
 - Prototipo navegable de todas las pantallas: `design/prototype/index.html` (servir con `python3 -m http.server` desde esa carpeta)
 
-**Estado actual:** v1.0.0 publicada (Linux: `.deb`, `.rpm`, AppImage); fases 0–8 terminadas. En curso: fase 9, soporte de Windows (v1.1), ver `docs/ROADMAP.md`.
+**Estado actual:** v1.1.0 (Linux: `.deb`, `.rpm`, AppImage; Windows 10/11: instalador `.exe`); fases 0–9 terminadas. Siguiente: por decidir (backlog en `docs/ROADMAP.md`).
 
 ## Forma de trabajo (multi-agente)
 El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia tab del workspace `yts-movie-player` de [Herdr](https://herdr.dev). Hoy los tres son Claude Code, pero el flujo no depende del harness (puede entrar Codex u otro): **este `AGENTS.md` es la fuente de verdad**, y `CLAUDE.md` solo lo importa.
@@ -51,7 +51,7 @@ El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia t
 - **Frontend:** React + TypeScript + Vite, Tailwind, TanStack Query (datos remotos), Zustand (estado de UI), TanStack Router (rutas basadas en archivos, `src/routes/`)
 - **Backend (Rust):** `reqwest` + `serde` (API YTS), `librqbit` (motor torrent y streaming), `axum` o el servidor HTTP de librqbit (stream local con `Range`), `rusqlite` (persistencia), `tokio`
 - **Subtítulos:** API REST de OpenSubtitles (requiere API key del usuario en Ajustes)
-- **Plataforma objetivo:** Linux primero (WebKitGTK); Windows y macOS después
+- **Plataformas:** Linux (WebKitGTK) y Windows 10/11 (WebView2); macOS en el backlog
 
 ## Estructura (prevista)
 ```
@@ -75,7 +75,7 @@ docs/                # documentación del proyecto
 ```bash
 npm install                 # dependencias del frontend
 npm run tauri dev           # app en modo desarrollo
-npm run tauri build         # empaquetado (.deb / AppImage)
+npm run tauri build         # empaquetado (.deb / .rpm / AppImage; .exe en Windows)
 cd src-tauri && cargo test  # tests de Rust
 cd src-tauri && cargo clippy -- -D warnings
 npm run lint && npm run typecheck
@@ -88,7 +88,7 @@ Dependencias del sistema (Ubuntu): `libwebkit2gtk-4.1-dev build-essential libssl
 - **Toda la red, el torrent y el disco van en Rust.** El frontend solo llama a comandos Tauri (vía `src/api/tauri.ts`) y escucha eventos (`torrent://stats`, etc.). Nada de `fetch` directo a YTS desde React.
 - **El streaming se sirve por HTTP en `127.0.0.1`** con soporte de `Range` (respuesta `206`); el `<video>` apunta a esa URL.
 - **Preferir torrents x264.** x265/HEVC (habitual en 2160p) probablemente no se reproduce en WebKitGTK; ofrecer el botón "Abrir en VLC".
-- Datos de usuario en `~/.local/share/yts-player/` (`cache/` para el streaming con límite LRU y `library/` para las descargas guardadas).
+- Datos de usuario en `~/.local/share/yts-player/` (Windows: `%LOCALAPPDATA%\yts-player\`; `cache/` para el streaming con límite LRU y `library/` para las descargas guardadas).
 - Errores en Rust con `thiserror`; los comandos devuelven `Result<T, AppError>` (`{ code, message }`, ver `docs/IPC.md`). Nada de `unwrap()` en caminos de producción.
 - TypeScript en modo `strict`. Componentes funcionales y hooks.
 - La UI de la app está en **español**. Identificadores y comentarios de código en inglés.

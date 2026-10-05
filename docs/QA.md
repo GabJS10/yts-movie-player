@@ -100,3 +100,4 @@ Se instala el `.exe` del borrador de la release (o del artefacto `smoke-windows`
 |---|---|---|---|---|
 | 2026-10-04 | `fase-7` | usuario | ✅ | Repaso de lo nuevo: tráiler en el modal, teclado, banner, sin peers (60 s), failover y API caída, cierre ordenado. Las secciones de fases anteriores se probaron en su fase. |
 | 2026-10-04 | `v1.0.0-rc.1` | usuario + CI | ✅ | `.deb` instalado en la máquina del usuario: menú, icono, catálogo, reproducción, datos conservados, Acerca de 1.0.0 y carpeta de registros. CI: `.deb` en Ubuntu limpio con E2E y AppImage arranca. |
+| 2026-10-05 | `v1.1.0-rc.1` | usuario + CI | ✅ | Windows (portátil del usuario): instalación, SmartScreen, firewall y todas las funciones igual que en Linux. CI: smoke de `.deb`, AppImage y del instalador de Windows (instalación silenciosa + E2E en WebView2). |
