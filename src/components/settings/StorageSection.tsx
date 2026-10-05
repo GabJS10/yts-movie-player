@@ -3,9 +3,11 @@ import { useClearCache, useMoveDownloads, useStorageUsage, useUpdateSettings } f
 import { pickFolder, toAppError } from "../../api/tauri";
 import type { Settings, StorageUsage } from "../../api/types";
 import { formatBytes } from "../../lib/format";
+import { samePath } from "../../lib/paths";
 import { moveRunning, useMoveStore } from "../../store/moveDownloads";
 import { showToast } from "../../store/toast";
 import { Icon } from "../Icon";
+import { PathText } from "../PathText";
 import { SetRow, SetSection } from "./controls";
 import { MoveDownloadsDialog } from "./MoveDownloadsDialog";
 
@@ -23,11 +25,11 @@ export function Usage({
 }: {
   label: string;
   value: ReactNode;
-  note?: string;
+  note?: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <div className="py-3.5 pr-6 [&+div]:border-l [&+div]:border-line [&+div]:pl-6 max-[640px]:[&+div]:border-t max-[640px]:[&+div]:border-l-0 max-[640px]:[&+div]:pl-0">
+    <div className="min-w-0 py-3.5 pr-6 [&+div]:border-l [&+div]:border-line [&+div]:pl-6 max-[640px]:[&+div]:border-t max-[640px]:[&+div]:border-l-0 max-[640px]:[&+div]:pl-0">
       <dt className="field-label">{label}</dt>
       {/* Only <dt>/<dd> may sit in a <dl> group: the meter and the note live inside the <dd>. */}
       <dd className="m-0 mt-1">
@@ -100,13 +102,22 @@ function FolderRow({
       showToast("No se pudo abrir el selector de carpetas", "error");
       return;
     }
-    if (picked && picked !== path) update.mutate({ [field]: picked });
+    if (picked && !samePath(picked, path)) update.mutate({ [field]: picked });
   };
 
   return (
     <SetRow stack title={meta.title} help={meta.help} id={id}>
       <div className="flex gap-2 max-[640px]:flex-wrap">
-        <input className="input input-mono min-w-0 flex-1" aria-labelledby={id} value={path} readOnly />
+        {/* Read-only: changed with the picker. A long path cuts its middle, never the folder's own name. */}
+        <div
+          role="textbox"
+          aria-readonly="true"
+          tabIndex={0}
+          className="input input-mono flex min-w-0 flex-1 items-center"
+          aria-labelledby={id}
+        >
+          <PathText path={path} />
+        </div>
         <button
           type="button"
           className="btn btn-line btn-sm"
@@ -118,7 +129,7 @@ function FolderRow({
           Cambiar…
         </button>
         {/* Only once the backend says which folder is the default one. */}
-        {usage && path !== meta.fallback(usage) && (
+        {usage && !samePath(path, meta.fallback(usage)) && (
           <button
             type="button"
             className="btn btn-line btn-sm"

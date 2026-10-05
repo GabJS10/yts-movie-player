@@ -22,6 +22,7 @@ Cada opción se puede pasar en la URL de la primera carga (se lee una vez al arr
 | `mock:tick` | ms (`0` = nunca) | Paso de la simulación (búfer del stream, descargas, mover). Por defecto 1000. Con `0` se avanza a mano. |
 | `mock:trailer` | `fake` \| código | Página del tráiler: `fake` responde `ready`/`playing` sin YouTube (sin internet); un número (p. ej. `153`) manda ese error y dispara la cadena (ventana → navegador). Sin la clave: el embed real de YouTube. |
 | `mock:update` | versión | `check_for_update` responde esa versión (p. ej. `1.1.0`) como nueva; sin la clave, la app está al día (la del mock es `1.0.0`). |
+| `mock:platform` | `windows` | Rutas de Windows en el mock (`C:\Users\usuario\AppData\Local\yts-player\{library,cache,logs}`, el selector de carpetas responde `D:\Películas`); sin la clave, rutas de Linux. |
 | `mock:settings` | JSON | Parche de ajustes antes del primer render. Ej.: `{"openSubtitlesApiKey":"quota"}`, `{"openSubtitlesApiKey":null}`. |
 
 Ejemplo: `http://localhost:1420/movie/1632?mock:latency=0&mock:fail=start_stream=no_peers`.

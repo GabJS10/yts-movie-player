@@ -42,7 +42,7 @@ export function installMocks(): void {
         }
       : null,
   );
-  const backend = createMockBackend();
+  const backend = createMockBackend({ platform: options.platform });
   backend.onEvent((event, payload) => void emit(event, payload));
   backend.setOffline(options.offline);
   if (options.settings) backend.handle("update_settings", { patch: options.settings });

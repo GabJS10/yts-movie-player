@@ -262,9 +262,12 @@ export type Settings = {
   upLimitKbps: number | null;
   seedAfterDownload: boolean;
   listenPort: number | null;
-  /** Absolute path; default ~/.local/share/yts-player/library. Applies at once; existing downloads stay. */
+  /**
+   * Absolute path, as the OS writes it; default <dataDir>/library (StorageUsage.defaultDownloadsDir). Applies at
+   * once; existing downloads stay.
+   */
   downloadsDir: string;
-  /** Absolute path; default ~/.local/share/yts-player/cache. Applies at once; the old cache is dropped. */
+  /** Absolute path; default <dataDir>/cache (StorageUsage.defaultCacheDir). Applies at once; the old cache is dropped. */
   cacheDir: string;
   cacheLimitBytes: number;
 };
@@ -305,9 +308,15 @@ export type StorageUsage = {
 export type AppInfo = {
   /** The package's, e.g. "1.0.0". */
   version: string;
-  /** ~/.local/state/yts-player/logs (or $XDG_STATE_HOME/yts-player/logs). */
+  /**
+   * Linux: ~/.local/state/yts-player/logs (or $XDG_STATE_HOME/…); Windows: %LOCALAPPDATA%\yts-player\logs.
+   * Show it as given; never build it in the frontend.
+   */
   logsDir: string;
-  /** ~/.local/share/yts-player (DB, settings, subtitles). */
+  /**
+   * DB, settings and subtitles. Linux: ~/.local/share/yts-player; Windows: %LOCALAPPDATA%\yts-player;
+   * YTS_PLAYER_DATA_DIR overrides it (E2E).
+   */
   dataDir: string;
   repoUrl: string;
 };

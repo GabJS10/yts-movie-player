@@ -11,11 +11,13 @@ import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ReactNode } from "react";
 import { App } from "../App";
-import { createMockBackend, type MockBackend } from "../mocks/backend";
+import { createMockBackend, type MockBackend, type MockPlatform } from "../mocks/backend";
 import { createQueryClient } from "../lib/queryClient";
 import { createAppRouter } from "../router";
 
 type Options = {
+  /** Which OS's folder paths the mock backend reports (default linux). */
+  platform?: MockPlatform;
   /** Seed the mock backend before the first render (e.g. empty Mi lista, other settings). */
   before?: (backend: MockBackend) => void;
   /** Commands that reject with this AppError instead of reaching the mock. */
@@ -24,7 +26,7 @@ type Options = {
 
 /** Mock backend behind IPC; returns it so tests can inspect calls. */
 export function installBackend(options: Options = {}) {
-  const backend = createMockBackend();
+  const backend = createMockBackend({ platform: options.platform });
   options.before?.(backend);
   const calls: { cmd: string; args: unknown }[] = [];
   const fail = { ...options.fail };

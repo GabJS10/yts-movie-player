@@ -6,7 +6,7 @@
 
 web
 
-(Tauri 2 desktop app; the UI runs in a WebView — WebKitGTK on Linux first, Windows/macOS later.)
+(Tauri 2 desktop app; the UI runs in a WebView — WebKitGTK on Linux, WebView2 (Chromium) on Windows since v1.1, macOS later. Paths and engine quirks come from the backend or are feature-detected, never assumed.)
 
 ## Stack
 
@@ -14,7 +14,7 @@ Decided in docs/PLAN.md: Tauri 2 + React + TypeScript + Vite, Tailwind, TanStack
 
 ## Users
 
-A single person on their own Linux desktop or laptop (1280–1920 px window, mouse and keyboard) who today downloads movies by hand from yts.gg and wants to browse the YTS catalog and press play instead.
+A single person on their own Linux or Windows desktop or laptop (1280–1920 px window, mouse and keyboard) who today downloads movies by hand from yts.gg and wants to browse the YTS catalog and press play instead.
 
 ## Product Purpose
 

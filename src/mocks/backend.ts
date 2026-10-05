@@ -21,6 +21,7 @@ import type {
   SubtitleOption,
   TorrentStats,
 } from "../api/types";
+import { samePath, trimTrailingSeparators } from "../lib/paths";
 import catalog from "./catalog.json";
 
 // maxSeeds is derived from the torrents, not stored.
@@ -110,10 +111,33 @@ type Handlers = { [C in CommandName]: Handler<C> };
 
 export type MockEmitter = <E extends EventName>(event: E, payload: EventMap[E]) => void;
 
-/** Default data folders (IPC v0.11): ~/.local/share/yts-player/{library,cache}. */
-export const MOCK_DATA_DIR = "/home/usuario/.local/share/yts-player";
-const DEFAULT_DOWNLOADS_DIR = `${MOCK_DATA_DIR}/library`;
-const DEFAULT_CACHE_DIR = `${MOCK_DATA_DIR}/cache`;
+export type MockPlatform = "linux" | "windows";
+
+/**
+ * Where the backend keeps things on each platform (IPC v0.14): Linux ~/.local/share/yts-player and
+ * ~/.local/state/yts-player/logs; Windows %LOCALAPPDATA%\yts-player with library, cache and logs inside.
+ * `picked` is the folder picker's answer (another disk); `subtitleFile` the subtitle picker's.
+ */
+export const MOCK_PATHS: Record<
+  MockPlatform,
+  { sep: "/" | "\\"; dataDir: string; logsDir: string; picked: string; subtitleFile: string }
+> = {
+  linux: {
+    sep: "/",
+    dataDir: "/home/usuario/.local/share/yts-player",
+    logsDir: "/home/usuario/.local/state/yts-player/logs",
+    picked: "/media/usb/Películas",
+    subtitleFile: "/home/usuario/Descargas/Interstellar.2014.es.srt",
+  },
+  windows: {
+    sep: "\\",
+    dataDir: "C:\\Users\\usuario\\AppData\\Local\\yts-player",
+    logsDir: "C:\\Users\\usuario\\AppData\\Local\\yts-player\\logs",
+    picked: "D:\\Películas",
+    subtitleFile: "C:\\Users\\usuario\\Downloads\\Interstellar.2014.es.srt",
+  },
+};
+export const MOCK_DATA_DIR = MOCK_PATHS.linux.dataDir;
 /** Folder paths that exercise the edge cases: not writable, unmounted, a disk with little space. */
 export const UNWRITABLE_DIR_MARK = "sin-permiso";
 export const UNMOUNTED_DIR_MARK = "desconectado";
@@ -124,8 +148,8 @@ let mockUpdate: UpdateInfo | null = null;
 export const setMockUpdate = (update: UpdateInfo | null) => {
   mockUpdate = update;
 };
-/** What the folder picker answers in the mock: another disk. */
-export const MOCK_PICKED_FOLDER = "/media/usb/Películas";
+/** What the folder picker answers in the mock (Linux): another disk. */
+export const MOCK_PICKED_FOLDER = MOCK_PATHS.linux.picked;
 const GiB = 1024 ** 3;
 /** Ticks (seconds in dev) without any peer before `no_peers`; the real backend waits 60 s. */
 export const NO_PEERS_TICKS = 10;
@@ -167,7 +191,12 @@ const trailerPage = (code: string, title: string) => {
   return `/src/mocks/trailer.html?${q.toString()}`;
 };
 
-export function createMockBackend(): MockBackend {
+export function createMockBackend({ platform = "linux" }: { platform?: MockPlatform } = {}): MockBackend {
+  const paths = MOCK_PATHS[platform];
+  const { sep } = paths;
+  const DEFAULT_DOWNLOADS_DIR = `${paths.dataDir}${sep}library`;
+  const DEFAULT_CACHE_DIR = `${paths.dataDir}${sep}cache`;
+  const isAbsolute = (p: string) => (platform === "windows" ? /^[A-Za-z]:\\/.test(p) : p.startsWith("/"));
   const byId = new Map(CATALOG.movies.map((m) => [m.id, m]));
   const movie = (id: number) => byId.get(id) ?? fail("not_found", `movie ${id} not found`);
   const torrentOf = (infohash: string) => {
@@ -208,8 +237,8 @@ export function createMockBackend(): MockBackend {
     emit("download://changed", { infohash, download: downloads.get(infohash) ?? null });
   let downloadsDir = DEFAULT_DOWNLOADS_DIR;
   const folderFor = (d: { quality: string; movie: { title: string; year: number } }, dir = downloadsDir) =>
-    `${dir}/${d.movie.title} (${d.movie.year}) [${d.quality}]`;
-  const inDir = (path: string, dir: string) => path === dir || path.startsWith(`${dir}/`);
+    `${dir}${sep}${d.movie.title} (${d.movie.year}) [${d.quality}]`;
+  const inDir = (path: string, dir: string) => samePath(path, dir) || path.startsWith(`${dir}${sep}`);
 
   const downloads = new Map<string, Download>();
   const seedDownload = (id: number, quality: string, state: Download["state"], fraction: number) => {
@@ -228,7 +257,7 @@ export function createMockBackend(): MockBackend {
       downSpeedBps: state === "active" ? 5.2 * 1024 * 1024 : 0,
       peers: state === "active" ? 41 : 0,
       etaS: state === "active" ? 240 : null,
-      path: `${DEFAULT_DOWNLOADS_DIR}/${m.title} (${m.year}) [${quality}]`,
+      path: `${DEFAULT_DOWNLOADS_DIR}${sep}${m.title} (${m.year}) [${quality}]`,
       error: null,
       addedAt: iso(90),
     });
@@ -692,11 +721,11 @@ export function createMockBackend(): MockBackend {
         cacheDir: patch.cacheDir === null ? folders.cacheDir : (patch.cacheDir ?? settings.cacheDir),
       };
       for (const [key, raw] of Object.entries(next)) {
-        if (!raw.startsWith("/")) fail("invalid_input", `${key} must be an absolute path`);
+        if (!isAbsolute(raw)) fail("invalid_input", `${key} must be an absolute path`);
         if (raw.includes(UNWRITABLE_DIR_MARK)) fail("invalid_input", `${key} is not writable`);
       }
-      next.downloadsDir = next.downloadsDir.replace(/\/+$/, "");
-      next.cacheDir = next.cacheDir.replace(/\/+$/, "");
+      next.downloadsDir = trimTrailingSeparators(next.downloadsDir);
+      next.cacheDir = trimTrailingSeparators(next.cacheDir);
       if (inDir(next.downloadsDir, next.cacheDir) || inDir(next.cacheDir, next.downloadsDir))
         fail("invalid_input", "downloadsDir and cacheDir must not contain each other");
       // A new cache folder starts empty (the old one is dropped); downloads stay where they are.
@@ -709,7 +738,9 @@ export function createMockBackend(): MockBackend {
     },
     get_storage_usage: () => {
       const all = [...downloads.values()];
-      const free = (dir: string) => (dir.startsWith("/media/") ? 900 : 180) * GiB;
+      // Another disk (where the picker points) has more room than the system one.
+      const free = (dir: string) =>
+        (dir.startsWith(platform === "windows" ? "D:\\" : "/media/") ? 900 : 180) * GiB;
       return {
         cacheBytes,
         cacheLimitBytes: settings.cacheLimitBytes,
@@ -733,8 +764,8 @@ export function createMockBackend(): MockBackend {
 
     get_app_info: () => ({
       version: MOCK_APP_VERSION,
-      logsDir: "/home/usuario/.local/state/yts-player/logs",
-      dataDir: MOCK_DATA_DIR,
+      logsDir: paths.logsDir,
+      dataDir: paths.dataDir,
       repoUrl: "https://github.com/GabJS10/yts-movie-player",
     }),
     check_for_update: () => (offline ? null : mockUpdate),
@@ -746,7 +777,7 @@ export function createMockBackend(): MockBackend {
     if (cmd === "plugin:dialog|open") {
       // Folder picker (Ajustes › Almacenamiento) or subtitle file picker.
       const options = (args as { options?: { directory?: boolean } } | undefined)?.options;
-      return options?.directory ? MOCK_PICKED_FOLDER : "/home/usuario/Descargas/Interstellar.2014.es.srt";
+      return options?.directory ? paths.picked : paths.subtitleFile;
     }
     if (cmd === "plugin:opener|open_url") return undefined;
     if (!(cmd in handlers)) fail("internal", `mock: unknown command ${cmd}`);

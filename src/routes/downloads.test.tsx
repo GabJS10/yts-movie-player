@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Download, MovieDetail } from "../api/types";
 import { formatBytes } from "../lib/format";
 import { toSummary } from "../lib/movie";
-import { MOCK_DATA_DIR } from "../mocks/backend";
+import { MOCK_DATA_DIR, MOCK_PATHS } from "../mocks/backend";
 import { renderApp } from "../test/render";
 
 // Mock: The Dark Knight and Coco downloading, The Shawshank Redemption paused, Spider-Verse (4K) stalled,
@@ -182,6 +182,20 @@ describe("/downloads", () => {
     expect(within(summary).getByText(`${MOCK_DATA_DIR}/library`)).toBeInTheDocument();
     expect(within(summary).getByRole("meter", { name: "Uso de la caché" })).toBeInTheDocument();
     expect(within(summary).getByText("No se comparte al terminar")).toBeInTheDocument();
+  });
+
+  it("shows a Windows library folder keeping its last folder visible when cut", async () => {
+    await renderApp("/downloads", { platform: "windows" });
+    const summary = (await screen.findByText("Biblioteca")).closest("dl") as HTMLElement;
+    const dir = `${MOCK_PATHS.windows.dataDir}\\library`;
+    // Whole for screen readers and the tooltip; drawn as the cuttable part + the last folder.
+    const path = await within(summary).findByText(dir);
+    const shown = path.closest("[data-path]") as HTMLElement;
+    expect(shown).toHaveAttribute("title", dir);
+    expect([...shown.querySelectorAll("[aria-hidden]")].map((e) => e.textContent)).toEqual([
+      `${MOCK_PATHS.windows.dataDir}\\`,
+      "library",
+    ]);
   });
 
   it("has an empty state", async () => {

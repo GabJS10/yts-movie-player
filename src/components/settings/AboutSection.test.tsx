@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { MOCK_APP_VERSION, setMockUpdate } from "../../mocks/backend";
+import { MOCK_APP_VERSION, MOCK_PATHS, setMockUpdate } from "../../mocks/backend";
 import { renderApp } from "../../test/render";
 
 const NEW = {
@@ -41,10 +41,18 @@ describe("Ajustes › Acerca de", () => {
       ]),
     );
     expect(calls.some((c) => c.cmd === "open_logs_folder")).toBe(true);
-    expect(within(section).getByText("/home/usuario/.local/state/yts-player/logs")).toBeInTheDocument();
+    expect(within(section).getByText(MOCK_PATHS.linux.logsDir)).toBeInTheDocument();
     for (const name of ["YTS", "OpenSubtitles", "librqbit", "Tauri"])
       expect(within(section).getByRole("button", { name })).toBeInTheDocument();
     expect(within(section).getByText(/no aloja ni distribuye películas/)).toBeInTheDocument();
+  });
+
+  it("shows the logs folder the backend reports on Windows", async () => {
+    await renderApp("/settings#s-about", { platform: "windows" });
+    const section = await screen.findByRole("region", { name: "Acerca de" });
+    expect(
+      await within(section).findByText("C:\\Users\\usuario\\AppData\\Local\\yts-player\\logs"),
+    ).toBeInTheDocument();
   });
 
   it("explains a logs folder that can't open", async () => {

@@ -7,6 +7,7 @@ import { formatBytes } from "../lib/format";
 import {
   FULL_DIR_MARK,
   MOCK_DATA_DIR,
+  MOCK_PATHS,
   MOCK_PICKED_FOLDER,
   QUOTA_KEY,
   UNMOUNTED_DIR_MARK,
@@ -336,11 +337,13 @@ describe("/settings", () => {
 
   describe("Carpetas", () => {
     const folder = (name: string) => screen.getByRole("textbox", { name });
+    /** The whole path the field shows (it may draw it cut). */
+    const folderPath = (name: string) => folder(name).querySelector("[data-path]")?.getAttribute("data-path");
 
     it("shows both folders with their disk's free space and what they hold; defaults have no Restablecer", async () => {
       await open();
-      expect(folder("Carpeta de descargas")).toHaveValue(`${MOCK_DATA_DIR}/library`);
-      expect(folder("Carpeta de la caché de streaming")).toHaveValue(`${MOCK_DATA_DIR}/cache`);
+      expect(folderPath("Carpeta de descargas")).toBe(`${MOCK_DATA_DIR}/library`);
+      expect(folderPath("Carpeta de la caché de streaming")).toBe(`${MOCK_DATA_DIR}/cache`);
       expect(await screen.findAllByText(/^Libre en ese disco: 180,0 GB · Ocupa:/)).toHaveLength(2);
       expect(screen.queryByRole("button", { name: /^Restablecer/ })).toBeNull();
       expect(screen.queryByText(/Descargas en otra carpeta/)).toBeNull();
@@ -355,15 +358,58 @@ describe("/settings", () => {
       };
       expect(picker.options).toMatchObject({ directory: true, defaultPath: `${MOCK_DATA_DIR}/library` });
       expect(patches(calls).at(-1)).toEqual({ downloadsDir: MOCK_PICKED_FOLDER });
-      expect(folder("Carpeta de descargas")).toHaveValue(MOCK_PICKED_FOLDER);
+      expect(folderPath("Carpeta de descargas")).toBe(MOCK_PICKED_FOLDER);
       expect(await screen.findByText(/^Libre en ese disco: 900,0 GB/)).toBeInTheDocument();
       // The existing downloads stayed in the old folder: offer to move them.
       expect(await screen.findByText(/5 descargas siguen en una carpeta anterior/)).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Restablecer la carpeta de descargas" }));
       expect(patches(calls).at(-1)).toEqual({ downloadsDir: null });
-      await waitFor(() => expect(folder("Carpeta de descargas")).toHaveValue(`${MOCK_DATA_DIR}/library`));
+      await waitFor(() => expect(folderPath("Carpeta de descargas")).toBe(`${MOCK_DATA_DIR}/library`));
       await waitFor(() => expect(screen.queryByText(/Descargas en otra carpeta/)).toBeNull());
+    });
+
+    describe("on Windows", () => {
+      const WIN = MOCK_PATHS.windows;
+
+      it("shows the %LOCALAPPDATA% folders as the defaults, whole, with no Restablecer", async () => {
+        await open({ platform: "windows" });
+        expect(WIN.dataDir).toBe("C:\\Users\\usuario\\AppData\\Local\\yts-player");
+        expect(folderPath("Carpeta de descargas")).toBe(`${WIN.dataDir}\\library`);
+        expect(folder("Carpeta de descargas").querySelector("[title]")).toHaveAttribute(
+          "title",
+          `${WIN.dataDir}\\library`,
+        );
+        expect(folderPath("Carpeta de la caché de streaming")).toBe(`${WIN.dataDir}\\cache`);
+        expect(await screen.findAllByText(/^Libre en ese disco: 180,0 GB/)).toHaveLength(2);
+        expect(screen.queryByRole("button", { name: /^Restablecer/ })).toBeNull();
+      });
+
+      it("takes a folder on another drive, then goes back to the default", async () => {
+        const user = userEvent.setup();
+        const { calls } = await open({ platform: "windows" });
+        await user.click(screen.getByRole("button", { name: "Cambiar la carpeta de descargas" }));
+        expect(patches(calls).at(-1)).toEqual({ downloadsDir: "D:\\Películas" });
+        await waitFor(() => expect(folderPath("Carpeta de descargas")).toBe("D:\\Películas"));
+        expect(await screen.findByText(/^Libre en ese disco: 900,0 GB/)).toBeInTheDocument();
+        expect(await screen.findByText(/5 descargas siguen en una carpeta anterior/)).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Restablecer la carpeta de descargas" }));
+        expect(patches(calls).at(-1)).toEqual({ downloadsDir: null });
+        await waitFor(() => expect(folderPath("Carpeta de descargas")).toBe(`${WIN.dataDir}\\library`));
+      });
+
+      it("treats a differently-cased default as the default (no Restablecer)", async () => {
+        await open({
+          platform: "windows",
+          before: (b) =>
+            b.handle("update_settings", {
+              patch: { downloadsDir: "c:\\users\\USUARIO\\appdata\\local\\yts-player\\Library\\" },
+            }),
+        });
+        await screen.findAllByText(/^Libre en ese disco/);
+        expect(screen.queryByRole("button", { name: "Restablecer la carpeta de descargas" })).toBeNull();
+      });
     });
 
     it("explains a folder the backend refuses and keeps the old one", async () => {
@@ -373,7 +419,7 @@ describe("/settings", () => {
       });
       await user.click(screen.getByRole("button", { name: "Cambiar la carpeta de la caché de streaming" }));
       expect(await screen.findByRole("alert")).toHaveTextContent("No se puede usar esa carpeta");
-      expect(folder("Carpeta de la caché de streaming")).toHaveValue(`${MOCK_DATA_DIR}/cache`);
+      expect(folderPath("Carpeta de la caché de streaming")).toBe(`${MOCK_DATA_DIR}/cache`);
     });
 
     it("warns when a folder isn't available", async () => {

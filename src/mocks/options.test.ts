@@ -13,7 +13,13 @@ describe("mock options (e2e scenarios)", () => {
       settings: null,
       trailer: "youtube",
       update: null,
+      platform: "linux",
     });
+  });
+
+  it("mock:platform=windows reports Windows folders; anything else is Linux", () => {
+    expect(readMockOptions("?mock:platform=windows", null).platform).toBe("windows");
+    expect(readMockOptions("?mock:platform=mac", null).platform).toBe("linux");
   });
 
   it("reads localStorage, and the URL wins", () => {

@@ -12,6 +12,7 @@ import type { Download } from "../api/types";
 import { ErrorState } from "../components/ErrorState";
 import { Icon } from "../components/Icon";
 import { Poster } from "../components/Poster";
+import { PathText } from "../components/PathText";
 import { RemoveDownloadDialog } from "../components/RemoveDownloadDialog";
 import { Usage } from "../components/settings/StorageSection";
 import {
@@ -104,7 +105,7 @@ function StorageSummary({ downloads }: { downloads: Download[] }) {
             ? `${formatBytes(usage.libraryBytes)} · ${libraryCount === 1 ? "1 película" : `${libraryCount} películas`}`
             : "—"
         }
-        note={settings?.downloadsDir}
+        note={settings && <PathText path={settings.downloadsDir} />}
       />
       <Usage
         label="Caché de streaming"

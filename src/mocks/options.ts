@@ -1,4 +1,5 @@
 import type { ErrorCode, SettingsPatch } from "../api/types";
+import type { MockPlatform } from "./backend";
 
 // Mock scenario knobs for `npm run dev` and the Playwright e2e (e2e/ui). Each one can come from the page
 // URL (`?mock:offline=1&mock:fail=add_favorite`, read once at start; wins) or from localStorage (same
@@ -19,6 +20,8 @@ export type MockOptions = {
   trailer: "youtube" | "fake" | number;
   /** check_for_update answers this newer version (e.g. "1.1.0"); null = up to date. */
   update: string | null;
+  /** Which OS's folders the mock reports (Windows: C:\Users\usuario\AppData\Local\yts-player\…). */
+  platform: MockPlatform;
 };
 
 export const MOCK_KEYS = [
@@ -29,6 +32,7 @@ export const MOCK_KEYS = [
   "mock:settings",
   "mock:trailer",
   "mock:update",
+  "mock:platform",
 ] as const;
 
 /** `add_favorite,start_stream=no_peers` → add_favorite: db, start_stream: no_peers. */
@@ -73,6 +77,7 @@ export function readMockOptions(search: string, storage: Pick<Storage, "getItem"
     settings,
     trailer: trailerRaw === "fake" ? "fake" : trailerCode !== null ? trailerCode : "youtube",
     update: get("mock:update")?.trim() || null,
+    platform: get("mock:platform") === "windows" ? "windows" : "linux",
   };
 }
 
