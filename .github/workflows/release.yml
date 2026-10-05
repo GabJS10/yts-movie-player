@@ -171,6 +171,8 @@ jobs:
         run: |
           w() { cygpath -w "$1"; }
           echo "RUSTFLAGS=--remap-path-prefix=$(w "$USERPROFILE/.cargo/registry/src")=/cargo/registry --remap-path-prefix=$(w "$USERPROFILE/.cargo/git")=/cargo/git --remap-path-prefix=$(w "$USERPROFILE/.rustup")=/rustup --remap-path-prefix=$(w "$GITHUB_WORKSPACE")=/build" >> "$GITHUB_ENV"
+          # C dependencies (aws-lc's asserts use __FILE__): MSVC's equivalent of the remap.
+          echo "CFLAGS=/d1trimfile:$(w "$USERPROFILE")\\ /d1trimfile:$(w "$GITHUB_WORKSPACE")\\" >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -189,6 +191,7 @@ jobs:
         run: |
           n=$(grep -a -c -i "runneradmin" src-tauri/target/release/yts-player.exe || true)
           echo "lines with the runner's user dir: $n"
+          grep -a -o -i "[A-Za-z0-9:._/\\-]*runneradmin[A-Za-z0-9:._/\\-]*" src-tauri/target/release/yts-player.exe | head -5 || true
           test "$n" -eq 0
       - uses: actions/upload-artifact@v4
         with:
