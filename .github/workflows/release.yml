@@ -128,7 +128,7 @@ jobs:
         run: |
           # AppImages leave out graphics-driver libraries (EGL/GL) on purpose: every desktop
           # has them, a headless runner does not.
-          sudo apt-get update && sudo apt-get install -y xvfb libegl1 libgl1 libgl1-mesa-dri
+          sudo apt-get update && sudo apt-get install -y xvfb libegl1 libgles2 libgl1 libgl1-mesa-dri
           chmod +x smoke/*.AppImage
           cd smoke && ./*.AppImage --appimage-extract >/dev/null && cd ..
           export XDG_DATA_HOME="$RUNNER_TEMP/data" XDG_STATE_HOME="$RUNNER_TEMP/state"
