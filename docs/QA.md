@@ -87,6 +87,7 @@ Se instala el `.exe` del borrador de la release (o del artefacto `smoke-windows`
 - [ ] Versión 2160p x265: si no se reproduce, aparece "Abrir en VLC" **sin audio de fondo**; VLC abre con los subtítulos y el retraso. Si está la extensión HEVC, anotar si se reproduce en la app.
 - [ ] Descargar, pausar, cerrar la app, reabrir y reanudar; reproducir sin conexión (Wi-Fi apagado).
 - [ ] Ajustes → carpetas: rutas `C:\…` legibles; cambiar descargas a otro disco (D:, USB) y mover las existentes; quitar el USB → "no disponible"; volver a conectarlo.
+- [ ] Quitar el USB **con una descarga activa** en él (no se automatiza en Windows): la descarga pasa a "no disponible" sin cuelgues ni errores sueltos, y al reconectarlo se puede reanudar.
 - [ ] Vaciar caché mientras VLC tiene abierto un archivo: no falla, lo que está en uso se borra después.
 - [ ] Ajustes → Acerca de: versión, "Abrir carpeta de registros" abre `%LOCALAPPDATA%\yts-player\logs` con archivos.
 - [ ] Espacio libre de los discos correcto en Ajustes (no 0).
