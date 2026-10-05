@@ -299,12 +299,20 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 
 ---
 
-## Más allá de la v1.0 (backlog, sin fecha)
-- Build para macOS (WKWebView tiene su propio soporte de códecs; hay que revisar HEVC).
+## Siguientes fases (backlog, sin fecha)
+
+Propuestas tras la v1.1.0, en el orden recomendado (pendiente de que el usuario elija):
+
+| # | Propuesta | Tamaño | Quién | Notas |
+|---|---|---|---|---|
+| 1 | **Error de certificado ≠ "Sin conexión"** | Pequeña (v1.1.1 o v1.2) | backend + frontend | Con la fecha y hora del equipo desfasadas TLS falla y hoy la app dice "Sin conexión" (visto en la QA de la v1.1 en un portátil). Código de error propio en el IPC para certificado aún no válido o caducado (`reqwest`/rustls) y un mensaje del tipo "No se pudo verificar la conexión segura: revisa la fecha y hora del equipo". |
+| 2 | **libmpv integrado** | Grande | backend + frontend + plan | Reproducir HEVC/x265 (los 2160p) dentro de la app sin VLC. Lo difícil: renderizar mpv dentro de la ventana de Tauri en Linux y en Windows, y empaquetar libmpv en los instaladores. La mejora más visible para el usuario. |
+| 3 | **macOS** | Mediana | plan + backend | Necesita un Mac para la QA manual y la cuenta de desarrollador de Apple (99 USD/año) para firmar y notarizar; sin eso Gatekeeper la bloquea. WKWebView: revisar códecs (HEVC sí suele estar). |
+| 4 | **Auto-actualización** (`tauri-plugin-updater`) | Mediana | backend + frontend + plan | Firma de las actualizaciones con una clave propia gratuita (no hace falta certificado comercial); `release.yml` publica el `latest.json`. Hoy solo hay aviso de versión nueva. |
+
+Recomendación: la 1 como fase corta y después elegir entre la 2 y la 4.
+
+Otras ideas:
 - Firma de código en Windows (Azure Trusted Signing o certificado OV) para quitar el aviso de SmartScreen.
-- **Error de certificado ≠ "Sin conexión":** con la fecha y hora del equipo desfasadas, TLS falla y hoy la app muestra "Sin conexión" (visto en la QA de la v1.1 en un portátil). Distinguir el error de certificado (`reqwest`/rustls: certificado aún no válido o caducado) con un código propio en el IPC y un mensaje del tipo "No se pudo verificar la conexión segura: revisa la fecha y hora del equipo".
-- Integrar libmpv para reproducir HEVC/x265 dentro de la app sin VLC.
-- Auto-actualizaciones (`tauri-plugin-updater`).
 - Varios idiomas de subtítulos al mismo tiempo y subtítulos generados en local.
-- Recomendaciones según el historial.
 - Perfiles de usuario.
