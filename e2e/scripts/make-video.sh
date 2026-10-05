@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Generates the short H.264/AAC MP4 the local seeder shares in the real-app E2E.
-# Output: e2e/.cache/sample.mp4 (git-ignored). Needs ffmpeg.
+# Output: e2e/.cache/sample.mp4 (git-ignored), or the path given as $1. Needs ffmpeg.
+# On Windows pass $1 with forward slashes (D:/a/…): Git Bash and the native ffmpeg both take it.
 set -euo pipefail
-out="$(dirname "$0")/../.cache/sample.mp4"
+out="${1:-$(dirname "$0")/../.cache/sample.mp4}"
 mkdir -p "$(dirname "$out")"
 [ -s "$out" ] && { echo "$out"; exit 0; }
 ffmpeg -loglevel error -y \

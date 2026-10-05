@@ -1,7 +1,7 @@
 name: Release
 
-# Push a tag vX.Y.Z (after scripts/bump-version.sh X.Y.Z) to build the Linux packages,
-# create a DRAFT GitHub release with them and smoke-test the installed app.
+# Push a tag vX.Y.Z (after scripts/bump-version.sh X.Y.Z) to build the Linux packages and
+# the Windows installer, put them in a DRAFT GitHub release and smoke-test the installed app.
 # The draft is published by hand once the smoke tests pass and the packages were tried.
 on:
   push:
@@ -22,6 +22,8 @@ jobs:
   build:
     name: Build packages (Ubuntu 22.04)
     runs-on: ubuntu-22.04
+    outputs:
+      releaseId: ${{ steps.tauri.outputs.releaseId }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,12 +49,13 @@ jobs:
       - name: Remap source paths
         run: echo "RUSTFLAGS=--remap-path-prefix=$HOME/.cargo/registry/src=/cargo/registry --remap-path-prefix=$HOME/.cargo/git=/cargo/git --remap-path-prefix=$HOME/.rustup=/rustup --remap-path-prefix=$GITHUB_WORKSPACE=/build" >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ env.TAG }}
           releaseName: "YTS Player ${{ env.TAG }}"
-          releaseBody: "Ver CHANGELOG.md. Paquetes para Linux: .deb (Debian/Ubuntu/Mint), .rpm (Fedora/openSUSE) y AppImage (cualquier distro)."
+          releaseBody: "Ver CHANGELOG.md. Windows 10/11: instalador .exe. Linux: .deb (Debian/Ubuntu/Mint), .rpm (Fedora/openSUSE) y AppImage (cualquier distro)."
           releaseDraft: true
           prerelease: ${{ contains(env.TAG, '-') }}
           args: --bundles deb,rpm,appimage
@@ -141,3 +144,98 @@ jobs:
           sleep 10
           pgrep -f squashfs-root/ >/dev/null || { echo "the app exited"; show_logs; exit 1; }
           show_logs
+
+  build-windows:
+    name: Build installer (Windows)
+    # After the Linux build, which creates the draft: this job adds the .exe to it.
+    needs: build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release
+      - run: npm ci
+      - name: Remap source paths
+        run: |
+          w() { cygpath -w "$1"; }
+          echo "RUSTFLAGS=--remap-path-prefix=$(w "$USERPROFILE/.cargo/registry/src")=/cargo/registry --remap-path-prefix=$(w "$USERPROFILE/.cargo/git")=/cargo/git --remap-path-prefix=$(w "$USERPROFILE/.rustup")=/rustup --remap-path-prefix=$(w "$GITHUB_WORKSPACE")=/build" >> "$GITHUB_ENV"
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.build.outputs.releaseId }}
+          args: --bundles nsis
+      - name: Build the E2E seeder and tauri-driver
+        working-directory: src-tauri
+        run: |
+          cargo build --example e2e_seeder
+          cargo install tauri-driver msedgedriver-tool --locked --root "$RUNNER_TEMP/tools"
+          mkdir -p "$RUNNER_TEMP/smoke"
+          cp target/debug/examples/e2e_seeder.exe "$RUNNER_TEMP/tools/bin/tauri-driver.exe" "$RUNNER_TEMP/tools/bin/msedgedriver-tool.exe" "$RUNNER_TEMP/smoke/"
+          cp target/release/bundle/nsis/*.exe "$RUNNER_TEMP/smoke/"
+      - name: No build-machine paths in the release binary
+        run: |
+          n=$(grep -a -c -i "runneradmin" src-tauri/target/release/yts-player.exe || true)
+          echo "lines with the runner's user dir: $n"
+          test "$n" -eq 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-windows
+          path: ${{ runner.temp }}/smoke
+          retention-days: 7
+
+  smoke-windows:
+    name: Smoke test Windows installer
+    needs: build-windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke-windows
+          path: smoke
+      - name: Silent install (per user, no admin)
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem smoke/*-setup.exe | Select-Object -First 1
+          Write-Host "installer: $($installer.Name)"
+          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
+          $app = Join-Path $env:LOCALAPPDATA 'YTS Player\yts-player.exe'
+          if (-not (Test-Path $app)) { Get-ChildItem $env:LOCALAPPDATA -Recurse -Filter yts-player.exe -ErrorAction SilentlyContinue | Select-Object FullName; throw "not installed at $app" }
+          Get-ChildItem (Split-Path $app)
+          Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter *.lnk | Where-Object Name -like '*YTS*' | Select-Object FullName
+          "E2E_APP_BINARY=$app" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          path: repo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: choco install ffmpeg -y --no-progress
+      - name: msedgedriver matching WebView2
+        run: |
+          cd smoke && ./msedgedriver-tool.exe
+          echo "E2E_NATIVE_DRIVER=$(cygpath -w "$PWD/msedgedriver.exe")" >> "$GITHUB_ENV"
+      - run: npm ci
+        working-directory: repo/e2e
+      - name: E2E on the installed app (offline)
+        working-directory: repo/e2e
+        run: |
+          export E2E_SEEDER_BINARY="$(cygpath -w "$GITHUB_WORKSPACE/smoke/e2e_seeder.exe")"
+          export TAURI_DRIVER_BINARY="$(cygpath -w "$GITHUB_WORKSPACE/smoke/tauri-driver.exe")"
+          npm run app

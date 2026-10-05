@@ -3,12 +3,14 @@
 // Everything runs offline and isolated:
 // - a local seeder (cargo example e2e_seeder) shares a short H.264 MP4,
 // - a fake YTS API (fake-yts.mjs) points the first movie at that torrent,
-// - the app gets its own XDG_DATA_HOME, so the user's data is never touched.
+// - the app gets its own data folder (YTS_PLAYER_DATA_DIR), so the user's data is never touched.
 //
 // Prerequisites: `e2e/scripts/build-app.sh` (debug build with the frontend embedded),
-// `cargo install tauri-driver --locked`, WebKitWebDriver (apt: webkit2gtk-driver), ffmpeg.
+// `cargo install tauri-driver --locked`, ffmpeg, and the platform's WebDriver: WebKitWebDriver
+// on Linux (apt: webkit2gtk-driver), msedgedriver matching the WebView2 version on Windows
+// (E2E_NATIVE_DRIVER, or msedgedriver on the PATH).
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, statSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, statSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 import os from "node:os";
 import path from "node:path";
@@ -17,11 +19,15 @@ import { startFakeYts } from "./fake-yts.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
+const exe = process.platform === "win32" ? ".exe" : "";
 // E2E_APP_BINARY / E2E_SEEDER_BINARY: run against an installed package (release smoke test).
-const application = process.env.E2E_APP_BINARY ?? path.join(root, "src-tauri/target/e2e/debug/yts-player");
+const application = process.env.E2E_APP_BINARY ?? path.join(root, `src-tauri/target/e2e/debug/yts-player${exe}`);
 const seederBin =
-  process.env.E2E_SEEDER_BINARY ?? path.join(root, "src-tauri/target/e2e/debug/examples/e2e_seeder");
-const tauriDriverBin = process.env.TAURI_DRIVER_BINARY ?? path.join(os.homedir(), ".cargo/bin/tauri-driver");
+  process.env.E2E_SEEDER_BINARY ?? path.join(root, `src-tauri/target/e2e/debug/examples/e2e_seeder${exe}`);
+const tauriDriverBin =
+  process.env.TAURI_DRIVER_BINARY ?? path.join(os.homedir(), `.cargo/bin/tauri-driver${exe}`);
+// Windows: tauri-driver drives msedgedriver, which must match the installed WebView2.
+const nativeDriverArgs = process.env.E2E_NATIVE_DRIVER ? ["--native-driver", process.env.E2E_NATIVE_DRIVER] : [];
 
 let seeder: ChildProcess | undefined;
 let tauriDriver: ChildProcess | undefined;
@@ -50,13 +56,18 @@ function startSeeder(video: string): Promise<SeederInfo> {
 }
 
 async function prepare() {
-  const video = execFileSync(path.join(root, "e2e/scripts/make-video.sh"), { encoding: "utf8" }).trim();
+  // Through bash: Windows cannot run a .sh directly (Git Bash provides bash on the runners).
+  const sample = path.join(root, "e2e/.cache/sample.mp4");
+  mkdirSync(path.dirname(sample), { recursive: true });
+  const toBash = (p: string) => p.replaceAll("\\", "/");
+  execFileSync("bash", [toBash(path.join(root, "e2e/scripts/make-video.sh")), toBash(sample)], { stdio: "inherit" });
+  const video = sample;
   const info = await startSeeder(video);
   const yts = await startFakeYts({ seeder: { ...info, sizeBytes: statSync(video).size } });
   fakeYts = yts;
   dataHome = mkdtempSync(path.join(os.tmpdir(), "yts-e2e-"));
   // Inherited by the workers, then by tauri-driver and the app.
-  process.env.XDG_DATA_HOME = dataHome;
+  process.env.YTS_PLAYER_DATA_DIR = dataHome;
   process.env.YTS_PLAYER_API_BASE_URLS = yts.baseUrl;
   process.env.YTS_PLAYER_NO_DHT = "1";
   process.env.E2E_PLAYABLE_MOVIE_ID = String(yts.playableId);
@@ -94,7 +105,7 @@ export const config: WebdriverIO.Config = {
   },
 
   beforeSession() {
-    tauriDriver = spawn(tauriDriverBin, [], { stdio: [null, process.stdout, process.stderr] });
+    tauriDriver = spawn(tauriDriverBin, nativeDriverArgs, { stdio: [null, process.stdout, process.stderr] });
   },
 
   afterSession() {
@@ -104,7 +115,14 @@ export const config: WebdriverIO.Config = {
   onComplete() {
     tauriDriver?.kill();
     fakeYts?.close();
-    seeder?.kill("SIGTERM");
-    if (dataHome) rmSync(dataHome, { recursive: true, force: true });
+    seeder?.kill(); // SIGTERM on Unix, TerminateProcess on Windows
+    // Windows may still hold files of the app that just closed: retry, then leave it.
+    if (dataHome) {
+      try {
+        rmSync(dataHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+      } catch (err) {
+        console.warn(`could not remove ${dataHome}: ${err}`);
+      }
+    }
   },
 };

@@ -125,3 +125,37 @@ jobs:
       - run: e2e/scripts/build-app.sh
       - run: xvfb-run -a npm run app
         working-directory: e2e
+
+  e2e-app-windows:
+    name: E2E app real Windows (WebdriverIO + tauri-driver + msedgedriver)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            e2e/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: e2e
+      - run: choco install ffmpeg -y --no-progress
+      - run: cargo install tauri-driver msedgedriver-tool --locked
+      # msedgedriver matching the runner's WebView2 version.
+      - name: Get msedgedriver
+        run: |
+          mkdir -p "$RUNNER_TEMP/edge" && cd "$RUNNER_TEMP/edge" && msedgedriver-tool
+          echo "E2E_NATIVE_DRIVER=$(cygpath -w "$RUNNER_TEMP/edge/msedgedriver.exe")" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm ci
+        working-directory: e2e
+      - run: e2e/scripts/build-app.sh
+      - run: npm run app
+        working-directory: e2e
