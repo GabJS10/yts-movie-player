@@ -302,6 +302,7 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 ## Más allá de la v1.0 (backlog, sin fecha)
 - Build para macOS (WKWebView tiene su propio soporte de códecs; hay que revisar HEVC).
 - Firma de código en Windows (Azure Trusted Signing o certificado OV) para quitar el aviso de SmartScreen.
+- **Error de certificado ≠ "Sin conexión":** con la fecha y hora del equipo desfasadas, TLS falla y hoy la app muestra "Sin conexión" (visto en la QA de la v1.1 en un portátil). Distinguir el error de certificado (`reqwest`/rustls: certificado aún no válido o caducado) con un código propio en el IPC y un mensaje del tipo "No se pudo verificar la conexión segura: revisa la fecha y hora del equipo".
 - Integrar libmpv para reproducir HEVC/x265 dentro de la app sin VLC.
 - Auto-actualizaciones (`tauri-plugin-updater`).
 - Varios idiomas de subtítulos al mismo tiempo y subtítulos generados en local.
