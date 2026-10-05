@@ -2,6 +2,18 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado [semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Windows
+- Instalador para Windows 10/11 (`.exe`, por usuario, sin administrador).
+- Datos, caché, descargas y logs en `%LOCALAPPDATA%\yts-player\`.
+- VLC y mpv se encuentran aunque no estén en el `PATH` (registro y Program Files) y se abren sin ventana de consola.
+- Mover descargas entre discos, espacio libre real y archivos en uso (VLC, el stream) que se reintentan en vez de fallar.
+
+### Cambios
+- Con una versión HEVC que la app no puede decodificar ya no sigue sonando el audio detrás de "Abrir en VLC".
+- Las rutas largas de las carpetas se recortan por el medio y siempre dejan ver la última carpeta.
+
 ## [1.0.0] - 2026-10-04
 
 Primera versión pública. Linux: `.deb`, `.rpm` y AppImage.

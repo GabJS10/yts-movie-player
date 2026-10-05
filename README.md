@@ -31,6 +31,13 @@
 - **Tráilers**, búsqueda con filtros, navegación completa con teclado y modo sin conexión.
 - Versiones x265/HEVC que la app no puede decodificar se abren en **VLC** con sus subtítulos.
 
+## Instalación (Windows 10/11)
+Descarga `YTS.Player_<versión>_x64-setup.exe` desde la [última release](https://github.com/GabJS10/yts-movie-player/releases/latest) y ábrelo. Se instala solo para tu usuario, sin permisos de administrador.
+
+- **"Windows protegió su PC":** el instalador no está firmado (un certificado de firma cuesta dinero). Pulsa **Más información → Ejecutar de todas formas**.
+- **Firewall:** al primer arranque Windows pregunta si `yts-player.exe` puede usar la red. Permítelo en redes privadas para conectar con más peers; si lo rechazas, el streaming funciona igual pero puede ir más lento.
+- Las versiones x265/HEVC se abren en **VLC** si está instalado (con la extensión HEVC de Microsoft algunas se reproducen en la propia app).
+
 ## Instalación (Linux)
 Descarga el paquete de tu distribución desde la [última release](https://github.com/GabJS10/yts-movie-player/releases/latest).
 
@@ -52,15 +59,17 @@ La app avisa cuando hay una versión nueva.
 Sin iniciar sesión, OpenSubtitles permite unas 5 descargas al día; con usuario y contraseña (opcionales, en el mismo lugar), unas 20. Un subtítulo ya descargado se guarda y no vuelve a gastar cupo. La key y las credenciales solo se guardan en tu equipo.
 
 ## Dónde guarda las cosas
-| Qué | Dónde |
-|---|---|
-| Ajustes, Mi lista, progreso, subtítulos | `~/.local/share/yts-player/` |
-| Caché de streaming (con límite, 10 GB por defecto) | `~/.local/share/yts-player/cache/` o la carpeta que elijas |
-| Descargas | `~/.local/share/yts-player/library/` o la carpeta que elijas |
-| Logs | `~/.local/state/yts-player/logs/` (Ajustes → Acerca de → Abrir carpeta de registros) |
+| Qué | Linux | Windows |
+|---|---|---|
+| Ajustes, Mi lista, progreso, subtítulos | `~/.local/share/yts-player/` | `%LOCALAPPDATA%\yts-player\` |
+| Caché de streaming (con límite, 10 GB por defecto) | `~/.local/share/yts-player/cache/` | `%LOCALAPPDATA%\yts-player\cache\` |
+| Descargas | `~/.local/share/yts-player/library/` | `%LOCALAPPDATA%\yts-player\library\` |
+| Logs | `~/.local/state/yts-player/logs/` | `%LOCALAPPDATA%\yts-player\logs\` |
+
+La caché y las descargas pueden ir a la carpeta (o el disco) que elijas en Ajustes. Los logs se abren desde Ajustes → Acerca de → Abrir carpeta de registros. Desinstalar la app no borra estos datos.
 
 ## Compilar desde el código
-Requisitos: Node 24, Rust estable y, en Ubuntu/Mint:
+Requisitos: Node 24, Rust estable y, en Windows, las Build Tools de Visual Studio (C++) con WebView2. En Ubuntu/Mint:
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libayatana-appindicator3-dev \
   gstreamer1.0-libav gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
@@ -68,7 +77,7 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev l
 ```bash
 npm install
 npm run tauri dev      # desarrollo
-npm run tauri build    # paquetes en src-tauri/target/release/bundle/
+npm run tauri build    # paquetes en src-tauri/target/release/bundle/ (.exe en Windows)
 ```
 Tests: `npm test`, `cd src-tauri && cargo test`, y los E2E en [`e2e/`](e2e/) (`npm run ui` con Playwright, `npm run app` con WebdriverIO sobre la app real). El proyecto se desarrolló por fases con varios agentes de IA coordinados; ver [`AGENTS.md`](AGENTS.md) y [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

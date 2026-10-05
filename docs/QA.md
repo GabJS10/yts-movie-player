@@ -1,6 +1,6 @@
 # QA manual
 
-Lista de verificación sobre la **app real** (`npm run tauri dev` o el `.deb`/AppImage) con torrents reales de YTS. Cubre lo que los E2E no pueden: la red real, los códecs, el rendimiento, el escritorio y los servicios externos. Se repasa completa antes de cada release (cierre de la fase 7 y de la fase 8) y por partes cuando se toca un área.
+Lista de verificación sobre la **app real** (`npm run tauri dev`, el `.deb`/AppImage o el instalador de Windows) con torrents reales de YTS. Cubre lo que los E2E no pueden: la red real, los códecs, el rendimiento, el escritorio y los servicios externos. Se repasa completa antes de cada release (cierre de la fase 7 y de la fase 8) y por partes cuando se toca un área.
 
 Cómo marcar: `[x]` bien, `[!]` falla (anotar el detalle debajo), `[-]` no aplica.
 
@@ -71,6 +71,28 @@ Cómo marcar: `[x]` bien, `[!]` falla (anotar el detalle debajo), `[-]` no aplic
 - [ ] Toda la app usable solo con teclado; foco visible en todo.
 - [ ] Contraste legible en textos secundarios; nada depende solo del color.
 - [ ] Las pantallas coinciden con el prototipo (`design/prototype/`); textos en español sin erratas.
+
+## 10. Windows (ronda en el Windows del usuario)
+Se instala el `.exe` del borrador de la release (o del artefacto `smoke-windows` del CI). Lo que no cambia respecto a Linux se repasa por encima; lo propio de Windows, con detalle. Anotar: versión de Windows, versión de WebView2 (`edge://version` no aplica: Ajustes → Aplicaciones → "Microsoft Edge WebView2 Runtime"), si hay VLC y la extensión HEVC.
+
+**Instalación**
+- [ ] SmartScreen: "Windows protegió su PC" → "Más información" → "Ejecutar de todas formas" (esperado sin firma). El instalador no pide administrador y está en español.
+- [ ] Acceso en el menú Inicio con el icono; la app abre sin ventana de consola.
+- [ ] Primer arranque: Windows Defender Firewall pregunta por `yts-player.exe`. Anotar qué se eligió (permitir en redes privadas).
+
+**Funciones**
+- [ ] Catálogo, búsqueda y ficha con imágenes; tráiler en el modal (sin error 153 ni pantalla negra).
+- [ ] Streaming 1080p x264: empieza, se adelanta a la mitad y al final, pantalla completa (F y doble clic), atajos.
+- [ ] Subtítulos en español; retraso; `.srt` propio arrastrado sobre el reproductor.
+- [ ] Versión 2160p x265: si no se reproduce, aparece "Abrir en VLC" **sin audio de fondo**; VLC abre con los subtítulos y el retraso. Si está la extensión HEVC, anotar si se reproduce en la app.
+- [ ] Descargar, pausar, cerrar la app, reabrir y reanudar; reproducir sin conexión (Wi-Fi apagado).
+- [ ] Ajustes → carpetas: rutas `C:\…` legibles; cambiar descargas a otro disco (D:, USB) y mover las existentes; quitar el USB → "no disponible"; volver a conectarlo.
+- [ ] Vaciar caché mientras VLC tiene abierto un archivo: no falla, lo que está en uso se borra después.
+- [ ] Ajustes → Acerca de: versión, "Abrir carpeta de registros" abre `%LOCALAPPDATA%\yts-player\logs` con archivos.
+- [ ] Espacio libre de los discos correcto en Ajustes (no 0).
+
+**Desinstalar**
+- [ ] Desinstalar desde Configuración → Aplicaciones: desaparece del menú Inicio; `%LOCALAPPDATA%\yts-player\` (datos y descargas) se conserva. Reinstalar: Mi lista y el progreso siguen.
 
 ## Registro
 | Fecha | Versión / commit | Quién | Resultado | Notas |
