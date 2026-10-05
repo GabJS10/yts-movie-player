@@ -48,6 +48,26 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
 
+  backend-windows:
+    name: Backend Windows (fmt, clippy, test)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: mkdir -p ../dist
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
   e2e-ui:
     name: E2E interfaz (Playwright WebKit + mocks)
     runs-on: ubuntu-24.04
