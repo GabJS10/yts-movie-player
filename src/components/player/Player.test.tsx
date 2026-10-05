@@ -156,8 +156,10 @@ describe("Player", () => {
   it("treats audio without picture (videoWidth 0) as a codec error", async () => {
     await startPlaying(x264);
     Object.defineProperty(video(), "videoWidth", { value: 0, configurable: true });
+    act(() => void video().play());
     fireEvent.loadedMetadata(video());
     await waitFor(() => expect(status()).toBe("codec-error"));
+    expect(video().paused).toBe(true); // no audio behind the error screen (Chromium plays it)
   });
 
   it("offers VLC from the buffer screen when the version is not likely playable", async () => {

@@ -265,13 +265,15 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
   const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>) => {
     const v = e.currentTarget;
     if (isAudioOnly(v)) {
+      // Chromium (WebView2) drops the HEVC track and would keep playing the audio behind the error.
+      v.pause();
       dispatch({ type: "codec-error" });
       return;
     }
     if (resumeAtS && resumeAtS < v.duration - 5) v.currentTime = resumeAtS;
     setTime({ current: v.currentTime, duration: v.duration });
   };
-  // WebKitGTK/GStreamer often recovers from a stall without firing `playing` again.
+  // WebKitGTK/GStreamer often recovers from a stall without firing `playing` again (harmless in Chromium).
   const onResumable = (e: SyntheticEvent<HTMLVideoElement>) => {
     if (!e.currentTarget.paused) dispatch({ type: "video-resumed" });
   };

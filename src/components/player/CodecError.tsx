@@ -10,7 +10,7 @@ type Props = {
   subtitles?: ExternalSubtitleArgs;
 };
 
-/** WebKitGTK can't decode this file (typically x265/HEVC): offer VLC and an x264 version. */
+/** The WebView can't decode this file (typically x265/HEVC): offer VLC and an x264 version. */
 export function CodecError({ movieId, torrent, alternative, subtitles }: Props) {
   return (
     <div role="alert" className="absolute inset-0 grid place-items-center p-6">

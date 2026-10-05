@@ -10,7 +10,7 @@ export type PlayerStatus =
   | "playing" // <video> mounted and playing (or about to)
   | "paused"
   | "waiting" // playback ran out of data
-  | "codec-error" // WebKitGTK can't decode this file
+  | "codec-error" // the WebView (WebKitGTK or WebView2) can't decode this file
   | "failed"; // start_stream failed
 
 export type PlayerState = {
@@ -149,11 +149,17 @@ export const PHASE_TEXT: Record<StreamPhase, string> = {
 const MEDIA_ERR_DECODE = 3;
 const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
 
-/** A <video> error that means "this codec won't play here" (vs. a network hiccup). */
+/**
+ * A <video> error that means "this codec won't play here" (vs. a network hiccup). WebView2/Chromium
+ * reports HEVC without a decoder as SRC_NOT_SUPPORTED (no supported streams) or DECODE.
+ */
 export const isCodecError = (code: number | undefined) =>
   code === MEDIA_ERR_DECODE || code === MEDIA_ERR_SRC_NOT_SUPPORTED;
 
-/** HEVC in WebKitGTK often plays audio with no picture: metadata loads with a 0×0 video track. */
+/**
+ * HEVC often plays audio with no picture (WebKitGTK, and Chromium/WebView2 without an HEVC decoder,
+ * which drops the track): metadata loads with a 0×0 video.
+ */
 export const isAudioOnly = (video: Pick<HTMLVideoElement, "videoWidth" | "videoHeight">) =>
   video.videoWidth === 0 || video.videoHeight === 0;
 
