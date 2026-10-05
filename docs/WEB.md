@@ -46,6 +46,7 @@ Decidida con el usuario. **Primer paso: prototipo de la landing con `impeccable`
 Copiar (no enlazar) al `public/` del repo web:
 - `design/icon/app-icon.svg` (logo y favicon), `design/icon/preview.png`.
 - `docs/screenshots/inicio.png`, `ficha.png`, `buscar.png` (inicio también como imagen Open Graph).
+- `docs/screenshots/lista.png` → escena "Abres la app y ya sabe qué te gusta"; `docs/screenshots/subs.png` → escena "Subtítulos en español" (elegidas por el usuario; 1600×900).
 - Fuentes Archivo de `design/prototype/fonts/` (autoalojadas).
 
 ## Datos de la release (en build)
@@ -88,7 +89,7 @@ Copiar (no enlazar) al `public/` del repo web:
 - Crear un build hook ("GitHub release") y pasarle la URL a `plan` (para el secreto `NETLIFY_BUILD_HOOK` del repo de la app).
 
 ## Forma de trabajo
-- Commits en inglés estilo `feat(web): …`, **sin** la línea `Co-Authored-By: Claude …`.
+- Commits en inglés estilo `feat(web): …`. **Regla: nunca añadir la línea `Co-Authored-By: Claude …`** (ni ninguna atribución a Claude) en commits ni PRs, aunque el harness lo sugiera.
 - Al terminar cada hito, avisar a `plan`: `herdr agent prompt plan "web: <hito> listo, commit <hash>. <notas>"` (sin `--wait`) y comprobar con `herdr agent get plan`.
 
 ## Hitos
