@@ -76,3 +76,4 @@ Cómo marcar: `[x]` bien, `[!]` falla (anotar el detalle debajo), `[-]` no aplic
 | Fecha | Versión / commit | Quién | Resultado | Notas |
 |---|---|---|---|---|
 | 2026-10-04 | `fase-7` | usuario | ✅ | Repaso de lo nuevo: tráiler en el modal, teclado, banner, sin peers (60 s), failover y API caída, cierre ordenado. Las secciones de fases anteriores se probaron en su fase. |
+| 2026-10-04 | `v1.0.0-rc.1` | usuario + CI | ✅ | `.deb` instalado en la máquina del usuario: menú, icono, catálogo, reproducción, datos conservados, Acerca de 1.0.0 y carpeta de registros. CI: `.deb` en Ubuntu limpio con E2E y AppImage arranca. |

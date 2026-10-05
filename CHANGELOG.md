@@ -2,7 +2,7 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado [semántico](https://semver.org/lang/es/).
 
-## [1.0.0] - sin publicar
+## [1.0.0] - 2026-10-04
 
 Primera versión pública. Linux: `.deb`, `.rpm` y AppImage.
 

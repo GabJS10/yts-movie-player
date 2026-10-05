@@ -20,7 +20,7 @@
 | 5 | Subtítulos | Subtítulos en español automáticos y sincronizados | ✅ Terminada (`fase-5`) |
 | 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | ✅ Terminada (`fase-6`) |
 | 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | ✅ Terminada (`fase-7`) |
-| 8 | Empaquetado y release v1.0 | `.deb` y AppImage publicados en GitHub Releases | ⏳ Siguiente |
+| 8 | Empaquetado y release v1.0 | `.deb`, `.rpm` y AppImage publicados en GitHub Releases | ✅ Terminada (`v1.0.0`) |
 
 ## Cómo se trabaja cada fase
 
@@ -238,7 +238,9 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Tests:** cada bug corregido con su test. Backend: recomendaciones (mezcla de motivos, descartes, sin historial, sin red), `no_peers`, cierre ordenado, variables de entorno y seeder. Frontend: carrusel (avance, pausa, reduced-motion), cadena del tráiler, pantallas de error, foco con flechas y filtros que se conservan.
 - **Cierre:** E2E de las dos capas en verde en el CI, el banner rota con recomendaciones y cambia entre arranques, cada `ErrorCode` tiene su pantalla o mensaje con acción, el tráiler se ve de alguna forma, los dos problemas de la fase 2 están resueltos y `QA.md` está repasado. Tag `fase-7`.
 
-## Fase 8: Empaquetado y release v1.0
+## Fase 8: Empaquetado y release v1.0 ✅
+
+**Resultado real:** `.deb` y `.rpm` de 9 MB y AppImage de 148 MB, compilados en Ubuntu 22.04 por `release.yml`. Smoke test en el CI: el `.deb` se instala en un Ubuntu 24.04 limpio y pasa los E2E sobre la app instalada; el AppImage arranca (en un runner sin escritorio necesita las librerías gráficas del sistema: EGL y GLES). Ensayo `v1.0.0-rc.1` probado por el usuario. Licencia MIT. De paso se encontró y rodeó un bug de librqbit (pieza perdida al pausar). Siguiente: Windows (v1.1).
 
 **Objetivo:** que la app se instale como cualquier otra y publicar la v1.0.0 en GitHub Releases ya verificada. Contrato: IPC v0.13 (sección Aplicación).
 
