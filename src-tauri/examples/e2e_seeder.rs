@@ -152,13 +152,31 @@ async fn run(args: Args) -> Result<(), Error> {
         })
     );
 
+    wait_for_stop().await?;
+    eprintln!("e2e_seeder: stopping");
+    session.stop().await;
+    Ok(())
+}
+
+/// SIGTERM or Ctrl+C on Unix; Ctrl+C or Ctrl+Break on Windows (where tests and CI stop
+/// it by killing the process).
+#[cfg(unix)]
+async fn wait_for_stop() -> std::io::Result<()> {
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {
         _ = term.recv() => {}
         _ = tokio::signal::ctrl_c() => {}
     }
-    eprintln!("e2e_seeder: stopping");
-    session.stop().await;
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn wait_for_stop() -> std::io::Result<()> {
+    let mut brk = tokio::signal::windows::ctrl_break()?;
+    tokio::select! {
+        _ = brk.recv() => {}
+        _ = tokio::signal::ctrl_c() => {}
+    }
     Ok(())
 }
 

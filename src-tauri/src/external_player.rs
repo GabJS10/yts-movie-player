@@ -10,6 +10,7 @@
 //! A subtitle problem never stops the player from opening: it opens without them and the
 //! result says why.
 
+use std::ffi::OsString;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
@@ -175,21 +176,83 @@ where
     }
 }
 
-/// Finds the player binary: a path, or a name looked up in `PATH`.
-pub fn resolve_player(command: &str) -> AppResult<PathBuf> {
-    find_in_path(command.trim()).ok_or_else(|| {
-        AppError::ExternalPlayerMissing(format!("{} not found in PATH", command.trim()))
-    })
+/// Where to look for a player.
+#[derive(Debug, Clone, Default)]
+pub struct PlayerSearch {
+    /// `PATH`.
+    pub path: Option<OsString>,
+    /// Extensions tried on a name without one (`PATHEXT` on Windows, none elsewhere).
+    pub exts: Vec<String>,
+    /// Folders tried before `PATH` (Windows: install folders of VLC or mpv).
+    pub known_dirs: Vec<PathBuf>,
 }
 
-/// Launches the player detached.
+impl PlayerSearch {
+    /// The real environment. On Windows a VLC is looked up in the registry
+    /// (`HKLM\SOFTWARE\VideoLAN\VLC`) and in `Program Files` (64 and 32 bit), and mpv in
+    /// `Program Files`, before `PATH`: their installers don't add themselves to it.
+    pub fn system(command: &str) -> Self {
+        let mut search = Self {
+            path: std::env::var_os("PATH"),
+            ..Self::default()
+        };
+        if cfg!(windows) {
+            search.exts = std::env::var("PATHEXT")
+                .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
+                .split(';')
+                .map(str::trim)
+                .filter(|e| e.starts_with('.') && e.len() > 1)
+                // Case doesn't matter on Windows; `vlc.exe` reads better in logs.
+                .map(str::to_ascii_lowercase)
+                .collect();
+            let program_files: Vec<PathBuf> = ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
+                .into_iter()
+                .filter_map(std::env::var_os)
+                .map(PathBuf::from)
+                .collect();
+            let (registry, sub_dir) = match player_kind(command) {
+                PlayerKind::Vlc => (
+                    crate::platform::registry_install_dirs(r"SOFTWARE\VideoLAN\VLC"),
+                    r"VideoLAN\VLC",
+                ),
+                PlayerKind::Mpv => (Vec::new(), "mpv"),
+                PlayerKind::Unknown => (Vec::new(), ""),
+            };
+            if !sub_dir.is_empty() {
+                let dirs = registry
+                    .into_iter()
+                    .chain(program_files.iter().map(|p| p.join(sub_dir)));
+                for dir in dirs {
+                    if !search.known_dirs.contains(&dir) {
+                        search.known_dirs.push(dir);
+                    }
+                }
+            }
+        }
+        search
+    }
+}
+
+/// Finds the player binary: a path, or a name looked up in the player's install folders
+/// (Windows) and in `PATH`.
+pub fn resolve_player(command: &str) -> AppResult<PathBuf> {
+    let command = command.trim();
+    find_player(command, &PlayerSearch::system(command), is_executable)
+        .ok_or_else(|| AppError::ExternalPlayerMissing(format!("{command} not found in PATH")))
+}
+
+/// Launches the player detached (on Windows without a console window, for console
+/// programs like `mpv.com`).
 pub fn launch(player: &Path, args: &[String]) -> AppResult<()> {
-    let mut child = tokio::process::Command::new(player)
+    let mut command = tokio::process::Command::new(player);
+    command
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    command.creation_flags(crate::platform::CREATE_NO_WINDOW);
+    let mut child = command.spawn()?;
     // Reap the process when it exits.
     tokio::spawn(async move {
         let _ = child.wait().await;
@@ -197,19 +260,53 @@ pub fn launch(player: &Path, args: &[String]) -> AppResult<()> {
     Ok(())
 }
 
-fn find_in_path(program: &str) -> Option<PathBuf> {
-    let candidate = Path::new(program);
+/// The first executable among: `program` itself if it is a path, else `program` in each
+/// of `known_dirs` and then of `PATH`. With `exts`, a name without one of them is tried
+/// with each (`vlc` → `vlc.exe`).
+pub fn find_player(
+    program: &str,
+    search: &PlayerSearch,
+    is_exec: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
     if program.is_empty() {
         return None;
     }
+    let names = candidate_names(program, &search.exts);
+    let candidate = Path::new(program);
     if candidate.components().count() > 1 {
-        return is_executable(candidate).then(|| candidate.to_path_buf());
+        let parent = candidate.parent().unwrap_or(Path::new(""));
+        return names.iter().map(|n| parent.join(n)).find(|p| is_exec(p));
     }
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|dir| dir.join(program))
-            .find(|p| is_executable(p))
-    })
+    let path_dirs = search
+        .path
+        .as_deref()
+        .map(|p| std::env::split_paths(p).collect::<Vec<_>>())
+        .unwrap_or_default();
+    search
+        .known_dirs
+        .iter()
+        .chain(&path_dirs)
+        .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
+        .find(|p| is_exec(p))
+}
+
+/// File names to try for `program`: itself when there are no `exts` or it already ends in
+/// one of them (any case), else `program` + each extension.
+fn candidate_names(program: &str, exts: &[String]) -> Vec<String> {
+    let file = Path::new(program)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let lower = file.to_ascii_lowercase();
+    if exts.is_empty()
+        || exts
+            .iter()
+            .any(|e| lower.ends_with(&e.to_ascii_lowercase()))
+    {
+        vec![file]
+    } else {
+        exts.iter().map(|e| format!("{file}{e}")).collect()
+    }
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -364,6 +461,94 @@ mod tests {
             resolve_player(""),
             Err(AppError::ExternalPlayerMissing(_))
         ));
+        #[cfg(unix)]
         assert!(resolve_player("sh").is_ok());
+    }
+
+    /// A fake install: `files` created (empty) under a temporary folder.
+    fn fake_tree(files: &[&str]) -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        for f in files {
+            let p = tmp.path().join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"").unwrap();
+        }
+        tmp
+    }
+
+    fn exts() -> Vec<String> {
+        vec![".com".into(), ".exe".into(), ".bat".into(), ".cmd".into()]
+    }
+
+    #[test]
+    fn finds_vlc_in_the_registry_or_program_files_before_path() {
+        let tmp = fake_tree(&[
+            "Registry VLC/vlc.exe",
+            "Program Files/VideoLAN/VLC/vlc.exe",
+            "bin/vlc.exe",
+        ]);
+        let t = tmp.path();
+        let is_file = |p: &Path| p.is_file();
+        let mut search = PlayerSearch {
+            path: Some(std::env::join_paths([t.join("empty"), t.join("bin")]).unwrap()),
+            exts: exts(),
+            known_dirs: vec![t.join("Registry VLC"), t.join("Program Files/VideoLAN/VLC")],
+        };
+        assert_eq!(
+            find_player("vlc", &search, is_file),
+            Some(t.join("Registry VLC").join("vlc.exe"))
+        );
+        search.known_dirs.remove(0);
+        assert_eq!(
+            find_player("vlc", &search, is_file),
+            Some(t.join("Program Files/VideoLAN/VLC").join("vlc.exe"))
+        );
+        search.known_dirs.clear();
+        assert_eq!(
+            find_player("vlc", &search, is_file),
+            Some(t.join("bin").join("vlc.exe"))
+        );
+        // Already with an extension (any case): not doubled.
+        assert_eq!(
+            find_player("VLC.EXE", &search, |p: &Path| p
+                .to_string_lossy()
+                .ends_with("VLC.EXE")),
+            Some(t.join("empty").join("VLC.EXE"))
+        );
+        assert_eq!(find_player("mpv", &search, is_file), None);
+    }
+
+    #[test]
+    fn pathext_order_and_explicit_paths() {
+        let tmp = fake_tree(&["bin/mpv.com", "bin/mpv.exe", "apps/vlc.exe"]);
+        let t = tmp.path();
+        let is_file = |p: &Path| p.is_file();
+        let search = PlayerSearch {
+            path: Some(t.join("bin").into_os_string()),
+            exts: vec![".com".into(), ".exe".into()],
+            known_dirs: Vec::new(),
+        };
+        // PATHEXT order: .com first.
+        assert_eq!(
+            find_player("mpv", &search, is_file),
+            Some(t.join("bin").join("mpv.com"))
+        );
+        // A path without extension gets them too; a path that does not exist is missing.
+        let explicit = t.join("apps").join("vlc");
+        assert_eq!(
+            find_player(&explicit.to_string_lossy(), &search, is_file),
+            Some(t.join("apps").join("vlc.exe"))
+        );
+        assert_eq!(
+            find_player(&t.join("apps/nope").to_string_lossy(), &search, is_file),
+            None
+        );
+        // Without extensions (Unix): only the exact name.
+        let unix = PlayerSearch {
+            exts: Vec::new(),
+            ..search.clone()
+        };
+        assert_eq!(find_player("mpv", &unix, is_file), None);
+        assert_eq!(find_player("", &unix, is_file), None);
     }
 }

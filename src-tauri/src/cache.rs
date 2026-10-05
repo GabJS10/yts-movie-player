@@ -90,30 +90,7 @@ fn allocated(meta: &std::fs::Metadata) -> u64 {
     meta.len()
 }
 
-/// Free space for the user on the filesystem that holds `path`.
-#[cfg(unix)]
-pub fn free_disk_bytes(path: &Path) -> u64 {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-    let Ok(c_path) = CString::new(path.as_os_str().as_bytes()) else {
-        return 0;
-    };
-    // SAFETY: `statvfs` only writes into the zeroed struct we pass; `c_path` is a valid
-    // NUL-terminated string that outlives the call.
-    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c_path.as_ptr(), &mut st) } != 0 {
-        return 0;
-    }
-    // The field types differ between platforms (u32 on some 32-bit targets).
-    #[allow(clippy::useless_conversion)]
-    let (avail, frsize) = (u64::from(st.f_bavail), u64::from(st.f_frsize));
-    avail.saturating_mul(frsize)
-}
-
-#[cfg(not(unix))]
-pub fn free_disk_bytes(_path: &Path) -> u64 {
-    0
-}
+pub use crate::platform::free_disk_bytes;
 
 /// The cache folder to use: `configured` when it exists and is writable, else `default`
 /// (created if needed). Returns `(folder, configured is available)`.

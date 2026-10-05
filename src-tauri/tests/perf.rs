@@ -14,6 +14,9 @@
 //! The seeders are separate processes (`examples/e2e_seeder`), so only the app side
 //! (engine, download manager, local HTTP server, DB) is measured.
 
+// Reads /proc and sends SIGTERM.
+#![cfg(target_os = "linux")]
+
 use std::io::{BufRead, BufReader};
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};

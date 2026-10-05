@@ -40,9 +40,19 @@ futures-util = "0.3.34"
 librqbit = { version = "=9.0.1", default-features = false, features = ["rust-tls"] }
 tokio-util = { version = "0.7.19", features = ["io"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
-libc = "0.2.190"
 tauri-plugin-dialog = "2"
 tracing-appender = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.190"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+] }
 
 
 # Smaller debug builds (target/ was 37 GB): line tables only for our crate (backtraces

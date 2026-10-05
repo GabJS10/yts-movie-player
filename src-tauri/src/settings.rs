@@ -240,30 +240,15 @@ fn clean_dir(field: &str, value: &str) -> AppResult<String> {
     Ok(normalized.to_string_lossy().into_owned())
 }
 
-/// One folder is the other or is inside it.
+/// One folder is the other or is inside it (ignoring case on Windows).
 pub fn nested(a: &str, b: &str) -> bool {
-    let (a, b) = (Path::new(a), Path::new(b));
-    a.starts_with(b) || b.starts_with(a)
+    crate::platform::nested(Path::new(a), Path::new(b))
 }
 
-/// The folder exists and this process can write in it (no disk writes).
+/// The folder exists and this process can write in it (on Windows, through a temporary
+/// file that is deleted when closed).
 pub fn dir_available(path: &Path) -> bool {
-    if !path.is_dir() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        let Ok(c_path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
-            return false;
-        };
-        // SAFETY: `c_path` is a valid NUL-terminated string that outlives the call.
-        unsafe { libc::access(c_path.as_ptr(), libc::W_OK) == 0 }
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    path.is_dir() && crate::platform::dir_writable(path)
 }
 
 /// For a folder the user just chose: creates it if needed and checks that a file can be
@@ -422,7 +407,7 @@ impl SettingsStore {
                 // Through symlinks too.
                 let real = |d: &str| std::fs::canonicalize(d).ok();
                 if let (Some(a), Some(b)) = (real(&downloads), real(&cache)) {
-                    if a.starts_with(&b) || b.starts_with(&a) {
+                    if crate::platform::nested(&a, &b) {
                         return Err(invalid("downloadsDir and cacheDir are inside each other"));
                     }
                 }
@@ -449,7 +434,12 @@ mod tests {
     use serde_json::json;
 
     fn base() -> Settings {
-        defaults(Path::new("/home/u/.local/share/yts-player"))
+        // Absolute on every platform (`C:\home\u\…` on Windows).
+        let root = if cfg!(windows) { r"C:\" } else { "/" };
+        let data = ["home", "u", ".local", "share", "yts-player"]
+            .iter()
+            .fold(std::path::PathBuf::from(root), |p, c| p.join(c));
+        defaults(&data)
     }
 
     fn patch(v: Value) -> SettingsPatch {
@@ -788,14 +778,17 @@ mod tests {
         assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
         assert_eq!(store.get(), after);
 
-        // Nested through a symlink.
-        let link = tmp.path().join("link");
-        std::os::unix::fs::symlink(&new_dir, &link).unwrap();
-        let err = store
-            .update(patch(json!({ "cacheDir": link.join("cache") })))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+        // Nested through a symlink (Windows needs privileges to create one).
+        #[cfg(unix)]
+        {
+            let link = tmp.path().join("link");
+            std::os::unix::fs::symlink(&new_dir, &link).unwrap();
+            let err = store
+                .update(patch(json!({ "cacheDir": link.join("cache") })))
+                .await
+                .unwrap_err();
+            assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+        }
         assert!(!dir_available(&tmp.path().join("missing")));
     }
 

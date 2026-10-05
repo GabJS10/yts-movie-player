@@ -30,6 +30,7 @@ use crate::cache::{allocated_size, free_disk_bytes};
 use crate::db::{Db, DownloadRow};
 use crate::error::{AppError, AppResult};
 use crate::images::ImageStore;
+use crate::platform::{is_cross_device, path_key, retry_locked};
 use crate::settings::dir_available;
 use crate::torrent::{
     is_valid_infohash, remove_path, DownloadRequest, LocalStream, StreamRequest, TorrentEngine,
@@ -46,6 +47,14 @@ pub const SPACE_MARGIN_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Longest folder name we create (bytes); ext4 allows 255.
 const MAX_FOLDER_LEN: usize = 180;
+
+/// Windows: longest path of a download folder (characters). The files go one or two
+/// levels deeper (`<torrent name>\<file>`, under ~120 characters in YTS torrents), and
+/// Explorer and VLC still trip over paths longer than `MAX_PATH` (260).
+const WINDOWS_MAX_FOLDER_PATH: usize = 259 - 120;
+
+/// Room kept for the ` (n)` added to a name that is taken.
+const TAKEN_SUFFIX_ROOM: usize = 5;
 
 /// Chunk used when copying across disks (cancellation is checked between chunks).
 const COPY_CHUNK: usize = 1024 * 1024;
@@ -194,6 +203,41 @@ fn not_found(infohash: &str) -> AppError {
 /// Folder name `Title (year) [quality]`, without characters that are invalid on common
 /// filesystems (`/ \ : * ? " < > |`, control characters) and without trailing dots.
 pub fn folder_name(title: &str, year: u32, quality: Quality) -> String {
+    folder_name_within(title, year, quality, MAX_FOLDER_LEN).unwrap_or_else(|| "Movie".into())
+}
+
+/// Limit on the length of download folder paths, if the platform needs one.
+pub fn max_folder_path() -> Option<usize> {
+    cfg!(windows).then_some(WINDOWS_MAX_FOLDER_PATH)
+}
+
+/// Longest folder name (bytes) to create in `parent` so that its path, with a ` (n)`,
+/// stays within `max_path` characters. `None`: `parent` itself leaves no room.
+pub fn name_budget(parent: &Path, max_path: Option<usize>) -> Option<usize> {
+    let Some(max) = max_path else {
+        return Some(MAX_FOLDER_LEN);
+    };
+    let used = parent.to_string_lossy().chars().count() + 1 + TAKEN_SUFFIX_ROOM;
+    max.checked_sub(used)
+        .filter(|&n| n > 0)
+        .map(|n| n.min(MAX_FOLDER_LEN))
+}
+
+fn path_too_long(parent: &Path) -> AppError {
+    AppError::Io(std::io::Error::other(format!(
+        "downloads folder path is too long: {}",
+        parent.display()
+    )))
+}
+
+/// [`folder_name`] in at most `max_len` bytes (the title is shortened, the year and
+/// quality kept). `None` if not even one character of the title fits.
+pub fn folder_name_within(
+    title: &str,
+    year: u32,
+    quality: Quality,
+    max_len: usize,
+) -> Option<String> {
     let clean: String = title
         .chars()
         .map(|c| {
@@ -216,16 +260,20 @@ pub fn folder_name(title: &str, year: u32, quality: Quality) -> String {
     } else {
         format!(" [{}]", quality.as_str())
     };
-    let max_title = MAX_FOLDER_LEN.saturating_sub(suffix.len());
-    if title.len() > max_title {
-        let mut cut = max_title;
-        while !title.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        title.truncate(cut);
-        title = title.trim_end().to_owned();
+    let max_title = max_len.checked_sub(suffix.len()).filter(|&n| n > 0)?;
+    title = truncate_name(&title, max_title)?;
+    Some(format!("{title}{suffix}"))
+}
+
+/// `name` cut to at most `max_len` bytes (on a character boundary), without trailing
+/// spaces or dots. `None` if nothing is left.
+fn truncate_name(name: &str, max_len: usize) -> Option<String> {
+    let mut cut = max_len.min(name.len());
+    while !name.is_char_boundary(cut) {
+        cut -= 1;
     }
-    format!("{title}{suffix}")
+    let short = name[..cut].trim_end_matches([' ', '.']);
+    (!short.is_empty()).then(|| short.to_owned())
 }
 
 /// `name`, or `name (2)`, `name (3)`… if another download already uses it.
@@ -728,16 +776,10 @@ impl DownloadManager {
         let free = (self.cfg.free_space)(&library_dir);
         check_space(free, needed)?;
 
-        let taken: Vec<PathBuf> = self
-            .records
-            .lock()
-            .map(|r| r.values().map(|r| PathBuf::from(&r.row.path)).collect())
-            .unwrap_or_default();
-        let folder = unique_folder(
-            &library_dir,
-            &folder_name(&movie.title, movie.year, torrent.quality),
-            &taken,
-        );
+        let name = name_budget(&library_dir, max_folder_path())
+            .and_then(|max| folder_name_within(&movie.title, movie.year, torrent.quality, max))
+            .ok_or_else(|| path_too_long(&library_dir))?;
+        let folder = unique_folder(&library_dir, &name, &self.taken_folders());
 
         self.cfg
             .db
@@ -1253,17 +1295,21 @@ impl DownloadManager {
             .unwrap_or_default()
     }
 
-    /// A folder in `dest` with the download's name, free on disk and among downloads.
-    fn target_folder(&self, row: &DownloadRow, dest: &Path) -> PathBuf {
+    /// A folder in `dest` with the download's name (shortened if the path would be too
+    /// long), free on disk and among downloads.
+    fn target_folder(&self, row: &DownloadRow, dest: &Path) -> AppResult<PathBuf> {
         let name = Path::new(&row.path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| row.infohash.clone());
+        let name = name_budget(dest, max_folder_path())
+            .and_then(|max| truncate_name(&name, max))
+            .ok_or_else(|| path_too_long(dest))?;
         let mut taken = self.taken_folders();
         loop {
             let candidate = unique_folder(dest, &name, &taken);
             if !candidate.exists() {
-                return candidate;
+                return Ok(candidate);
             }
             taken.push(candidate);
         }
@@ -1282,7 +1328,9 @@ impl DownloadManager {
             .lock()
             .map(|r| {
                 r.values()
-                    .filter(|r| root_of(&r.row) != dest && !r.unavailable && !r.moving)
+                    .filter(|r| {
+                        path_key(&root_of(&r.row)) != path_key(&dest) && !r.unavailable && !r.moving
+                    })
                     .map(|r| (r.row.added_at.clone(), r.row.infohash.clone()))
                     .collect()
             })
@@ -1297,7 +1345,13 @@ impl DownloadManager {
             };
             if in_cache {
                 // Nothing in the library yet: it will be promoted straight to the new folder.
-                let target = self.target_folder(&row, &dest);
+                let target = match self.target_folder(&row, &dest) {
+                    Ok(target) => target,
+                    Err(e) => {
+                        tracing::warn!(%infohash, error = %e, "could not retarget download");
+                        continue;
+                    }
+                };
                 if let Err(e) = self.set_path(&infohash, &target).await {
                     tracing::warn!(%infohash, error = %e, "could not retarget download");
                 }
@@ -1405,18 +1459,21 @@ impl DownloadManager {
         progress: &mut MoveProgress,
     ) -> Result<PathBuf, MoveError> {
         let src = PathBuf::from(&row.path);
-        let target = self.target_folder(row, dest);
+        let target = self
+            .target_folder(row, dest)
+            .map_err(|e| MoveError::Failed(e.to_string()))?;
         if tokio::fs::symlink_metadata(&src).await.is_err() {
             // Nothing on disk yet (e.g. just created): only the path changes.
             return Ok(target);
         }
         if !self.cfg.always_copy {
-            match tokio::fs::rename(&src, &target).await {
+            // Files the engine just closed can stay locked for a moment on Windows.
+            match retry_locked(|| tokio::fs::rename(&src, &target)).await {
                 Ok(()) => {
                     tracing::info!(infohash = %row.infohash, to = %target.display(), "download folder renamed");
                     return Ok(target);
                 }
-                Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {}
+                Err(e) if is_cross_device(&e) => {}
                 Err(e) => {
                     return Err(MoveError::Failed(format!(
                         "moving {} to {}: {e}",
@@ -1573,6 +1630,53 @@ mod tests {
         let long = folder_name(&"ñ".repeat(300), 2001, Quality::P480);
         assert!(long.len() <= MAX_FOLDER_LEN, "{}", long.len());
         assert!(long.ends_with(" (2001) [480p]"));
+    }
+
+    #[test]
+    fn windows_forbidden_characters_never_reach_folder_names() {
+        let name = folder_name("A<B>C:D\"E/F\\G|H?I*J\u{7}", 2000, Quality::P1080);
+        assert!(!name.contains(['<', '>', ':', '"', '/', '\\', '|', '?', '*']));
+        assert_eq!(name, "A B C D E F G H I J (2000) [1080p]");
+        // Trailing dots and spaces are invalid on Windows.
+        assert_eq!(
+            folder_name("Movie . . .", 2000, Quality::P720),
+            "Movie (2000) [720p]"
+        );
+    }
+
+    #[test]
+    fn folder_paths_fit_the_windows_limit() {
+        // No limit (Linux): the usual name length.
+        assert_eq!(name_budget(Path::new("/x"), None), Some(MAX_FOLDER_LEN));
+
+        let lib = Path::new(r"C:\Users\Usuario\AppData\Local\yts-player\library");
+        let max = WINDOWS_MAX_FOLDER_PATH;
+        let budget = name_budget(lib, Some(max)).unwrap();
+        let name =
+            folder_name_within(&"Long Title ".repeat(30), 2010, Quality::P1080, budget).unwrap();
+        assert!(name.ends_with(" (2010) [1080p]"), "{name}");
+        assert!(!name.contains("  "), "{name}");
+        let path = format!(r"{}\{name} (99)", lib.display());
+        assert!(
+            path.chars().count() <= max,
+            "{} > {max}",
+            path.chars().count()
+        );
+
+        // A short title is untouched.
+        assert_eq!(
+            folder_name_within("Up", 2009, Quality::P720, budget).unwrap(),
+            "Up (2009) [720p]"
+        );
+        // Not even one character of the title fits next to " (2009) [720p]": no name.
+        assert_eq!(folder_name_within("Up", 2009, Quality::P720, 14), None);
+        // The parent alone is too long.
+        let deep = "d".repeat(max);
+        assert_eq!(name_budget(Path::new(&deep), Some(max)), None);
+
+        assert_eq!(truncate_name("Abc def", 4).as_deref(), Some("Abc"));
+        assert_eq!(truncate_name("ñññ", 3).as_deref(), Some("ñ"));
+        assert_eq!(truncate_name("...", 2), None);
     }
 
     #[test]

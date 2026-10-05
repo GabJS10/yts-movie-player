@@ -36,6 +36,7 @@ use url::Url;
 
 use crate::error::{AppError, AppResult};
 use crate::images::{host_allowed, restricted_client, HostAllowlist};
+use crate::platform::retry_locked;
 use crate::types::{
     BackgroundError, PieceMapWindow, StreamPhase, StreamSession, StreamSource, TorrentStats,
     VideoCodec,
@@ -1966,16 +1967,17 @@ impl Drop for TrackedReader {
 }
 
 /// Moves a file, creating the destination folder. Falls back to copy + delete when a
-/// rename is not possible (another filesystem).
+/// rename is not possible (another filesystem). A file locked for a moment (Windows) is
+/// retried first.
 async fn move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
     if let Some(parent) = dst.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    if tokio::fs::rename(src, dst).await.is_ok() {
+    if retry_locked(|| tokio::fs::rename(src, dst)).await.is_ok() {
         return Ok(());
     }
     tokio::fs::copy(src, dst).await?;
-    tokio::fs::remove_file(src).await
+    remove_path(src).await
 }
 
 /// Moves a torrent folder from the cache into `folder` (merging) and deletes it.
@@ -2004,8 +2006,14 @@ async fn move_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Deletes a file or a folder; missing is fine.
+/// Deletes a file or a folder; missing is fine. On Windows a file still open elsewhere
+/// (player, antivirus, indexer) is retried for a few seconds before giving up; the cache
+/// cleanup then skips it and tries again on its next pass.
 pub async fn remove_path(path: &Path) -> std::io::Result<()> {
+    retry_locked(|| remove_path_once(path)).await
+}
+
+async fn remove_path_once(path: &Path) -> std::io::Result<()> {
     let result = match tokio::fs::symlink_metadata(path).await {
         Ok(m) if m.is_dir() => tokio::fs::remove_dir_all(path).await,
         Ok(_) => tokio::fs::remove_file(path).await,

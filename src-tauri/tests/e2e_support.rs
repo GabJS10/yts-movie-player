@@ -15,7 +15,6 @@ use common::*;
 use wiremock::matchers::path;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 use yts_player_lib::images::ImageStore;
-use yts_player_lib::paths::AppPaths;
 use yts_player_lib::stream;
 use yts_player_lib::torrent::{EngineConfig, StreamRequest, TorrentEngine};
 use yts_player_lib::types::{StreamPhase, VideoCodec};
@@ -24,7 +23,9 @@ use yts_player_lib::types::{StreamPhase, VideoCodec};
 fn seeder_bin() -> PathBuf {
     let exe = std::env::current_exe().unwrap();
     let profile_dir = exe.parent().and_then(|deps| deps.parent()).unwrap();
-    profile_dir.join("examples").join("e2e_seeder")
+    profile_dir
+        .join("examples")
+        .join(format!("e2e_seeder{}", std::env::consts::EXE_SUFFIX))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -119,20 +120,28 @@ async fn seeder_prints_json_seeds_through_its_tracker_and_stops_on_sigterm() {
     assert_eq!(status, 200);
     assert!(body == video, "content differs");
 
-    // SIGTERM: clean exit.
+    // SIGTERM: clean exit. Windows has no SIGTERM: the process is killed.
+    #[cfg(unix)]
     // SAFETY: plain kill(2) on our own child process.
     assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
+    #[cfg(not(unix))]
+    child.kill().unwrap();
     let status = tokio::task::spawn_blocking(move || child.wait().unwrap());
     let status = tokio::time::timeout(Duration::from_secs(20), status)
         .await
         .expect("seeder did not stop")
         .unwrap();
-    assert!(status.success(), "{status:?}");
+    if cfg!(unix) {
+        assert!(status.success(), "{status:?}");
+    }
     engine.shutdown().await;
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn folders_follow_xdg_data_home_and_xdg_state_home() {
+    use yts_player_lib::paths::AppPaths;
+
     let tmp = tempfile::tempdir().unwrap();
     // The only test in this binary that touches the environment.
     std::env::set_var("XDG_DATA_HOME", tmp.path().join("data"));

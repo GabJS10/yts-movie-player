@@ -1,7 +1,9 @@
 //! Application-level things: version, log files and the "new version" notice
 //! (`docs/IPC.md`, "Aplicación").
 //!
-//! Logs: `$XDG_STATE_HOME/yts-player/logs` (`~/.local/state/…`), one file per day
+//! Logs: `$XDG_STATE_HOME/yts-player/logs` (`~/.local/state/…`) on Linux,
+//! `%LOCALAPPDATA%\yts-player\logs` on Windows, `<YTS_PLAYER_DATA_DIR>/logs` when that
+//! variable is set; one file per day
 //! (`yts-player.YYYY-MM-DD.log`), the last [`LOG_FILES_KEPT`] kept. Level `info` unless
 //! `RUST_LOG` says otherwise. Secrets never reach them (`Settings`' `Debug` redacts them).
 //!
@@ -28,9 +30,17 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-/// `$XDG_STATE_HOME/yts-player/logs`, `~/.local/state/yts-player/logs` by default.
+/// `<YTS_PLAYER_DATA_DIR>/logs` if set; else `$XDG_STATE_HOME/yts-player/logs`
+/// (`~/.local/state/…`) on Linux and `<data folder>\logs` where there is no state folder
+/// (Windows, macOS).
 pub fn logs_dir() -> Option<PathBuf> {
-    dirs::state_dir().map(|d| d.join(APP_DIR_NAME).join("logs"))
+    if let Some(dir) = crate::paths::data_dir_override() {
+        return Some(dir.join("logs"));
+    }
+    match dirs::state_dir() {
+        Some(state) => Some(state.join(APP_DIR_NAME).join("logs")),
+        None => crate::paths::data_dir().map(|d| d.join("logs")),
+    }
 }
 
 /// Deletes the oldest log files so that at most `keep` remain. Only files named like ours

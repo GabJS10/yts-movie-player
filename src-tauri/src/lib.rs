@@ -8,6 +8,7 @@ pub mod external_player;
 pub mod images;
 pub mod lifecycle;
 pub mod paths;
+pub mod platform;
 pub mod recommend;
 pub mod settings;
 pub mod state;
