@@ -1,0 +1,3 @@
+# Test fixtures are compared byte for byte (some are CRLF or cp1252 on purpose): Windows
+# checkouts must not convert their line endings.
+src-tauri/tests/fixtures/** -text

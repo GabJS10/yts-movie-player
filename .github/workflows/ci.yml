@@ -147,12 +147,12 @@ jobs:
           workspaces: src-tauri
           key: e2e
       - run: choco install ffmpeg -y --no-progress
-      - run: cargo install tauri-driver msedgedriver-tool --locked
-      # msedgedriver matching the runner's WebView2 version.
-      - name: Get msedgedriver
+      - run: cargo install tauri-driver --locked
+      - name: msedgedriver matching WebView2
+        shell: pwsh
         run: |
-          mkdir -p "$RUNNER_TEMP/edge" && cd "$RUNNER_TEMP/edge" && msedgedriver-tool
-          echo "E2E_NATIVE_DRIVER=$(cygpath -w "$RUNNER_TEMP/edge/msedgedriver.exe")" >> "$GITHUB_ENV"
+          $exe = pwsh e2e/scripts/get-msedgedriver.ps1 (Join-Path $env:RUNNER_TEMP edge) | Select-Object -Last 1
+          "E2E_NATIVE_DRIVER=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: npm ci
       - run: npm ci
         working-directory: e2e

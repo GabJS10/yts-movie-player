@@ -181,9 +181,9 @@ jobs:
         working-directory: src-tauri
         run: |
           cargo build --example e2e_seeder
-          cargo install tauri-driver msedgedriver-tool --locked --root "$RUNNER_TEMP/tools"
+          cargo install tauri-driver --locked --root "$RUNNER_TEMP/tools"
           mkdir -p "$RUNNER_TEMP/smoke"
-          cp target/debug/examples/e2e_seeder.exe "$RUNNER_TEMP/tools/bin/tauri-driver.exe" "$RUNNER_TEMP/tools/bin/msedgedriver-tool.exe" "$RUNNER_TEMP/smoke/"
+          cp target/debug/examples/e2e_seeder.exe "$RUNNER_TEMP/tools/bin/tauri-driver.exe" "$RUNNER_TEMP/smoke/"
           cp target/release/bundle/nsis/*.exe "$RUNNER_TEMP/smoke/"
       - name: No build-machine paths in the release binary
         run: |
@@ -228,9 +228,10 @@ jobs:
           node-version: 24
       - run: choco install ffmpeg -y --no-progress
       - name: msedgedriver matching WebView2
+        shell: pwsh
         run: |
-          cd smoke && ./msedgedriver-tool.exe
-          echo "E2E_NATIVE_DRIVER=$(cygpath -w "$PWD/msedgedriver.exe")" >> "$GITHUB_ENV"
+          $exe = pwsh repo/e2e/scripts/get-msedgedriver.ps1 (Join-Path $env:RUNNER_TEMP edge) | Select-Object -Last 1
+          "E2E_NATIVE_DRIVER=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: npm ci
         working-directory: repo/e2e
       - name: E2E on the installed app (offline)

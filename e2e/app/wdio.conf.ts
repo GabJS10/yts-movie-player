@@ -21,13 +21,16 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
 const exe = process.platform === "win32" ? ".exe" : "";
 // E2E_APP_BINARY / E2E_SEEDER_BINARY: run against an installed package (release smoke test).
-const application = process.env.E2E_APP_BINARY ?? path.join(root, `src-tauri/target/e2e/debug/yts-player${exe}`);
+const application =
+  process.env.E2E_APP_BINARY ?? path.join(root, `src-tauri/target/e2e/debug/yts-player${exe}`);
 const seederBin =
   process.env.E2E_SEEDER_BINARY ?? path.join(root, `src-tauri/target/e2e/debug/examples/e2e_seeder${exe}`);
 const tauriDriverBin =
   process.env.TAURI_DRIVER_BINARY ?? path.join(os.homedir(), `.cargo/bin/tauri-driver${exe}`);
 // Windows: tauri-driver drives msedgedriver, which must match the installed WebView2.
-const nativeDriverArgs = process.env.E2E_NATIVE_DRIVER ? ["--native-driver", process.env.E2E_NATIVE_DRIVER] : [];
+const nativeDriverArgs = process.env.E2E_NATIVE_DRIVER
+  ? ["--native-driver", process.env.E2E_NATIVE_DRIVER]
+  : [];
 
 let seeder: ChildProcess | undefined;
 let tauriDriver: ChildProcess | undefined;
@@ -60,7 +63,9 @@ async function prepare() {
   const sample = path.join(root, "e2e/.cache/sample.mp4");
   mkdirSync(path.dirname(sample), { recursive: true });
   const toBash = (p: string) => p.replaceAll("\\", "/");
-  execFileSync("bash", [toBash(path.join(root, "e2e/scripts/make-video.sh")), toBash(sample)], { stdio: "inherit" });
+  execFileSync("bash", [toBash(path.join(root, "e2e/scripts/make-video.sh")), toBash(sample)], {
+    stdio: "inherit",
+  });
   const video = sample;
   const info = await startSeeder(video);
   const yts = await startFakeYts({ seeder: { ...info, sizeBytes: statSync(video).size } });
