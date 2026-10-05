@@ -199,7 +199,12 @@ jobs:
   smoke-windows:
     name: Smoke test Windows installer
     needs: build-windows
-    runs-on: windows-latest
+    # windows-2022, not windows-latest: on the newer image WebView2 (152+) ignores the
+    # WEBVIEW2_* variables msedgedriver uses to open the DevTools port, so tauri-driver
+    # fails with "DevToolsActivePort file doesn't exist" (actions/runner-images#14738).
+    # If 2022 goes away: attach mode (app with --remote-debugging-port in
+    # additionalBrowserArgs + ms:edgeOptions.debuggerAddress).
+    runs-on: windows-2022
     defaults:
       run:
         shell: bash
