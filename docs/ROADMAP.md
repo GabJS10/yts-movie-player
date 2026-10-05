@@ -21,6 +21,7 @@
 | 6 | Descargas, caché y Ajustes completos | Descargar, ver sin conexión y gestionar el espacio | ✅ Terminada (`fase-6`) |
 | 7 | Tráilers, pulido, robustez y E2E | Cada fallo tiene una salida; tests E2E en verde | ✅ Terminada (`fase-7`) |
 | 8 | Empaquetado y release v1.0 | `.deb`, `.rpm` y AppImage publicados en GitHub Releases | ✅ Terminada (`v1.0.0`) |
+| 9 | Soporte de Windows (v1.1) | Instalador `.exe` para Windows 10/11 con las mismas funciones | 🚧 En curso |
 
 ## Cómo se trabaja cada fase
 
@@ -264,10 +265,41 @@ Regla: **todo bug corregido viene con un test que lo reproduce.**
 - **Tests:** smoke test de instalación en el CI (arriba); backend: comparación semver y parseo de la respuesta de GitHub (wiremock), rotación de logs; frontend: Acerca de y aviso de actualización.
 - **Cierre:** release `v1.0.0` publicada con `.deb`, `.rpm` y AppImage, el smoke test en verde y el usuario la instala en su máquina (la app abre, el catálogo carga y se reproduce una película). Tag `v1.0.0`.
 
+## Fase 9: Soporte de Windows (v1.1) 🚧
+
+**Objetivo:** instalador `.exe` (NSIS) para Windows 10/11 x64 con las mismas funciones que en Linux, compilado y probado en el CI (`windows-latest`) y probado a mano por el usuario en su Windows (dual boot). macOS queda fuera. Contrato: IPC v0.14.
+
+**Decisiones:** (1) sin firma de código en la v1.1: SmartScreen avisa ("Más información → Ejecutar de todas formas"), documentado en el README; (2) solo NSIS, instalación por usuario, sin administrador, en español; WebView2 con el bootstrapper por defecto; (3) datos, caché, descargas y logs en `%LOCALAPPDATA%\yts-player\` (no en `%APPDATA%`, que es Roaming); (4) sin regla de firewall: Windows pregunta una vez al primer arranque y, si se rechaza, el streaming sigue con menos peers; (5) se sigue en `main` con un único árbol (ver "Git"); un arreglo urgente de la 1.0 saldría de una rama `release/1.0` creada desde el tag `v1.0.0`.
+
+**Fallos de Windows encontrados en el código (punto de partida):** `free_disk_bytes` devuelve 0 y `dir_available` siempre `true` fuera de Unix; los logs usan `dirs::state_dir()`, que es `None` en Windows; mover descargas entre discos solo reconoce `EXDEV` (en Windows es `ERROR_NOT_SAME_DEVICE`, 17); la búsqueda de VLC usa el `PATH` sin `.exe`; borrar o mover archivos abiertos falla en Windows; los E2E aíslan los datos con `XDG_DATA_HOME`, que en Windows no existe.
+
+- **backend:**
+  - Rutas: base `%LOCALAPPDATA%\yts-player` (`dirs::data_local_dir()`), logs en `…\logs`; variable `YTS_PLAYER_DATA_DIR` (todas las plataformas) para aislar los datos en los E2E.
+  - Disco: espacio libre real (`GetDiskFreeSpaceExW`) y comprobación de escritura real, con `windows-sys`.
+  - Mover entre discos: el código 17 cae a copiar; comparación de rutas sin distinguir mayúsculas para "una carpeta dentro de otra".
+  - Archivos bloqueados: reintentos con espera al borrar y mover; la limpieza LRU salta lo que no puede borrar y lo intenta en la siguiente pasada, sin error en la UI.
+  - VLC/mpv: registro (`HKLM\SOFTWARE\VideoLAN\VLC`), `Program Files`/`Program Files (x86)` y `PATH` con `PATHEXT`; lanzar sin ventana de consola (`CREATE_NO_WINDOW`).
+  - Nombres de carpeta sin `: ? * " < > |`; comprobar el límite de 260 caracteres en las rutas de descarga.
+  - Bundle NSIS en `tauri.conf.json` (por usuario, español, acceso en el menú Inicio); `windows_subsystem = "windows"`.
+  - `cargo fmt`, `clippy -D warnings` y `cargo test` en verde en Windows (los tests que dependan de Unix, con `cfg` o adaptados).
+- **frontend:**
+  - Textos que suponen Linux (rutas de ejemplo, ayudas de Ajustes, GStreamer): según la plataforma, con los datos de `get_app_info`, sin rutas fijas.
+  - Error de códec en WebView2 (Chromium): "Abrir en VLC" tiene que aparecer igual con HEVC.
+  - Comprobar en Chromium lo ajustado a WebKitGTK (recuperación de stalls, pantalla completa, scrollbars, foco visible); cambiar solo lo que falle.
+  - Rutas de Windows en la UI: `\` y letras de unidad en los selectores y textos de carpetas.
+- **plan:**
+  - CI: jobs `backend-windows` (fmt, clippy, test) y `e2e-app-windows` (WebdriverIO + `tauri-driver` + `msedgedriver`, mismo `flow.e2e.ts`, falso YTS y seeder); `make-video.sh` portable. Playwright sigue solo en Linux.
+  - Release: job `build-windows` que sube el `.exe` al mismo borrador y `smoke-windows` (instalación silenciosa `/S`, arranque, log "local HTTP server listening" y E2E sobre la app instalada).
+  - Docs: README (instalación en Windows, SmartScreen, firewall, dónde guarda las cosas), `QA.md` (sección Windows), `PLAN.md`, CHANGELOG `1.1.0`.
+- **Tests:** backend: búsqueda de VLC con registro y carpetas falsas inyectables, `ERROR_NOT_SAME_DEVICE`, nombres prohibidos, reintentos de borrado; E2E de la app real en Windows en el CI.
+- **QA manual del usuario (dos rondas):** ronda 1 sobre `v1.1.0-rc.1` (instalación y SmartScreen, firewall, catálogo, streaming 1080p y adelantar, subtítulos, tráiler, 2160p en VLC con subtítulos, descargar/pausar/reanudar tras reiniciar, mover descargas a otro disco, sin conexión, logs, desinstalar conservando los datos); ronda 2 sobre `rc.2` solo con lo corregido.
+- **Cierre:** CI en verde en Linux y Windows, smoke test de Windows en verde, las dos rondas OK; tag `v1.1.0` con el `.exe` junto a los paquetes de Linux.
+
 ---
 
 ## Más allá de la v1.0 (backlog, sin fecha)
-- Builds para Windows y macOS (WebView2 y WKWebView tienen su propio soporte de códecs, así que hay que revisar HEVC).
+- Build para macOS (WKWebView tiene su propio soporte de códecs; hay que revisar HEVC).
+- Firma de código en Windows (Azure Trusted Signing o certificado OV) para quitar el aviso de SmartScreen.
 - Integrar libmpv para reproducir HEVC/x265 dentro de la app sin VLC.
 - Auto-actualizaciones (`tauri-plugin-updater`).
 - Varios idiomas de subtítulos al mismo tiempo y subtítulos generados en local.

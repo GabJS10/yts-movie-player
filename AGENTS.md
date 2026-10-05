@@ -13,7 +13,7 @@ Guía para agentes de IA (y personas) que trabajen en este repositorio.
 - QA manual (lista de verificación antes de cada release): [`docs/QA.md`](docs/QA.md); E2E en `e2e/` (`npm run ui` Playwright con mocks, `npm run app` WebdriverIO sobre la app real tras `e2e/scripts/build-app.sh`)
 - Prototipo navegable de todas las pantallas: `design/prototype/index.html` (servir con `python3 -m http.server` desde esa carpeta)
 
-**Estado actual:** v1.0.0 publicada (Linux: `.deb`, `.rpm`, AppImage); fases 0–8 terminadas. Siguiente: soporte de Windows (v1.1), por planificar.
+**Estado actual:** v1.0.0 publicada (Linux: `.deb`, `.rpm`, AppImage); fases 0–8 terminadas. En curso: fase 9, soporte de Windows (v1.1), ver `docs/ROADMAP.md`.
 
 ## Forma de trabajo (multi-agente)
 El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia tab del workspace `yts-movie-player` de [Herdr](https://herdr.dev). Hoy los tres son Claude Code, pero el flujo no depende del harness (puede entrar Codex u otro): **este `AGENTS.md` es la fuente de verdad**, y `CLAUDE.md` solo lo importa.

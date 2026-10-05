@@ -1,6 +1,6 @@
 # Contrato IPC (frontend ⇄ backend)
 
-**Versión:** v0.13 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
+**Versión:** v0.14 (borrador para el MVP), **Dueño:** `plan`. `backend` propone los cambios y `frontend` los implementa en `src/api/tauri.ts`. Un cambio que rompa el contrato se coordina antes con `plan` (ver `AGENTS.md`).
 
 Este documento es la única fuente de verdad sobre los comandos Tauri, los eventos y los tipos compartidos. Si el código y este archivo no coinciden, el bug está en el código o el archivo está desactualizado: hay que corregir uno de los dos en el mismo cambio.
 
@@ -551,3 +551,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.12** (2026-10-04): fase 7. `get_featured` (banner rotativo con motivo) y `get_home_profile` (fila "Porque viste X" y orden de géneros); `StreamPhase` `no_peers` (60 s sin peers); `StorageUsage.defaultDownloadsDir`/`defaultCacheDir`; variables de entorno para los E2E.
 - **v0.12.1** (2026-10-04): `MovieDetail.trailerUrl` (página local del tráiler, solo para la sesión) y mensajes `TrailerMessage` de la página `/trailer` al padre por `postMessage`; cadena modal → ventana → navegador.
 - **v0.13** (2026-10-04): fase 8. Comandos `get_app_info`, `check_for_update` (aviso de nueva versión vía GitHub Releases, nunca falla) y `open_logs_folder`; logs a archivo con rotación.
+- **v0.14** (2026-10-04): Windows. Sin comandos nuevos. Rutas por defecto según la plataforma (Windows: `%LOCALAPPDATA%\yts-player\`, con `cache`, `library` y `logs`); `get_app_info.dataDir`/`logsDir` con valor real en Windows; variable `YTS_PLAYER_DATA_DIR` (E2E, todas las plataformas) que sustituye la carpeta de datos.
