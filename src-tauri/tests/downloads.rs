@@ -820,19 +820,27 @@ async fn folder_that_disappears_is_unavailable_and_comes_back() {
     )
     .await;
     let ih = seeder.infohash.clone();
-    app.downloads
-        .start(summary(), &detail(), torrent_info(&seeder))
-        .await
-        .unwrap();
-    wait_for(&app, &ih, "some progress", |d| d.downloaded_bytes > 0).await;
+    // An active download keeps its files open, and Windows refuses to rename a folder
+    // with open files, so the "unmount" below can't be simulated there with one running
+    // (a removed USB drive is covered by the manual QA).
+    let active = cfg!(unix);
+    if active {
+        app.downloads
+            .start(summary(), &detail(), torrent_info(&seeder))
+            .await
+            .unwrap();
+        wait_for(&app, &ih, "some progress", |d| d.downloaded_bytes > 0).await;
+    }
 
     // "Unmount": the disk's folder goes away.
     let off = tmp.path().join("disk-off");
     std::fs::rename(&disk, &off).unwrap();
-    wait_for(&app, &ih, "unavailable", |d| {
-        d.state == DownloadState::Unavailable
-    })
-    .await;
+    if active {
+        wait_for(&app, &ih, "unavailable", |d| {
+            d.state == DownloadState::Unavailable
+        })
+        .await;
+    }
     wait_for(&app, &done, "unavailable", |d| {
         d.state == DownloadState::Unavailable
     })
@@ -857,6 +865,9 @@ async fn folder_that_disappears_is_unavailable_and_comes_back() {
     })
     .await;
     assert_eq!(std::fs::read(play(&app, &done)).unwrap(), video);
+    if !active {
+        return;
+    }
     app.engine.set_rate_limits(None, None);
     wait_for(&app, &ih, "finished after coming back", |d| {
         d.state == DownloadState::Done
