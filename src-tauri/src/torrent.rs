@@ -793,9 +793,7 @@ impl TorrentEngine {
 
     /// Records an access for the cache LRU (the folder's mtime). Best effort.
     fn touch(&self, dir: &Path) {
-        let result =
-            std::fs::File::open(dir).and_then(|f| f.set_modified(std::time::SystemTime::now()));
-        if let Err(e) = result {
+        if let Err(e) = crate::platform::touch_dir(dir) {
             tracing::debug!(dir = %dir.display(), error = %e, "could not touch torrent folder");
         }
     }

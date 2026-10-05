@@ -69,7 +69,7 @@ pub fn allocated_size(path: &Path) -> u64 {
     let Ok(meta) = std::fs::symlink_metadata(path) else {
         return 0;
     };
-    let own = allocated(&meta);
+    let own = crate::platform::allocated_bytes(path, &meta);
     if !meta.is_dir() {
         return own;
     }
@@ -77,17 +77,6 @@ pub fn allocated_size(path: &Path) -> u64 {
         .map(|rd| rd.flatten().map(|e| allocated_size(&e.path())).sum::<u64>())
         .unwrap_or(0);
     own + children
-}
-
-#[cfg(unix)]
-fn allocated(meta: &std::fs::Metadata) -> u64 {
-    use std::os::unix::fs::MetadataExt;
-    meta.blocks() * 512
-}
-
-#[cfg(not(unix))]
-fn allocated(meta: &std::fs::Metadata) -> u64 {
-    meta.len()
 }
 
 pub use crate::platform::free_disk_bytes;
@@ -391,7 +380,7 @@ mod tests {
         let dir = cache.join(name);
         write(&dir.join("movie.mp4"), bytes);
         let t = SystemTime::now() - Duration::from_secs(age_s);
-        std::fs::File::open(&dir).unwrap().set_modified(t).unwrap();
+        crate::platform::set_dir_modified(&dir, t).unwrap();
     }
 
     struct Setup {
@@ -440,7 +429,10 @@ mod tests {
         let f = std::fs::File::create(&sparse).unwrap();
         f.set_len(512 * 1024 * 1024).unwrap();
         drop(f);
-        assert!(allocated_size(&sparse) < 1024 * 1024);
+        // Windows only counts holes in files marked sparse, which this one is not.
+        if cfg!(unix) {
+            assert!(allocated_size(&sparse) < 1024 * 1024);
+        }
         write(&tmp.path().join("dir/real.bin"), 64 * KB);
         let dir = allocated_size(&tmp.path().join("dir"));
         assert!(dir >= 64 * KB, "{dir}");

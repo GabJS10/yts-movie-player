@@ -105,6 +105,61 @@ pub fn dir_writable(_path: &Path) -> bool {
     true
 }
 
+/// Bytes allocated on disk by the file `path` (`meta` is its metadata): blocks on Unix
+/// (sparse holes don't count), `GetCompressedFileSizeW` on Windows (sparse and compressed
+/// files), the length elsewhere.
+#[cfg(unix)]
+pub fn allocated_bytes(_path: &Path, meta: &std::fs::Metadata) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    meta.blocks() * 512
+}
+
+#[cfg(windows)]
+pub fn allocated_bytes(path: &Path, meta: &std::fs::Metadata) -> u64 {
+    use windows_sys::Win32::Storage::FileSystem::{GetCompressedFileSizeW, INVALID_FILE_SIZE};
+    if meta.is_dir() {
+        return 0;
+    }
+    let wide = win::wide(path.as_os_str());
+    let mut high: u32 = 0;
+    // SAFETY: `wide` is NUL-terminated and outlives the call; `high` receives the upper
+    // 32 bits.
+    let low = unsafe { GetCompressedFileSizeW(wide.as_ptr(), &mut high) };
+    // INVALID_FILE_SIZE is also a valid low half; only an error if GetLastError says so.
+    if low == INVALID_FILE_SIZE && io::Error::last_os_error().raw_os_error() != Some(0) {
+        return meta.len();
+    }
+    (u64::from(high) << 32) | u64::from(low)
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn allocated_bytes(_path: &Path, meta: &std::fs::Metadata) -> u64 {
+    meta.len()
+}
+
+/// Sets the modification time of the folder `dir` to now (the cache LRU uses it as the
+/// last access). On Windows a folder only opens with `FILE_FLAG_BACKUP_SEMANTICS`.
+pub fn touch_dir(dir: &Path) -> io::Result<()> {
+    set_dir_modified(dir, std::time::SystemTime::now())
+}
+
+pub fn set_dir_modified(dir: &Path, time: std::time::SystemTime) -> io::Result<()> {
+    #[cfg(windows)]
+    let file = {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+        };
+        std::fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(dir)?
+    };
+    #[cfg(not(windows))]
+    let file = std::fs::File::open(dir)?;
+    file.set_modified(time)
+}
+
 /// A rename failed because source and destination are on different disks (`EXDEV` on
 /// Unix, `ERROR_NOT_SAME_DEVICE` on Windows): copy instead.
 pub fn is_cross_device(e: &io::Error) -> bool {
@@ -277,6 +332,16 @@ mod tests {
             assert!(free_disk_bytes(tmp.path()) > 0);
         }
         assert_eq!(free_disk_bytes(&tmp.path().join("missing/deeper")), 0);
+    }
+
+    #[test]
+    fn folder_mtime_can_be_set() {
+        let tmp = tempfile::tempdir().unwrap();
+        let t = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+        set_dir_modified(tmp.path(), t).unwrap();
+        assert_eq!(tmp.path().metadata().unwrap().modified().unwrap(), t);
+        touch_dir(tmp.path()).unwrap();
+        assert!(tmp.path().metadata().unwrap().modified().unwrap() > t);
     }
 
     #[test]

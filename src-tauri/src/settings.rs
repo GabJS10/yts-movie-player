@@ -219,7 +219,8 @@ pub fn api_base_urls_override(value: Option<&str>) -> Option<Vec<String>> {
     }
     match validate(Settings {
         api_base_urls: urls,
-        ..defaults(Path::new("/"))
+        // Only the URLs matter; any absolute folder will do (`/` is not one on Windows).
+        ..defaults(&std::env::temp_dir())
     }) {
         Ok(s) => Some(s.api_base_urls),
         Err(e) => {
@@ -685,48 +686,61 @@ mod tests {
         assert_eq!(reloaded.get(), after);
     }
 
+    /// A Unix absolute path as this platform writes it (`C:\media\disk` on Windows).
+    fn abs(unix: &str) -> String {
+        if cfg!(windows) {
+            format!("C:{}", unix.replace('/', "\\"))
+        } else {
+            unix.to_owned()
+        }
+    }
+
     #[test]
     fn folders_default_reset_and_normalize() {
         let d = base();
-        assert_eq!(d.downloads_dir, "/home/u/.local/share/yts-player/library");
-        assert_eq!(d.cache_dir, "/home/u/.local/share/yts-player/cache");
+        assert_eq!(
+            d.downloads_dir,
+            abs("/home/u/.local/share/yts-player/library")
+        );
+        assert_eq!(d.cache_dir, abs("/home/u/.local/share/yts-player/cache"));
         let mut s = d.clone();
-        s.cache_dir = "/media/disk/c".into();
-        s.downloads_dir = "/media/disk/d".into();
+        s.cache_dir = abs("/media/disk/c");
+        s.downloads_dir = abs("/media/disk/d");
         // null = back to the default; absent = unchanged.
         let p = apply_patch(&s, &d, patch(json!({ "cacheDir": null })));
         assert_eq!(p.cache_dir, d.cache_dir);
-        assert_eq!(p.downloads_dir, "/media/disk/d");
+        assert_eq!(p.downloads_dir, abs("/media/disk/d"));
         // Trailing slash removed; siblings with a common prefix are not nested.
         let v = validate(Settings {
-            downloads_dir: "/media/disk/movies/".into(),
-            cache_dir: "/media/disk/movies-cache".into(),
+            downloads_dir: abs("/media/disk/movies/"),
+            cache_dir: abs("/media/disk/movies-cache"),
             ..d
         })
         .unwrap();
-        assert_eq!(v.downloads_dir, "/media/disk/movies");
+        assert_eq!(v.downloads_dir, abs("/media/disk/movies"));
         assert!(!nested(&v.downloads_dir, &v.cache_dir));
     }
 
     #[test]
     fn data_dir_rows_migrate_to_the_two_folders() {
         let d = base();
+        let json = |p: &str| serde_json::to_string(&abs(p)).unwrap();
         let rows = vec![
-            ("dataDir".to_owned(), "\"/media/disk/yts\"".to_owned()),
+            ("dataDir".to_owned(), json("/media/disk/yts")),
             ("subtitleLang".to_owned(), "\"en\"".to_owned()),
         ];
         let (rows, changed) = migrate_rows(&d, rows);
         assert!(changed);
         let s = overlay(&d, &rows).unwrap();
-        assert_eq!(s.cache_dir, "/media/disk/yts/cache");
-        assert_eq!(s.downloads_dir, "/media/disk/yts/library");
+        assert_eq!(s.cache_dir, abs("/media/disk/yts/cache"));
+        assert_eq!(s.downloads_dir, abs("/media/disk/yts/library"));
         assert_eq!(s.subtitle_lang, "en");
         assert!(!rows.iter().any(|(k, _)| k == "dataDir"));
 
         // The default dataDir migrates to the defaults: nothing stored.
         let rows = vec![(
             "dataDir".to_owned(),
-            "\"/home/u/.local/share/yts-player\"".to_owned(),
+            json("/home/u/.local/share/yts-player"),
         )];
         let (rows, changed) = migrate_rows(&d, rows);
         assert!(changed && rows.is_empty());
@@ -748,7 +762,7 @@ mod tests {
         let store = SettingsStore::load(db.clone(), &base()).await.unwrap();
         assert_eq!(
             store.get().cache_dir,
-            tmp.path().join("old/cache").to_string_lossy()
+            tmp.path().join("old").join("cache").to_string_lossy()
         );
         let mut rows = db.settings_rows().await.unwrap();
         rows.sort();
@@ -758,7 +772,7 @@ mod tests {
         );
 
         // A new folder is created and must be writable.
-        let new_dir = tmp.path().join("new/downloads");
+        let new_dir = tmp.path().join("new").join("downloads");
         let (_, after) = store
             .update(patch(json!({ "downloadsDir": new_dir })))
             .await
