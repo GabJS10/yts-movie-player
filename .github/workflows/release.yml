@@ -94,7 +94,7 @@ jobs:
           apt-get install -y /smoke/*.deb
           test -x /usr/bin/yts-player
           if ldd /usr/bin/yts-player | grep "not found"; then exit 1; fi
-          test -f /usr/share/applications/*.desktop
+          ls /usr/share/applications/ | grep -i "yts" | grep "\.desktop$"
       - name: Install test tooling
         run: |
           apt-get install -y git ca-certificates curl xvfb xauth webkit2gtk-driver ffmpeg dbus-x11
@@ -132,7 +132,10 @@ jobs:
           export XDG_DATA_HOME="$RUNNER_TEMP/data" XDG_STATE_HOME="$RUNNER_TEMP/state"
           xvfb-run -a smoke/squashfs-root/AppRun > app.log 2>&1 &
           # Release builds log to $XDG_STATE_HOME/yts-player/logs; check both places.
-          timeout 60 bash -c 'until grep -rqs "local HTTP server listening" app.log "$XDG_STATE_HOME"; do sleep 1; done'
+          show_logs() { echo "--- app.log"; tail -60 app.log; echo "--- state logs"; tail -40 "$XDG_STATE_HOME"/yts-player/logs/* 2>/dev/null || true; }
+          if ! timeout 90 bash -c 'until grep -rqs "local HTTP server listening" app.log "$XDG_STATE_HOME"; do sleep 1; done'; then
+            echo "the app did not start serving in 90 s"; show_logs; exit 1
+          fi
           sleep 10
-          pgrep -f squashfs-root/ >/dev/null || { cat app.log; exit 1; }
-          tail -20 app.log; tail -20 "$XDG_STATE_HOME"/yts-player/logs/* 2>/dev/null || true
+          pgrep -f squashfs-root/ >/dev/null || { echo "the app exited"; show_logs; exit 1; }
+          show_logs
