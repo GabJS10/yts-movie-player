@@ -12,17 +12,19 @@ Guía para agentes de IA (y personas) que trabajen en este repositorio.
 - Sistema de diseño (tokens, tipografía, componentes): [`DESIGN.md`](DESIGN.md); contexto de producto: [`PRODUCT.md`](PRODUCT.md)
 - QA manual (lista de verificación antes de cada release): [`docs/QA.md`](docs/QA.md); E2E en `e2e/` (`npm run ui` Playwright con mocks, `npm run app` WebdriverIO sobre la app real tras `e2e/scripts/build-app.sh`)
 - Prototipo navegable de todas las pantallas: `design/prototype/index.html` (servir con `python3 -m http.server` desde esa carpeta)
+- Web pública (Astro + Netlify, repo aparte `../yts-movie-player-web`): brief en [`docs/WEB.md`](docs/WEB.md)
 
 **Estado actual:** v1.1.0 (Linux: `.deb`, `.rpm`, AppImage; Windows 10/11: instalador `.exe`); fases 0–9 terminadas. Siguiente: por decidir (backlog en `docs/ROADMAP.md`).
 
 ## Forma de trabajo (multi-agente)
-El proyecto se desarrolla con **3 agentes en paralelo**, cada uno en su propia tab del workspace `yts-movie-player` de [Herdr](https://herdr.dev). Hoy los tres son Claude Code, pero el flujo no depende del harness (puede entrar Codex u otro): **este `AGENTS.md` es la fuente de verdad**, y `CLAUDE.md` solo lo importa.
+El proyecto se desarrolla con **4 agentes en paralelo**, cada uno en su propia tab del workspace `yts-movie-player` de [Herdr](https://herdr.dev). Hoy todos son Claude Code, pero el flujo no depende del harness (puede entrar Codex u otro): **este `AGENTS.md` es la fuente de verdad**, y `CLAUDE.md` solo lo importa.
 
 | Agente (nombre en Herdr) | Tab | Responsabilidad | Es dueño de |
 |---|---|---|---|
 | `plan` | `plan` | Orquestación, planificación general, decisiones de arquitectura, contrato entre front y back, tareas comunes (CI/CD, E2E, empaquetado, releases, tooling de la raíz) | `docs/`, `AGENTS.md`, `CLAUDE.md`, `.github/`, `e2e/`, configs de la raíz no específicas del front |
 | `frontend` | `frontend` | UI en React, diseño, prototipo, estado del cliente y wrappers de `invoke()` | `src/`, `design/`, `DESIGN.md`, `PRODUCT.md`, `index.html`, `vite.config.*`, `tailwind.config.*`, `tsconfig*.json`, dependencias npm |
 | `backend` | `backend` | Core en Rust: API YTS, torrent, servidor de streaming, subtítulos, DB y comandos Tauri | `src-tauri/` (incluye `Cargo.toml` y `tauri.conf.json`) |
+| `web` | `web` | Web pública del proyecto (landing + docs) en Astro, despliegue en Netlify | Repo aparte `../yts-movie-player-web` (`GabJS10/yts-movie-player-web`); este repo solo lo lee |
 
 ### Reglas de coordinación
 - **Cada agente edita solo sus archivos.** Si necesitas un cambio en otra área, pídeselo a su dueño (o a `plan`) en lugar de hacerlo tú.
