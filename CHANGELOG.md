@@ -2,10 +2,11 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); [semantic](https://semver.org/) versioning.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-06
 
 ### Added
 - The app is available in Spanish and English. By default it follows the system language (Spanish if the system prefers it, English otherwise); it can be changed in Settings › Language and the choice is remembered. The subtitle language is still a separate setting.
+- The Windows installer is in English and Spanish, following the Windows display language.
 
 ## [1.1.1] - 2026-10-05
 
@@ -59,7 +60,7 @@ First public release. Linux: `.deb`, `.rpm` and AppImage.
 - Rotating log files, "About" and new version notices.
 - Tests: Rust unit and integration tests (local torrent, no internet), Vitest on the frontend, E2E with WebdriverIO on the real app and Playwright + axe on the interface.
 
-[Unreleased]: https://github.com/GabJS10/yts-movie-player/compare/v1.1.1...HEAD
+[1.2.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.2.0
 [1.1.1]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.1
 [1.1.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.0
 [1.0.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.0.0

@@ -34,7 +34,7 @@
 - **In Spanish and English:** follows your system language, or pick one in Settings › Language.
 
 ## Installation (Windows 10/11)
-Download `YTS.Player_1.1.1_x64-setup.exe` from the [latest release](https://github.com/GabJS10/yts-movie-player/releases/latest) and open it. It installs for your user only, with no administrator rights.
+Download `YTS.Player_1.2.0_x64-setup.exe` from the [latest release](https://github.com/GabJS10/yts-movie-player/releases/latest) and open it. It installs for your user only, with no administrator rights.
 
 - **"Windows protected your PC":** the installer isn't signed (a code-signing certificate costs money). Click **More info → Run anyway**.
 - **Firewall:** on first launch Windows asks whether `yts-player.exe` may use the network. Allow it on private networks to reach more peers; if you deny it, streaming still works but may be slower.
@@ -45,9 +45,9 @@ Download the package for your distribution from the [latest release](https://git
 
 | Distribution | Package | Install |
 |---|---|---|
-| Ubuntu, Debian, Linux Mint, Pop!_OS | `.deb` | `sudo apt install ./YTS.Player_1.1.1_amd64.deb` |
-| Fedora, openSUSE | `.rpm` | `sudo dnf install ./YTS.Player-1.1.1-1.x86_64.rpm` |
-| Any other | AppImage | `chmod +x YTS.Player_1.1.1_amd64.AppImage && ./YTS.Player_1.1.1_amd64.AppImage` |
+| Ubuntu, Debian, Linux Mint, Pop!_OS | `.deb` | `sudo apt install ./YTS.Player_1.2.0_amd64.deb` |
+| Fedora, openSUSE | `.rpm` | `sudo dnf install ./YTS.Player-1.2.0-1.x86_64.rpm` |
+| Any other | AppImage | `chmod +x YTS.Player_1.2.0_amd64.AppImage && ./YTS.Player_1.2.0_amd64.AppImage` |
 
 The `.deb` and `.rpm` install what's needed to play video (GStreamer with H.264/AAC). The AppImage already bundles it. Recommended: **VLC**, for the 2160p x265 versions.
 
