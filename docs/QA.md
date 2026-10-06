@@ -34,6 +34,7 @@ Cómo marcar: `[x]` bien, `[!]` falla (anotar el detalle debajo), `[-]` no aplic
 - [ ] Adelantar a cualquier punto (barra y ←/→) sigue reproduciendo; la barra muestra visto / en búfer / descargado.
 - [ ] Espacio, F, M y G/H funcionan; el icono play/pausa no se queda pegado tras adelantar.
 - [ ] 2160p x265: pantalla de códec con "Abrir en VLC"; VLC abre con subtítulos y el retraso aplicado.
+- [ ] 1080p x264: "Abrir en VLC" en la pantalla de búfer ("¿Prefieres VLC?") y en los controles durante la reproducción (botón y tecla V). Pausa el video, sale de pantalla completa y VLC abre con el subtítulo activo; sin VLC instalado sale un aviso que se puede cerrar.
 - [ ] Una versión sin seeds: a los 60 s aparece la pantalla "sin peers" con otra versión / seguir esperando / volver.
 - [ ] Salir a mitad y volver: "Continuar (h:mm:ss)" retoma en el segundo exacto; "Desde el principio" empieza en 0.
 - [ ] Pasar el 92 %: sale de Continuar viendo.

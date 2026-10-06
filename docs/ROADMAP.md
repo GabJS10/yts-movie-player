@@ -316,3 +316,6 @@ Otras ideas:
 - Firma de código en Windows (Azure Trusted Signing o certificado OV) para quitar el aviso de SmartScreen.
 - Varios idiomas de subtítulos al mismo tiempo y subtítulos generados en local.
 - Perfiles de usuario.
+- VLC desde el punto actual: hoy "Abrir en VLC" empieza la película desde el principio. Pasar la posición (`--start-time` en VLC, `--start` en mpv) con un parámetro nuevo en `open_external_player` (backend + IPC + frontend).
+- Progreso visto en VLC: hoy no se guarda en "Continuar viendo". Se podría leer por la interfaz HTTP/RC de VLC o la IPC de mpv (backend).
+- "Ver en VLC" desde la ficha, sin pasar por el reproductor integrado.
