@@ -37,7 +37,7 @@ Not a streaming service: a desktop client over the public YTS catalog whose play
 - Subtitles from OpenSubtitles need the user's API key; ES by default, EN optional, manual .srt drop.
 - Trailers via youtube-nocookie embed (may be blocked; fallback window).
 - Keyboard navigable; player shortcuts: space, ←/→ ±10 s, F, M.
-- UI copy is in Spanish.
+- UI copy is in Spanish or English (follows the system by default; selectable in Ajustes).
 
 ## Brand Commitments
 

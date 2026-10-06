@@ -16,9 +16,14 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     viewport: { width: 1440, height: 900 },
+    // The specs assert the Spanish copy; the app follows the browser language unless one is chosen.
+    locale: "es-ES",
   },
   projects: [
-    { name: "webkit", use: { ...devices["Desktop Safari"], viewport: { width: 1440, height: 900 } } },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"], viewport: { width: 1440, height: 900 }, locale: "es-ES" },
+    },
   ],
   webServer: {
     command: "npm run dev",

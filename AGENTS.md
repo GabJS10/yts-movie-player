@@ -93,7 +93,7 @@ Dependencias del sistema (Ubuntu): `libwebkit2gtk-4.1-dev build-essential libssl
 - Datos de usuario en `~/.local/share/yts-player/` (Windows: `%LOCALAPPDATA%\yts-player\`; `cache/` para el streaming con límite LRU y `library/` para las descargas guardadas).
 - Errores en Rust con `thiserror`; los comandos devuelven `Result<T, AppError>` (`{ code, message }`, ver `docs/IPC.md`). Nada de `unwrap()` en caminos de producción.
 - TypeScript en modo `strict`. Componentes funcionales y hooks.
-- La UI de la app está en **español**. Identificadores y comentarios de código en inglés.
+- La UI de la app está en **español e inglés** (selector en Ajustes › Idioma; por defecto sigue al sistema). Todo texto visible va en `src/i18n/es.ts` y `src/i18n/en.ts`, nunca literal en los componentes (`useT()` en React, `getT()` fuera). Identificadores y comentarios de código en inglés.
 - Tests: fixtures JSON reales de la API para el parseo, más tests de SRT→VTT, del armado de magnets y de las migraciones de la DB.
 - Mantener `docs/PLAN.md` actualizado si cambian las decisiones de arquitectura.
 - **Esperar procesos y logs sin colgarse:** los bucles `until grep …` llevan siempre un tiempo máximo (`timeout 300 bash -c '…'`). Para buscar texto en salidas de cargo/tauri/vite, desactiva los colores (`NO_COLOR=1 CARGO_TERM_COLOR=never`) o quita los códigos ANSI (`sed 's/\x1b\[[0-9;]*m//g'`): cargo escribe `Running` con códigos de color pegados y un patrón como `Running .*target` nunca coincide.
