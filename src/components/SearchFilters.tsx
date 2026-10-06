@@ -1,25 +1,26 @@
 import type { ReactNode } from "react";
 import type { OrderBy, SortBy } from "../api/types";
-import { GENRES } from "../lib/genres";
+import { useT } from "../i18n";
+import { genres } from "../lib/genres";
 import type { CatalogSearch } from "../lib/searchParams";
 
 type Props = { value: CatalogSearch; onChange: (patch: Partial<CatalogSearch>) => void };
 
 const QUALITY_OPTIONS = [
-  ["", "Todas"],
+  ["", null],
   ["720p", "720p"],
   ["1080p", "1080p"],
   ["2160p", "4K"],
   ["3D", "3D"],
 ] as const;
 const RATING_OPTIONS = [0, 6, 7, 8] as const;
-const SORT_OPTIONS: readonly { value: SortBy; label: string; order: OrderBy }[] = [
-  { value: "download_count", label: "Más descargadas", order: "desc" },
-  { value: "date_added", label: "Recién añadidas", order: "desc" },
-  { value: "rating", label: "Valoración", order: "desc" },
-  { value: "seeds", label: "Más seeds", order: "desc" },
-  { value: "year", label: "Año", order: "desc" },
-  { value: "title", label: "Título (A–Z)", order: "asc" },
+const SORT_OPTIONS: readonly { value: SortBy; order: OrderBy }[] = [
+  { value: "download_count", order: "desc" },
+  { value: "date_added", order: "desc" },
+  { value: "rating", order: "desc" },
+  { value: "seeds", order: "desc" },
+  { value: "year", order: "desc" },
+  { value: "title", order: "asc" },
 ];
 
 const Field = ({ label, children, id }: { label: string; children: ReactNode; id?: string }) => (
@@ -36,9 +37,10 @@ const Field = ({ label, children, id }: { label: string; children: ReactNode; id
 );
 
 export function SearchFilters({ value, onChange }: Props) {
+  const t = useT().filters;
   return (
     <div className="mb-6 flex flex-wrap items-end gap-x-7 gap-y-4 border-b border-line pt-1.5 pb-5">
-      <Field label="Género" id="f-genre">
+      <Field label={t.genre} id="f-genre">
         <select
           id="f-genre"
           className="select"
@@ -46,16 +48,16 @@ export function SearchFilters({ value, onChange }: Props) {
           value={value.genre ?? ""}
           onChange={(e) => onChange({ genre: e.target.value || undefined })}
         >
-          <option value="">Todos</option>
-          {GENRES.map((g) => (
+          <option value="">{t.allGenres}</option>
+          {genres().map((g) => (
             <option key={g.value} value={g.value}>
               {g.label}
             </option>
           ))}
         </select>
       </Field>
-      <Field label="Calidad">
-        <div className="seg" role="group" aria-label="Calidad" data-testid="filter-quality">
+      <Field label={t.quality}>
+        <div className="seg" role="group" aria-label={t.quality} data-testid="filter-quality">
           {QUALITY_OPTIONS.map(([v, label]) => (
             <button
               key={v}
@@ -63,13 +65,13 @@ export function SearchFilters({ value, onChange }: Props) {
               aria-pressed={(value.quality ?? "") === v}
               onClick={() => onChange({ quality: v || undefined })}
             >
-              {label}
+              {label ?? t.all}
             </button>
           ))}
         </div>
       </Field>
-      <Field label="Valoración mínima">
-        <div className="seg" role="group" aria-label="Valoración mínima" data-testid="filter-rating">
+      <Field label={t.minRating}>
+        <div className="seg" role="group" aria-label={t.minRating} data-testid="filter-rating">
           {RATING_OPTIONS.map((r) => (
             <button
               key={r}
@@ -77,12 +79,12 @@ export function SearchFilters({ value, onChange }: Props) {
               aria-pressed={(value.minimumRating ?? 0) === r}
               onClick={() => onChange({ minimumRating: r || undefined })}
             >
-              {r ? `${r}+` : "Todas"}
+              {r ? `${r}+` : t.all}
             </button>
           ))}
         </div>
       </Field>
-      <Field label="Ordenar por" id="f-sort">
+      <Field label={t.sortBy} id="f-sort">
         <select
           id="f-sort"
           className="select"
@@ -95,7 +97,7 @@ export function SearchFilters({ value, onChange }: Props) {
         >
           {SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {t.sorts[o.value]}
             </option>
           ))}
         </select>

@@ -1,3 +1,4 @@
+import { useT } from "../../i18n";
 import type { ReactNode } from "react";
 
 /** One setting: title and help on the left, the control on the right (stacked when `stack`). */
@@ -39,13 +40,14 @@ export function SetSection({
   soon?: boolean;
   children: ReactNode;
 }) {
+  const t = useT().settings;
   return (
     <section className="set-section" id={id} aria-labelledby={`${id}-title`} data-set-section>
       <h2 id={`${id}-title`} className="m-0 mb-1 flex items-center gap-3 text-[22px] font-extrabold">
         {title}
         {soon && (
           <span className="rounded-sm border border-line-hi px-2 text-[11.5px] leading-[22px] font-semibold tracking-[0.08em] text-muted uppercase">
-            Próximamente
+            {t.soon}
           </span>
         )}
       </h2>
@@ -53,7 +55,7 @@ export function SetSection({
       {soon ? (
         <fieldset disabled className="m-0 min-w-0 border-0 p-0" aria-describedby={`${id}-soon`}>
           <p id={`${id}-soon`} className="sr-only">
-            Disponible en una próxima versión
+            {t.soonHelp}
           </p>
           {children}
         </fieldset>

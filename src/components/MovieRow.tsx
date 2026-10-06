@@ -2,6 +2,7 @@ import { Link, type LinkProps } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useInfiniteMovies } from "../api/queries";
 import type { ListMoviesParams, MovieSummary } from "../api/types";
+import { useT } from "../i18n";
 import { onRowKeyDown } from "../lib/rowNav";
 import { useInView } from "../lib/useInView";
 import { ErrorState } from "./ErrorState";
@@ -20,6 +21,7 @@ type RowShellProps = {
 const SKELETONS = Array.from({ length: 8 }, (_, i) => <MovieCardSkeleton key={i} />);
 
 export function RowShell({ title, note, more, children, trackRef, busy }: RowShellProps) {
+  const t = useT();
   const track = useRef<HTMLDivElement | null>(null);
   const [edges, setEdges] = useState({ start: true, end: false });
   const sync = useCallback(() => {
@@ -58,7 +60,7 @@ export function RowShell({ title, note, more, children, trackRef, busy }: RowShe
             {...more}
             className="inline-flex -translate-x-1.5 items-center gap-0.5 text-[13px] font-semibold text-green opacity-0 transition group-hover/row:translate-x-0 group-hover/row:opacity-100 focus-visible:translate-x-0 focus-visible:opacity-100"
           >
-            Ver todo
+            {t.rows.seeAll}
             <Icon name="chev-r" size={14} />
           </Link>
         )}
@@ -68,7 +70,7 @@ export function RowShell({ title, note, more, children, trackRef, busy }: RowShe
           <button
             type="button"
             className="row-arrow left-0 rounded-r-md"
-            aria-label="Anteriores"
+            aria-label={t.rows.prev}
             onClick={() => page(-1)}
           >
             <Icon name="chev-l" size={30} />
@@ -90,7 +92,7 @@ export function RowShell({ title, note, more, children, trackRef, busy }: RowShe
           <button
             type="button"
             className="row-arrow right-0 rounded-l-md"
-            aria-label="Siguientes"
+            aria-label={t.rows.next}
             onClick={() => page(1)}
           >
             <Icon name="chev-r" size={30} />

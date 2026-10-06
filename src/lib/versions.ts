@@ -1,4 +1,5 @@
 import type { Quality, Torrent } from "../api/types";
+import { getT } from "../i18n";
 
 const QUALITY_RANK: Record<Quality, number> = { "480p": 1, "720p": 2, "1080p": 3, "2160p": 4, "3D": 0 };
 
@@ -73,11 +74,12 @@ export type TorrentNote = { kind: "hevc" | "3d" | "no-seeds" | "low-seeds"; text
 
 /** Warnings shown next to a version, most important first. */
 export function torrentNotes(t: Torrent): TorrentNote[] {
+  const copy = getT().versions;
   const notes: TorrentNote[] = [];
-  if (t.videoCodec === "x265") notes.push({ kind: "hevc", text: "HEVC: puede necesitar VLC" });
-  if (t.quality === "3D") notes.push({ kind: "3d", text: "Requiere pantalla 3D" });
-  if (t.seeds <= 0) notes.push({ kind: "no-seeds", text: "Sin seeds: puede no arrancar" });
-  else if (t.seeds < LOW_SEEDS) notes.push({ kind: "low-seeds", text: "Pocos seeds: arranque lento" });
+  if (t.videoCodec === "x265") notes.push({ kind: "hevc", text: copy.hevc });
+  if (t.quality === "3D") notes.push({ kind: "3d", text: copy.needs3d });
+  if (t.seeds <= 0) notes.push({ kind: "no-seeds", text: copy.noSeeds });
+  else if (t.seeds < LOW_SEEDS) notes.push({ kind: "low-seeds", text: copy.lowSeeds });
   return notes;
 }
 

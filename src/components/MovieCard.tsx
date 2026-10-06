@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useFavorites } from "../api/queries";
 import type { MovieSummary, Quality } from "../api/types";
+import { useT } from "../i18n";
 import { formatRating, formatRuntime } from "../lib/format";
 import { qualityRank } from "../lib/versions";
 import { Icon } from "./Icon";
@@ -9,6 +10,7 @@ import { SwarmSignal } from "./SwarmSignal";
 
 /** Poster card. Hover/focus reveals title, meta and available qualities. */
 export function MovieCard({ movie }: { movie: MovieSummary }) {
+  const t = useT();
   const order = (q: Quality) => (q === "3D" ? 99 : qualityRank(q));
   const qualities = [...movie.qualities].sort((a, b) => order(a) - order(b));
   // Shared, cached list: every card reads the same query.
@@ -27,7 +29,7 @@ export function MovieCard({ movie }: { movie: MovieSummary }) {
       {inList && (
         <span
           className="absolute top-2 right-2 grid size-[22px] place-items-center rounded-full bg-[rgba(12,12,12,.75)] text-green"
-          title="En Mi lista"
+          title={t.favorite.inList}
           aria-hidden="true"
           data-testid="card-in-list"
         >

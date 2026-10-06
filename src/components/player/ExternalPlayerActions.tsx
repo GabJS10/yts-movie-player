@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { describeError } from "../../api/errors";
 import type { ExternalSubtitleArgs, Torrent } from "../../api/types";
+import { useT } from "../../i18n";
 import { Icon } from "../Icon";
 import { useOpenExternal } from "./useOpenExternal";
 
@@ -19,6 +20,7 @@ type Props = {
  */
 export function ExternalPlayerActions({ movieId, infohash, alternative, primary = true, subtitles }: Props) {
   const { open, opening, error, note } = useOpenExternal({ infohash, subtitles });
+  const t = useT().player;
   return (
     <div>
       <div className="flex flex-wrap gap-3">
@@ -29,7 +31,7 @@ export function ExternalPlayerActions({ movieId, infohash, alternative, primary 
           disabled={opening}
         >
           <Icon name="external" size={primary ? 22 : 18} />
-          Abrir en VLC
+          {t.openVlc}
         </button>
         {alternative && (
           <Link
@@ -39,7 +41,7 @@ export function ExternalPlayerActions({ movieId, infohash, alternative, primary 
             replace
             className={`btn btn-line ${primary ? "" : "btn-sm"}`}
           >
-            Cambiar a {alternative.quality} x264
+            {t.switchTo(alternative.quality)}
           </Link>
         )}
       </div>
@@ -53,7 +55,7 @@ export function ExternalPlayerActions({ movieId, infohash, alternative, primary 
           {note.text}{" "}
           {note.settings && (
             <Link to="/settings" hash={note.settings} className="font-semibold text-green hover:underline">
-              Ir a Ajustes
+              {t.goToSettings}
             </Link>
           )}
         </p>

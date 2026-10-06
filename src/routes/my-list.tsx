@@ -3,69 +3,56 @@ import { useState } from "react";
 import { useFavorites } from "../api/queries";
 import { ErrorState } from "../components/ErrorState";
 import { MovieCard, MovieCardSkeleton } from "../components/MovieCard";
+import { useT } from "../i18n";
 import { sortFavorites, type FavoriteSort } from "../lib/movie";
 
 export const Route = createFileRoute("/my-list")({ component: MyListPage });
 
-const SORTS: { value: FavoriteSort; label: string }[] = [
-  { value: "added", label: "Añadidas" },
-  { value: "rating", label: "Valoración" },
-  { value: "year", label: "Año" },
-  { value: "title", label: "Título" },
-];
+const SORTS: FavoriteSort[] = ["added", "rating", "year", "title"];
 
 const grid =
   "grid-cards grid grid-cols-[repeat(auto-fill,minmax(clamp(140px,13vw,190px),1fr))] gap-x-2.5 gap-y-7";
 
 function MyListPage() {
   const favorites = useFavorites();
+  const t = useT();
   const [sort, setSort] = useState<FavoriteSort>("added");
   const movies = favorites.data;
 
   return (
     <div className="min-h-screen px-gutter pt-[calc(var(--spacing-nav)+36px)] pb-24">
-      <h1 className="m-0 mb-1.5 text-headline font-[850] uppercase stretch-condensed">Mi lista</h1>
+      <h1 className="m-0 mb-1.5 text-headline font-[850] uppercase stretch-condensed">{t.nav.myList}</h1>
 
       {favorites.isError ? (
         <div className="mt-8">
           <ErrorState error={favorites.error} onRetry={() => void favorites.refetch()} />
         </div>
       ) : !movies ? (
-        <div className={`${grid} mt-8`} aria-busy="true" aria-label="Cargando Mi lista">
+        <div className={`${grid} mt-8`} aria-busy="true" aria-label={t.myList.loading}>
           {Array.from({ length: 6 }, (_, i) => (
             <MovieCardSkeleton key={i} />
           ))}
         </div>
       ) : movies.length === 0 ? (
         <div className="grid max-w-[460px] justify-items-start gap-3.5 py-16">
-          <h2 className="m-0 text-[22px] font-extrabold">Tu lista está vacía</h2>
-          <p className="m-0 text-muted">
-            Pulsa «Mi lista» en la ficha de cualquier película y aparecerá aquí y en el inicio.
-          </p>
+          <h2 className="m-0 text-[22px] font-extrabold">{t.myList.emptyTitle}</h2>
+          <p className="m-0 text-muted">{t.myList.emptyBody}</p>
           <Link to="/" className="btn btn-line btn-sm">
-            Explorar el catálogo
+            {t.myList.explore}
           </Link>
         </div>
       ) : (
         <>
-          <p className="m-0 mb-8 text-[15px] text-muted tnum">
-            {movies.length === 1 ? "1 película guardada" : `${movies.length} películas guardadas`} para
-            después
-          </p>
+          <p className="m-0 mb-8 text-[15px] text-muted tnum">{t.myList.count(movies.length)}</p>
           <div className="mb-6 flex items-end border-b border-line pt-1.5 pb-5">
             <div className="grid gap-1.5">
               <span className="field-label" id="mylist-sort">
-                Ordenar
+                {t.myList.sort}
               </span>
               <div className="seg" role="group" aria-labelledby="mylist-sort">
                 {SORTS.map((s) => (
-                  <button
-                    key={s.value}
-                    type="button"
-                    aria-pressed={sort === s.value}
-                    onClick={() => setSort(s.value)}
-                  >
-                    {s.label}
+                  <button key={s} type="button" aria-pressed={sort === s} onClick={() => setSort(s)}>
+                    {t.myList.sorts[s]}
                   </button>
                 ))}
               </div>

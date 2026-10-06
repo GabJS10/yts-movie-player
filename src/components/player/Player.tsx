@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type SyntheticEvent } from "react";
 import { startStream, stopStream, toAppError } from "../../api/tauri";
 import type { MovieDetail, Torrent } from "../../api/types";
+import { getT, useT } from "../../i18n";
 import { isFullscreen, setFullscreen } from "../../lib/fullscreen";
 import {
   initialPlayerState,
@@ -41,6 +42,7 @@ type Props = {
 
 /** Stream session lifecycle, buffer pre-roll, <video> with custom controls and codec fallback. */
 export function Player({ movie, torrent, fromStart = false }: Props) {
+  const t = useT().player;
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(playerReducer, initialPlayerState);
   const root = useRef<HTMLDivElement>(null);
@@ -164,7 +166,7 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
   const nudge = useCallback(
     (dir: 1 | -1) => {
       nudgeDelay(dir);
-      flash(`Retraso de subtítulos: ${formatDelay(useUiStore.getState().subtitleDelay[movie.id] ?? 0)}`);
+      flash(getT().player.subtitleDelay(formatDelay(useUiStore.getState().subtitleDelay[movie.id] ?? 0)));
     },
     [nudgeDelay, flash, movie.id],
   );
@@ -193,7 +195,7 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
         setDragging(false);
         const path = e.paths.find(isSubtitleFile);
         if (path) void loadFile(path);
-        else if (e.paths.length) flash("Solo se pueden cargar subtítulos .srt o .vtt");
+        else if (e.paths.length) flash(getT().player.onlySubtitleFiles);
       }
     }).then((unlisten) => {
       if (alive) off = unlisten;
@@ -405,7 +407,7 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
 
       {dragging && (
         <div className="pointer-events-none absolute inset-4 z-20 grid place-items-center rounded-lg border-2 border-dashed border-green bg-black/60 text-lg font-bold">
-          Suelta el archivo para cargar los subtítulos
+          {t.dropHint}
         </div>
       )}
 
@@ -436,7 +438,7 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
               setAttempt((n) => n + 1);
             }}
             onBack={back}
-            backLabel="Volver a la ficha"
+            backLabel={t.backToMovie}
           />
         </div>
       )}
@@ -454,7 +456,7 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
         <div className="pointer-events-none absolute inset-0 grid place-items-center" role="status">
           <div className="flex items-center gap-3 rounded-lg bg-black/70 px-5 py-3 text-[15px] font-semibold">
             <span className="pulse-dot" aria-hidden="true" />
-            Esperando datos… · {state.stats?.peers ?? 0} peers
+            {t.waiting(state.stats?.peers ?? 0)}
           </div>
         </div>
       )}

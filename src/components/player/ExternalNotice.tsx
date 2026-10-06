@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { describeError } from "../../api/errors";
 import type { AppError } from "../../api/types";
+import { useT } from "../../i18n";
 import { Icon } from "../Icon";
 import type { ExternalNote } from "./useOpenExternal";
 
@@ -24,6 +25,7 @@ export function ExternalNotice({ error, note, onDismiss, lower = false }: Props)
     return () => window.clearTimeout(id);
   }, [error, note, onDismiss]);
 
+  const t = useT().player;
   const settings = error?.code === "external_player_missing" ? "s-play" : (note?.settings ?? null);
   return (
     <div
@@ -35,13 +37,13 @@ export function ExternalNotice({ error, note, onDismiss, lower = false }: Props)
       <span>{error ? `${describeError(error).title}. ${describeError(error).action}` : note?.text}</span>
       {settings && (
         <Link to="/settings" hash={settings} className={action}>
-          Ir a Ajustes
+          {t.goToSettings}
         </Link>
       )}
       <button
         type="button"
         className="inline-grid size-7 place-items-center rounded-full text-muted hover:bg-white/10 hover:text-text"
-        aria-label="Cerrar aviso"
+        aria-label={t.closeNotice}
         onClick={onDismiss}
       >
         <Icon name="x" size={16} />

@@ -2,6 +2,7 @@ import { useRef, type KeyboardEvent } from "react";
 import type { Torrent } from "../api/types";
 import { formatBytes, formatCount } from "../lib/format";
 import { SOURCE_LABEL, torrentNotes } from "../lib/versions";
+import { useT } from "../i18n";
 import { Icon } from "./Icon";
 import { SwarmSignal } from "./SwarmSignal";
 
@@ -14,6 +15,7 @@ type Props = {
 
 /** Ruled timetable of versions, one radio per row (↑/↓ to move). */
 export function VersionsTable({ torrents, selected, onSelect, labelledBy }: Props) {
+  const copy = useT().versionsTable;
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const current = Math.max(
     0,
@@ -45,18 +47,18 @@ export function VersionsTable({ torrents, selected, onSelect, labelledBy }: Prop
         <thead>
           <tr>
             <th className="w-11">
-              <span className="sr-only">Elegida</span>
+              <span className="sr-only">{copy.chosen}</span>
             </th>
-            <th>Calidad</th>
-            <th>Fuente</th>
-            <th>Códec</th>
-            <th>Audio</th>
-            <th className="r">Tamaño</th>
+            <th>{copy.quality}</th>
+            <th>{copy.source}</th>
+            <th>{copy.codec}</th>
+            <th>{copy.audio}</th>
+            <th className="r">{copy.size}</th>
             <th className="r">Seeds</th>
             <th className="r">Peers</th>
-            <th>Enjambre</th>
+            <th>{copy.swarm}</th>
             <th>
-              <span className="sr-only">Avisos</span>
+              <span className="sr-only">{copy.notes}</span>
             </th>
           </tr>
         </thead>

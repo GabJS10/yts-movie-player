@@ -1,11 +1,13 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { ERROR_COPY, ERROR_NEXT } from "../api/errors";
+import { ERROR_NEXT } from "../api/errors";
+import { es } from "../i18n/es";
 import type { ErrorCode } from "../api/types";
 import { renderApp, renderWithProviders } from "../test/render";
 import { ErrorState } from "./ErrorState";
 
+const ERROR_COPY = es.errors;
 const CODES = Object.keys(ERROR_COPY) as ErrorCode[];
 
 describe("ErrorState: a screen with a way out for every ErrorCode", () => {

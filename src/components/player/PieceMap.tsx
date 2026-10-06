@@ -1,4 +1,5 @@
 import type { PieceMapWindow } from "../../api/types";
+import { useT } from "../../i18n";
 import { parsePieceMap, windowCaption } from "../../lib/player";
 
 /**
@@ -6,6 +7,7 @@ import { parsePieceMap, windowCaption } from "../../lib/player";
  * sequentially ahead of the playhead. The "arriving" style stays for pieceMap "3", reserved by the backend.
  */
 export function PieceMap({ map, window }: { map: string | null; window: PieceMapWindow | null }) {
+  const t = useT().buffer;
   const cells = parsePieceMap(map);
   const caption = windowCaption(window);
   return (
@@ -18,11 +20,11 @@ export function PieceMap({ map, window }: { map: string | null; window: PieceMap
       <div className="flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-xs text-muted">
         <span className="inline-flex items-center gap-1.5">
           <i className="inline-block h-[13px] w-[9px] rounded-[1px] bg-green" />
-          Piezas listas
+          {t.piecesReady}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <i className="inline-block h-[13px] w-[9px] rounded-[1px] shadow-[inset_0_0_0_1px_rgba(106,192,69,.7)]" />
-          Prioridad (por delante de la reproducción)
+          {t.piecesPriority}
         </span>
         {caption && <span className="ml-auto tnum max-[900px]:ml-0">{caption}</span>}
       </div>

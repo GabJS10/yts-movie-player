@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { describeError } from "../../api/errors";
-import { FALLBACK_LANG, formatResetTime, langLabel } from "../../lib/subtitles";
+import { useT } from "../../i18n";
+import { FALLBACK_LANG, formatResetTime, langName } from "../../lib/subtitles";
 import { Icon } from "../Icon";
 import type { SubtitleNotice as Notice } from "./useSubtitles";
 
@@ -23,14 +24,15 @@ export function SubtitleNotice({ notice, onDismiss, onFallback, onPickFile }: Pr
     return () => window.clearTimeout(id);
   }, [notice, onDismiss]);
 
+  const t = useT().subtitleNotice;
   const settingsLink = (
     <Link to="/settings" hash="s-subs" className={action}>
-      Ir a Ajustes › Subtítulos
+      {t.settings}
     </Link>
   );
   const fileButton = (
     <button type="button" className={action} onClick={onPickFile}>
-      Cargar un archivo
+      {t.loadFile}
     </button>
   );
 
@@ -38,20 +40,20 @@ export function SubtitleNotice({ notice, onDismiss, onFallback, onPickFile }: Pr
   let actions: ReactNode = null;
   switch (notice.kind) {
     case "no-key":
-      text = "Los subtítulos no se buscan solos: falta la clave de OpenSubtitles.";
+      text = t.noKey;
       actions = settingsLink;
       break;
     case "auth":
-      text = "OpenSubtitles no acepta la clave guardada.";
+      text = t.auth;
       actions = settingsLink;
       break;
     case "none":
-      text = `No hay subtítulos en ${langLabel(notice.lang).toLowerCase()} para esta película.`;
+      text = t.none(langName(notice.lang));
       actions =
         notice.lang !== FALLBACK_LANG ? (
           <>
             <button type="button" className={action} onClick={onFallback}>
-              Usar inglés
+              {t.useEnglish}
             </button>
             {fileButton}
           </>
@@ -60,13 +62,12 @@ export function SubtitleNotice({ notice, onDismiss, onFallback, onPickFile }: Pr
         );
       break;
     case "quota": {
-      const at = formatResetTime(notice.resetAt);
-      text = `Se agotó el cupo diario de OpenSubtitles${at ? `; se renueva a las ${at}` : ""}.`;
+      text = t.quota(formatResetTime(notice.resetAt));
       actions = fileButton;
       break;
     }
     case "error":
-      text = `${describeError(notice.error).title}. No se pudieron cargar los subtítulos.`;
+      text = t.error(describeError(notice.error).title);
       actions = fileButton;
       break;
   }
@@ -83,7 +84,7 @@ export function SubtitleNotice({ notice, onDismiss, onFallback, onPickFile }: Pr
       <button
         type="button"
         className="inline-grid size-7 place-items-center rounded-full text-muted hover:bg-white/10 hover:text-text"
-        aria-label="Cerrar aviso"
+        aria-label={t.close}
         onClick={onDismiss}
       >
         <Icon name="x" size={16} />

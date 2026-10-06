@@ -34,10 +34,34 @@ describe("/settings", () => {
       within(nav)
         .getAllByRole("link")
         .map((a) => a.textContent),
-    ).toEqual(["Catálogo", "Subtítulos", "Reproducción", "Torrent", "Almacenamiento", "Acerca de"]);
+    ).toEqual(["Idioma", "Catálogo", "Subtítulos", "Reproducción", "Torrent", "Almacenamiento", "Acerca de"]);
     expect(screen.queryByText("Próximamente")).toBeNull();
     const torrent = screen.getByRole("region", { name: /Torrent/ });
     for (const control of torrent.querySelectorAll("input, [role=switch]")) expect(control).toBeEnabled();
+  });
+
+  describe("Idioma", () => {
+    it("switches the whole app to English and back, and remembers the choice", async () => {
+      const user = userEvent.setup();
+      const { calls } = await open();
+      const group = screen.getByRole("group", { name: "Idioma de la app" });
+      expect(within(group).getByRole("button", { name: "Español" })).toHaveAttribute("aria-pressed", "true");
+
+      await user.click(within(group).getByRole("button", { name: "English" }));
+      expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Catalog" })).toBeInTheDocument();
+      expect(screen.getByTestId("nav-downloads")).toHaveTextContent("Downloads");
+      expect(document.documentElement.lang).toBe("en");
+      expect(window.localStorage.getItem("yts-player:language")).toBe("en");
+      // A device preference, not a backend setting.
+      expect(patches(calls)).toEqual([]);
+
+      await user.click(screen.getByRole("button", { name: "Automatic" }));
+      expect(window.localStorage.getItem("yts-player:language")).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Español" }));
+      expect(await screen.findByRole("heading", { level: 1, name: "Ajustes" })).toBeInTheDocument();
+      expect(document.documentElement.lang).toBe("es");
+    });
   });
 
   describe("Torrent", () => {

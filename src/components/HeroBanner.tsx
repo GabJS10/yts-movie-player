@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useFeatured, useHeroMovie, useMovie, useTorrentPrefs } from "../api/queries";
 import type { FeaturedItem, MovieDetail, MovieSummary } from "../api/types";
+import { useT } from "../i18n";
 import { heroArt, reasonLabel, ROTATE_MS } from "../lib/featured";
 import { usePageHidden, useReducedMotion } from "../lib/motion";
 import { pickDefaultTorrent } from "../lib/versions";
@@ -31,8 +32,9 @@ export function HeroBanner() {
 }
 
 function HeroSkeleton() {
+  const t = useT();
   return (
-    <section className={heroFrame} aria-label="Destacada" aria-busy="true" data-testid="hero">
+    <section className={heroFrame} aria-label={t.hero.label} aria-busy="true" data-testid="hero">
       <div className="skeleton absolute inset-0 rounded-none" aria-hidden="true" />
       <div className={scrim} />
       <div className={bodyPos}>
@@ -67,6 +69,7 @@ function HeroBody({
   reason?: ReactNode;
 }) {
   const prefs = useTorrentPrefs();
+  const t = useT();
   const best = detail ? pickDefaultTorrent(detail.torrents, prefs) : null;
   return (
     <>
@@ -105,7 +108,7 @@ function HeroBody({
           data-testid="hero-play"
         >
           <Icon name="play" size={22} />
-          Reproducir
+          {t.hero.play}
         </Link>
         <Link
           to="/movie/$movieId"
@@ -114,7 +117,7 @@ function HeroBody({
           data-testid="hero-info"
         >
           <Icon name="info" size={22} />
-          Más info
+          {t.hero.moreInfo}
         </Link>
         <FavoriteButton
           movie={movie}
@@ -130,6 +133,7 @@ function HeroBody({
 /** The fallback: most downloaded movie with artwork; stills and release facts come from get_movie. */
 function SingleHero() {
   const hero = useHeroMovie();
+  const t = useT();
   const movie = hero.data;
   // The summary has no stills, torrents or synopsis: the detail query fills them in (and warms the movie page).
   const detail = useMovie(movie?.id ?? 0, { enabled: !!movie });
@@ -140,7 +144,7 @@ function SingleHero() {
     return (
       <section
         className={`${heroFrame} grid items-end px-gutter pb-28`}
-        aria-label="Destacada"
+        aria-label={t.hero.label}
         data-testid="hero"
       >
         <ErrorState error={hero.error} onRetry={() => void hero.refetch()} />
@@ -152,7 +156,7 @@ function SingleHero() {
   return (
     <section
       className={heroFrame}
-      aria-label="Destacada"
+      aria-label={t.hero.label}
       aria-busy={hero.isPending || undefined}
       data-testid="hero"
     >
@@ -179,6 +183,7 @@ const ctrl =
  */
 function HeroCarousel({ items }: { items: FeaturedItem[] }) {
   const n = items.length;
+  const t = useT();
   const [index, setIndex] = useState(0);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -219,8 +224,8 @@ function HeroCarousel({ items }: { items: FeaturedItem[] }) {
   return (
     <section
       className={heroFrame}
-      aria-label="Destacada"
-      aria-roledescription="carrusel"
+      aria-label={t.hero.label}
+      aria-roledescription={t.hero.carousel}
       data-testid="hero"
       data-index={index}
       onMouseEnter={() => setHovered(true)}
@@ -246,8 +251,8 @@ function HeroCarousel({ items }: { items: FeaturedItem[] }) {
       <div
         className={bodyPos}
         role="group"
-        aria-roledescription="destacada"
-        aria-label={`${index + 1} de ${n}: ${item.movie.title}`}
+        aria-roledescription={t.hero.slide}
+        aria-label={t.hero.position(index + 1, n, item.movie.title)}
       >
         <div key={item.movie.id} className="hero-in">
           <HeroBody movie={item.movie} detail={item.movie} reason={reasonLabel(item.reason)} />
@@ -255,7 +260,7 @@ function HeroCarousel({ items }: { items: FeaturedItem[] }) {
       </div>
       {/* Announced only when the user moves it (not on every auto-advance). */}
       <p className="sr-only" aria-live={rotating ? "off" : "polite"}>
-        {`Destacada ${index + 1} de ${n}: ${item.movie.title}`}
+        {t.hero.slidePosition(index + 1, n, item.movie.title)}
       </p>
 
       {n > 1 && (
@@ -263,7 +268,7 @@ function HeroCarousel({ items }: { items: FeaturedItem[] }) {
           <button
             type="button"
             className={ctrl}
-            aria-label={paused ? "Reanudar el pase automático" : "Pausar el pase automático"}
+            aria-label={paused ? t.hero.resume : t.hero.pause}
             aria-pressed={paused}
             data-testid="hero-pause"
             hidden={reduced}
@@ -274,7 +279,7 @@ function HeroCarousel({ items }: { items: FeaturedItem[] }) {
           <button
             type="button"
             className={ctrl}
-            aria-label="Anterior destacada"
+            aria-label={t.hero.prev}
             data-testid="hero-prev"
             onClick={() => go(index - 1)}
           >
@@ -286,7 +291,7 @@ function HeroCarousel({ items }: { items: FeaturedItem[] }) {
                 key={it.movie.id}
                 type="button"
                 className="grid size-6 place-items-center"
-                aria-label={`Destacada ${i + 1} de ${n}: ${it.movie.title}`}
+                aria-label={t.hero.slidePosition(i + 1, n, it.movie.title)}
                 aria-current={i === index ? "true" : undefined}
                 data-testid="hero-dot"
                 data-index={i}
@@ -303,7 +308,7 @@ function HeroCarousel({ items }: { items: FeaturedItem[] }) {
           <button
             type="button"
             className={ctrl}
-            aria-label="Siguiente destacada"
+            aria-label={t.hero.next}
             data-testid="hero-next"
             onClick={() => go(index + 1)}
           >

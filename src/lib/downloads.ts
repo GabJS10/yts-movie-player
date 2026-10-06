@@ -1,4 +1,5 @@
 import type { Download, DownloadState } from "../api/types";
+import { getT, oneDecimal } from "../i18n";
 import { formatRuntime } from "./format";
 
 /** Progress of list_downloads while the Downloads page (or a downloading movie page) is visible. */
@@ -34,28 +35,21 @@ export function groupDownloads(list: readonly Download[]) {
   };
 }
 
-export const STATE_LABEL: Record<DownloadState, string> = {
-  queued: "En cola",
-  active: "Descargando",
-  paused: "En pausa",
-  stalled: "Sin seeds conectados",
-  done: "Completada",
-  error: "Falló la descarga",
-  unavailable: "Carpeta no disponible",
-  moving: "Moviendo",
-};
+export const stateLabel = (state: DownloadState) => getT().downloadState[state];
 
-const pct = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 /** 0.634 → "63,4 %". Never shows 100 % before it's done. */
 export const formatPercent = (fraction: number) =>
-  `${pct.format(Math.min(fraction < 1 ? 99.9 : 100, Math.max(0, fraction) * 100))} %`;
+  getT().format.percent(
+    oneDecimal().format(Math.min(fraction < 1 ? 99.9 : 100, Math.max(0, fraction) * 100)),
+  );
 
 /** Whole percent for compact labels ("Descargando 45 %"). */
 export const roundPercent = (fraction: number) =>
-  `${Math.min(fraction < 1 ? 99 : 100, Math.floor(Math.max(0, fraction) * 100))} %`;
+  getT().format.percent(String(Math.min(fraction < 1 ? 99 : 100, Math.floor(Math.max(0, fraction) * 100))));
 
 /** "quedan 1 h 4 min" / "quedan 3 min" / "menos de un minuto". */
 export function formatEta(etaS: number): string {
   const min = Math.round(etaS / 60);
-  return min < 1 ? "menos de un minuto" : `quedan ${formatRuntime(min)}`;
+  const t = getT().format;
+  return min < 1 ? t.etaUnderAMinute : t.eta(formatRuntime(min));
 }

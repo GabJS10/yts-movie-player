@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useUpdateSettings } from "../../api/queries";
 import type { Quality, Settings } from "../../api/types";
+import { useT } from "../../i18n";
 import { SetRow, SetSection, Segmented, Switch } from "./controls";
 
 const MB = 1024 * 1024;
@@ -17,6 +18,7 @@ const BUFFER_OPTIONS_MB = [4, 8, 16, 32] as const;
 /** Ajustes › Reproducción: default version, external player and the start buffer. */
 export function PlaybackSection({ settings }: { settings: Settings }) {
   const update = useUpdateSettings();
+  const t = useT().playback;
   // Edited locally; saved on blur or Enter. Re-seeded when the stored value changes elsewhere.
   const [player, setPlayer] = useState(settings.externalPlayer);
   const [seen, setSeen] = useState(settings.externalPlayer);
@@ -24,7 +26,7 @@ export function PlaybackSection({ settings }: { settings: Settings }) {
     setSeen(settings.externalPlayer);
     setPlayer(settings.externalPlayer);
   }
-  const playerError = player.trim() ? null : "Escribe el comando o la ruta del reproductor.";
+  const playerError = player.trim() ? null : t.playerRequired;
 
   const commitPlayer = () => {
     const value = player.trim();
@@ -36,30 +38,23 @@ export function PlaybackSection({ settings }: { settings: Settings }) {
   const bufferMb = Math.round(settings.bufferTargetBytes / MB);
 
   return (
-    <SetSection id="s-play" title="Reproducción">
-      <SetRow title="Calidad preferida" help="Se elige por defecto en la ficha si existe.">
+    <SetSection id="s-play" title={t.title}>
+      <SetRow title={t.quality} help={t.qualityHelp}>
         <Segmented
-          label="Calidad preferida"
+          label={t.quality}
           value={settings.preferredQuality}
           options={QUALITIES}
           onChange={(preferredQuality) => update.mutate({ preferredQuality })}
         />
       </SetRow>
-      <SetRow
-        title="Preferir x264"
-        help="Las versiones x265 (HEVC, típicas en 4K) no suelen reproducirse en el reproductor integrado."
-      >
+      <SetRow title={t.preferX264} help={t.preferX264Help}>
         <Switch
-          label="Preferir x264"
+          label={t.preferX264}
           checked={settings.preferX264}
           onChange={(preferX264) => update.mutate({ preferX264 })}
         />
       </SetRow>
-      <SetRow
-        title="Reproductor externo"
-        help="Para «Abrir en VLC» cuando el reproductor integrado no puede con un archivo."
-        id="external-player-title"
-      >
+      <SetRow title={t.externalPlayer} help={t.externalPlayerHelp} id="external-player-title">
         <div className="grid justify-items-end gap-1">
           <input
             className="input input-mono w-[220px]"
@@ -78,12 +73,9 @@ export function PlaybackSection({ settings }: { settings: Settings }) {
           {playerError && <span className="text-[12.5px] text-danger">{playerError}</span>}
         </div>
       </SetRow>
-      <SetRow
-        title="Búfer antes de empezar"
-        help="Cuánto se descarga antes de dar al play. Más búfer tarda más en arrancar, pero se corta menos con pocos seeds."
-      >
+      <SetRow title={t.buffer} help={t.bufferHelp}>
         <Segmented
-          label="Búfer antes de empezar"
+          label={t.buffer}
           value={BUFFER_OPTIONS_MB.find((mb) => mb === bufferMb) ?? null}
           options={BUFFER_OPTIONS_MB.map((mb) => ({ value: mb, label: `${mb} MB` }))}
           onChange={(mb) => update.mutate({ bufferTargetBytes: mb * MB })}

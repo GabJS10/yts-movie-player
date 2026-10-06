@@ -1,6 +1,7 @@
 // Pure player logic: state machine, progress-bar layers, piece map and shortcuts. No React, no IPC.
 
 import type { AppError, PieceMapWindow, StreamPhase, StreamSession, TorrentStats } from "../api/types";
+import { getT } from "../i18n";
 
 // ───────── State machine ─────────
 
@@ -133,16 +134,7 @@ export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerSta
   }
 }
 
-export const PHASE_TEXT: Record<StreamPhase, string> = {
-  connecting: "Conectando al enjambre…",
-  metadata: "Resolviendo el magnet…", // only on the magnet fallback (no .torrent from YTS)
-  buffering: "Llenando el búfer…",
-  ready: "Listo",
-  stalled: "Sin datos: nadie está enviando piezas",
-  no_peers: "Nadie está compartiendo esta versión",
-  seeding: "Listo",
-  done: "Listo",
-};
+export const phaseText = (phase: StreamPhase) => getT().streamPhase[phase];
 
 // ───────── Codec detection ─────────
 
@@ -292,7 +284,6 @@ const WINDOW_MB = 1024 * 1024;
 export function windowCaption(w: PieceMapWindow | null): string | null {
   if (!w || w.endByte <= w.startByte) return null;
   const mb = Math.round((w.endByte - w.startByte) / WINDOW_MB);
-  return w.startByte === 0 && mb < 64
-    ? `El archivo entero (${mb} MB)`
-    : `Próximos ${mb} MB desde la posición de lectura`;
+  const t = getT().pieceWindow;
+  return w.startByte === 0 && mb < 64 ? t.wholeFile(mb) : t.next(mb);
 }

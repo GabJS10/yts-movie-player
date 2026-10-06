@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { openExternalPlayer, toAppError } from "../../api/tauri";
 import type { AppError, ExternalPlayerResult, ExternalSubtitleArgs } from "../../api/types";
+import { getT } from "../../i18n";
 import { formatResetTime } from "../../lib/subtitles";
 import { onQuotaExhausted } from "../../store/subtitlesQuota";
 
@@ -14,28 +15,19 @@ export type ExternalNote = {
 
 /** Why VLC opened without subtitles. null for "loaded" / "none" (nothing to say). */
 function subtitleNote(outcome: SubtitleOutcome, resetAt: string | null): ExternalNote | null {
+  const t = getT().external;
   switch (outcome) {
     case "no_key":
-      return { text: "VLC se abrió sin subtítulos: falta la clave de OpenSubtitles.", settings: "s-subs" };
+      return { text: t.noKey, settings: "s-subs" };
     case "quota": {
-      const at = formatResetTime(resetAt);
-      return {
-        text: `VLC se abrió sin subtítulos: se agotó el cupo diario de OpenSubtitles${at ? ` (se renueva a las ${at})` : ""}.`,
-        settings: null,
-      };
+      return { text: t.quota(formatResetTime(resetAt)), settings: null };
     }
     case "not_found":
-      return {
-        text: "VLC se abrió sin subtítulos: no encontramos ninguno para esta película.",
-        settings: null,
-      };
+      return { text: t.notFound, settings: null };
     case "unsupported_player":
-      return {
-        text: "Tu reproductor externo no admite que le pasemos subtítulos: se abrió sin ellos.",
-        settings: "s-play",
-      };
+      return { text: t.unsupported, settings: "s-play" };
     case "error":
-      return { text: "VLC se abrió, pero no se pudieron cargar los subtítulos.", settings: null };
+      return { text: t.error, settings: null };
     default:
       return null;
   }

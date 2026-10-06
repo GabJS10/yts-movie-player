@@ -12,6 +12,7 @@ import { DOWNLOAD_POLL_MS, downloadForMovie } from "../lib/downloads";
 import { formatBytes } from "../lib/format";
 import type { TorrentPrefs } from "../lib/versions";
 import { resetMove, useMoveStore } from "../store/moveDownloads";
+import { getT, type Messages } from "../i18n";
 import { showToast } from "../store/toast";
 import { describeError } from "./errors";
 import {
@@ -196,9 +197,9 @@ export function useToggleFavorite() {
     onError: (_err, { movie, on }, snap) => {
       if (snap?.detail) qc.setQueryData(queryKeys.movie(movie.id), snap.detail);
       if (snap?.list) qc.setQueryData(queryKeys.favorites, snap.list);
-      showToast(on ? "No se pudo añadir a Mi lista" : "No se pudo quitar de Mi lista", "error");
+      showToast(on ? getT().toasts.addFavoriteFailed : getT().toasts.removeFavoriteFailed, "error");
     },
-    onSuccess: (_data, { on }) => showToast(on ? "Añadida a Mi lista" : "Quitada de Mi lista"),
+    onSuccess: (_data, { on }) => showToast(on ? getT().toasts.favoriteAdded : getT().toasts.favoriteRemoved),
     onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.favorites }),
   });
 }
@@ -240,7 +241,7 @@ export function useRemoveProgress() {
     onError: (_err, movieId, snap) => {
       if (snap?.list) qc.setQueryData(queryKeys.continueWatching, snap.list);
       if (snap?.detail) qc.setQueryData(queryKeys.movie(movieId), snap.detail);
-      showToast("No se pudo quitar de Continuar viendo", "error");
+      showToast(getT().toasts.removeContinueFailed, "error");
     },
     onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.continueWatching }),
   });
@@ -299,11 +300,12 @@ export function useUpdateSettings() {
     onError: (err, patch, ctx) => {
       if (ctx?.prev) qc.setQueryData(queryKeys.settings, ctx.prev);
       const copy = describeError(err);
+      const t = getT().toasts;
       showToast(
         err.code === "invalid_input" && touchesFolders(patch)
-          ? "No se puede usar esa carpeta: tiene que poder escribirse y no estar dentro de la otra"
+          ? t.badFolder
           : err.code === "invalid_input"
-            ? `No se guardó: ${copy.title.toLowerCase()}`
+            ? t.notSaved(copy.title.toLowerCase())
             : copy.title,
         "error",
       );
@@ -336,7 +338,9 @@ export function useClearCache() {
     mutationFn: clearCache,
     onSuccess: ({ freedBytes }) =>
       showToast(
-        freedBytes > 0 ? `Caché vaciada: ${formatBytes(freedBytes)} liberados` : "La caché ya estaba vacía",
+        freedBytes > 0
+          ? getT().toasts.cacheCleared(formatBytes(freedBytes))
+          : getT().toasts.cacheAlreadyEmpty,
       ),
     onError: (err: AppError) => showToast(describeError(err).title, "error"),
     onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.storage }),
@@ -398,8 +402,8 @@ export function useDownloadEvents() {
   }, [qc]);
 }
 
-const failToast = (what: string) => (err: AppError) =>
-  showToast(`${what}. ${describeError(err).action}`, "error");
+const failToast = (what: (t: Messages["toasts"]) => string) => (err: AppError) =>
+  showToast(`${what(getT().toasts)}. ${describeError(err).action}`, "error");
 
 export function useStartDownload() {
   const qc = useQueryClient();
@@ -407,9 +411,9 @@ export function useStartDownload() {
     mutationFn: ({ movie, infohash }) => startDownload(movie, infohash),
     onSuccess: (download) => {
       applyDownload(qc, download.infohash, download);
-      showToast(`Descargando ${download.movie.title} · ${download.quality}`);
+      showToast(getT().toasts.downloading(download.movie.title, download.quality));
     },
-    onError: failToast("No se pudo descargar"),
+    onError: failToast((t) => t.downloadFailed),
     onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.downloads }),
   });
 }
@@ -420,7 +424,7 @@ export function useToggleDownload() {
   return useMutation<Download, AppError, { infohash: string; pause: boolean }>({
     mutationFn: ({ infohash, pause }) => (pause ? pauseDownload(infohash) : resumeDownload(infohash)),
     onSuccess: (download) => applyDownload(qc, download.infohash, download),
-    onError: (err, { pause }) => failToast(pause ? "No se pudo pausar" : "No se pudo reanudar")(err),
+    onError: (err, { pause }) => failToast((t) => (pause ? t.pauseFailed : t.resumeFailed))(err),
   });
 }
 
@@ -432,11 +436,11 @@ export function useRemoveDownload() {
       applyDownload(qc, download.infohash, null);
       showToast(
         deleteFiles
-          ? `${download.movie.title} borrada del disco`
-          : `${download.movie.title} quitada; los archivos siguen en su carpeta`,
+          ? getT().toasts.downloadDeleted(download.movie.title)
+          : getT().toasts.downloadRemoved(download.movie.title),
       );
     },
-    onError: failToast("No se pudo quitar la descarga"),
+    onError: failToast((t) => t.removeDownloadFailed),
     onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.downloads }),
   });
 }
@@ -444,7 +448,7 @@ export function useRemoveDownload() {
 export function useOpenDownloadFolder() {
   return useMutation<void, AppError, string>({
     mutationFn: openDownloadFolder,
-    onError: failToast("No se pudo abrir la carpeta"),
+    onError: failToast((t) => t.openFolderFailed),
   });
 }
 
@@ -479,7 +483,7 @@ export function useMoveDownloads() {
     onMutate: () => useMoveStore.setState({ progress: null, open: true, starting: true }),
     onError: (err) => {
       resetMove();
-      failToast("No se pudieron mover las descargas")(err);
+      failToast((t) => t.moveFailed)(err);
     },
   });
 }
@@ -487,7 +491,7 @@ export function useMoveDownloads() {
 export function useCancelMove() {
   return useMutation<void, AppError, void>({
     mutationFn: cancelMoveDownloads,
-    onError: failToast("No se pudo cancelar"),
+    onError: failToast((t) => t.cancelFailed),
   });
 }
 

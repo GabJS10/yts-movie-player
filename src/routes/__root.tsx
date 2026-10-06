@@ -4,6 +4,7 @@ import { AppShell } from "../components/AppShell";
 import { ErrorState } from "../components/ErrorState";
 import { PageStub } from "../components/PageStub";
 import { toAppError } from "../api/tauri";
+import { useT } from "../i18n";
 
 export type RouterContext = { queryClient: QueryClient };
 
@@ -18,9 +19,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       <ErrorState error={toAppError(error)} onRetry={reset} />
     </div>
   ),
-  notFoundComponent: () => (
-    <PageStub title="No encontrado">
-      Esta pantalla no existe. Vuelve al inicio desde la barra superior.
-    </PageStub>
-  ),
+  notFoundComponent: NotFound,
 });
+
+function NotFound() {
+  const t = useT();
+  return <PageStub title={t.notFound.title}>{t.notFound.body}</PageStub>;
+}

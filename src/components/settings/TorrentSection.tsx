@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useUpdateSettings } from "../../api/queries";
 import type { Settings } from "../../api/types";
+import { useT } from "../../i18n";
 import { parseOptionalInt } from "../../lib/settings";
 import { SetRow, SetSection, Switch } from "./controls";
 
@@ -28,6 +29,7 @@ function OptionalNumber({
   /** `onError` puts the stored value back (the optimistic update and its rollback may batch together). */
   onSave: (field: NumberKey, value: number | null, onError: () => void) => void;
 }) {
+  const t = useT().torrent;
   const stored = value === null ? "" : String(value);
   const [draft, setDraft] = useState(stored);
   const [seen, setSeen] = useState(stored);
@@ -52,7 +54,7 @@ function OptionalNumber({
           inputMode="numeric"
           aria-label={label}
           aria-invalid={error ? true : undefined}
-          placeholder={unit ? "Sin límite" : "Auto"}
+          placeholder={unit ? t.noLimit : t.auto}
           value={draft}
           autoComplete="off"
           onChange={(e) => setDraft(e.target.value)}
@@ -72,15 +74,16 @@ function OptionalNumber({
 /** Ajustes › Torrent: speed limits and seeding apply at once; the port, after restarting the app. */
 export function TorrentSection({ settings }: { settings: Settings }) {
   const update = useUpdateSettings();
+  const t = useT().torrent;
   const save = (field: NumberKey, value: number | null, onError: () => void) =>
     update.mutate({ [field]: value }, { onError });
 
   return (
     <SetSection id="s-torrent" title="Torrent">
-      <SetRow title="Límite de descarga" help="Vacío = sin límite. Se aplica al momento.">
+      <SetRow title={t.downLimit} help={t.limitHelp}>
         <OptionalNumber
           field="downLimitKbps"
-          label="Límite de descarga"
+          label={t.downLimit}
           value={settings.downLimitKbps}
           min={1}
           max={10_000_000}
@@ -88,10 +91,10 @@ export function TorrentSection({ settings }: { settings: Settings }) {
           onSave={save}
         />
       </SetRow>
-      <SetRow title="Límite de subida" help="Vacío = sin límite. Se aplica al momento.">
+      <SetRow title={t.upLimit} help={t.limitHelp}>
         <OptionalNumber
           field="upLimitKbps"
-          label="Límite de subida"
+          label={t.upLimit}
           value={settings.upLimitKbps}
           min={1}
           max={10_000_000}
@@ -99,23 +102,17 @@ export function TorrentSection({ settings }: { settings: Settings }) {
           onSave={save}
         />
       </SetRow>
-      <SetRow
-        title="Seguir compartiendo al terminar"
-        help="Ayuda a que otros puedan ver la película. Usa subida, dentro del límite, mientras la app está abierta."
-      >
+      <SetRow title={t.seed} help={t.seedHelp}>
         <Switch
-          label="Seguir compartiendo al terminar"
+          label={t.seed}
           checked={settings.seedAfterDownload}
           onChange={(seedAfterDownload) => update.mutate({ seedAfterDownload })}
         />
       </SetRow>
-      <SetRow
-        title="Puerto de escucha"
-        help={`Vacío = automático (${PORT_MIN}–${PORT_MAX}). Se aplica al reiniciar la app.`}
-      >
+      <SetRow title={t.port} help={t.portHelp(PORT_MIN, PORT_MAX)}>
         <OptionalNumber
           field="listenPort"
-          label="Puerto de escucha"
+          label={t.port}
           value={settings.listenPort}
           min={PORT_MIN}
           max={PORT_MAX}

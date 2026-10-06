@@ -1,5 +1,6 @@
 import { useToggleFavorite } from "../api/queries";
 import type { MovieSummary } from "../api/types";
+import { useT } from "../i18n";
 import { Icon } from "./Icon";
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
 /** ♥ Mi lista: optimistic, rolled back with a toast if the backend fails. */
 export function FavoriteButton({ movie, isFavorite, variant = "full", testId }: Props) {
   const toggle = useToggleFavorite();
+  const t = useT().favorite;
   const on = isFavorite === true;
   const onClick = () => {
     if (isFavorite === null || toggle.isPending) return;
@@ -29,9 +31,9 @@ export function FavoriteButton({ movie, isFavorite, variant = "full", testId }: 
         type="button"
         className="btn btn-ghost w-12 rounded-full p-0"
         aria-pressed={on}
-        aria-label={on ? "Quitar de Mi lista" : "Añadir a Mi lista"}
+        aria-label={on ? t.remove : t.add}
         data-testid={testId}
-        title={on ? "En Mi lista" : "Añadir a Mi lista"}
+        title={on ? t.inList : t.add}
         disabled={isFavorite === null}
         onClick={onClick}
       >
@@ -49,7 +51,7 @@ export function FavoriteButton({ movie, isFavorite, variant = "full", testId }: 
       onClick={onClick}
     >
       {icon}
-      {on ? "En Mi lista" : "Mi lista"}
+      {on ? t.inList : t.myList}
     </button>
   );
 }

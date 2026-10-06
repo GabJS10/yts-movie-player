@@ -1,20 +1,22 @@
 import type { FeaturedReason, MovieDetail } from "../api/types";
+import { getT } from "../i18n";
 import { genreLabel } from "./genres";
 
 /** Banner rotation: one slide every 8 s. */
 export const ROTATE_MS = 8000;
 
-/** Why this movie is in the banner, in Spanish. */
+/** Why this movie is in the banner. */
 export function reasonLabel(reason: FeaturedReason): string {
+  const t = getT().featured;
   switch (reason.kind) {
     case "because_watched":
-      return `Porque viste ${reason.sourceTitle}`;
+      return t.becauseWatched(reason.sourceTitle);
     case "because_list":
-      return `Porque tienes ${reason.sourceTitle} en Mi lista`;
+      return t.becauseList(reason.sourceTitle);
     case "genre":
-      return `Para ti: ${genreLabel(reason.genre)}`;
+      return t.genre(genreLabel(reason.genre));
     case "trending":
-      return "Tendencia en YTS";
+      return t.trending;
   }
 }
 

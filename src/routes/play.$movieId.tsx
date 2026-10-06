@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useMovie, useSettings, useTorrentPrefs } from "../api/queries";
 import { ErrorState } from "../components/ErrorState";
 import { Player } from "../components/player/Player";
+import { useT } from "../i18n";
 import { validatePlaySearch } from "../lib/searchParams";
 import { pickDefaultTorrent } from "../lib/versions";
 
@@ -24,6 +25,7 @@ function PlayerPage() {
   const { infohash, from } = Route.useSearch();
   const movie = useMovie(movieId);
   const prefs = useTorrentPrefs();
+  const t = useT().play;
   // Without a chosen version the default depends on the settings: wait for them (or their failure),
   // or the player would start one stream and switch to another when they arrive.
   const settingsPending = useSettings().isPending && !infohash;
@@ -36,19 +38,19 @@ function PlayerPage() {
     );
   }
   if (!movie.data || settingsPending) {
-    return <div className="fixed inset-0 z-[100] bg-black" aria-busy="true" aria-label="Cargando" />;
+    return <div className="fixed inset-0 z-[100] bg-black" aria-busy="true" aria-label={t.loading} />;
   }
 
   const torrent =
-    movie.data.torrents.find((t) => t.infohash === infohash) ??
+    movie.data.torrents.find((tr) => tr.infohash === infohash) ??
     pickDefaultTorrent(movie.data.torrents, prefs);
   if (!torrent) {
     return (
       <div className="fixed inset-0 z-[100] grid place-items-center bg-black p-6">
         <div className="grid max-w-[520px] justify-items-start gap-3">
-          <h2 className="m-0 text-[22px] font-extrabold">Esta película no tiene versiones para reproducir</h2>
+          <h2 className="m-0 text-[22px] font-extrabold">{t.noVersions}</h2>
           <Link to="/movie/$movieId" params={{ movieId }} className="btn btn-line btn-sm">
-            Volver a la ficha
+            {t.backToMovie}
           </Link>
         </div>
       </div>

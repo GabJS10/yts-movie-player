@@ -6,6 +6,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { isTauri } from "../lib/runtime";
+import { getT } from "../i18n";
 import type {
   AppError,
   CommandArgs,
@@ -103,10 +104,10 @@ export const getSubtitlesStatus = () => call("get_subtitles_status");
 export async function pickSubtitleFile(): Promise<string | null> {
   try {
     const path = await openDialog({
-      title: "Cargar subtítulos",
+      title: getT().subtitleDialog.title,
       multiple: false,
       directory: false,
-      filters: [{ name: "Subtítulos", extensions: ["srt", "vtt"] }],
+      filters: [{ name: getT().subtitleDialog.filter, extensions: ["srt", "vtt"] }],
     });
     return typeof path === "string" ? path : null;
   } catch (err) {

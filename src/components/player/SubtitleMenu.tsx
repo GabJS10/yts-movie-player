@@ -3,27 +3,28 @@ import { useEffect, useRef, type KeyboardEvent } from "react";
 import { describeError } from "../../api/errors";
 import { openExternalUrl } from "../../api/tauri";
 import type { SubtitleOption } from "../../api/types";
-import { FALLBACK_LANG, formatDelay, formatResetTime, langLabel } from "../../lib/subtitles";
+import { getT, numberFormat, useT } from "../../i18n";
+import { FALLBACK_LANG, formatDelay, formatResetTime, langLabel, langName } from "../../lib/subtitles";
 import { useSubtitlesQuota } from "../../store/subtitlesQuota";
 import { Icon } from "../Icon";
 import type { Subtitles } from "./useSubtitles";
 
 const MAX_OPTIONS = 6;
-const nf = new Intl.NumberFormat("es-ES");
 
 type Props = { subs: Subtitles; open: boolean; onOpenChange: (open: boolean) => void };
 
 function OptionMeta({ o, quota }: { o: SubtitleOption; quota: boolean }) {
-  const bits = [`${nf.format(o.downloads)} descargas`];
-  if (quota && o.cached) bits.unshift("Ya descargado");
-  if (quota && !o.cached && !o.pageUrl) bits.unshift("Sin página en OpenSubtitles");
-  if (o.hearingImpaired) bits.push("Para sordos");
-  if (o.aiTranslated) bits.push("Traducción automática");
+  const t = useT().subtitleMenu;
+  const bits = [t.downloads(numberFormat().format(o.downloads))];
+  if (quota && o.cached) bits.unshift(t.cached);
+  if (quota && !o.cached && !o.pageUrl) bits.unshift(t.noPage);
+  if (o.hearingImpaired) bits.push(t.hearingImpaired);
+  if (o.aiTranslated) bits.push(t.aiTranslated);
   return (
     <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-medium text-muted">
       {o.matchesRelease && (
         <span className="rounded-xs border border-green/60 px-1 leading-4 font-bold text-green">
-          Tu versión
+          {t.yourVersion}
         </span>
       )}
       {bits.join(" · ")}
@@ -31,13 +32,11 @@ function OptionMeta({ o, quota }: { o: SubtitleOption; quota: boolean }) {
   );
 }
 
-function quotaLine(resetAt: string | null) {
-  const at = formatResetTime(resetAt);
-  return `Cupo agotado${at ? ` hasta las ${at}` : ""}: elige uno para descargarlo en OpenSubtitles y suéltalo aquí.`;
-}
+const quotaLine = (resetAt: string | null) => getT().subtitleMenu.quota(formatResetTime(resetAt));
 
 /** Player subtitle menu (prototype): off, options per language, "Cargar archivo…" and the delay. */
 export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
+  const t = useT().subtitleMenu;
   const anchor = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
 
@@ -80,7 +79,7 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
         ref={button}
         type="button"
         className={`ctrl-btn ${isOn ? "text-green" : ""}`}
-        aria-label="Subtítulos"
+        aria-label={t.title}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
@@ -88,8 +87,8 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
         <Icon name="cc" size={26} />
       </button>
       {open && (
-        <div className="menu" role="menu" aria-label="Subtítulos" onKeyDown={onKeyDown}>
-          <h3>Subtítulos</h3>
+        <div className="menu" role="menu" aria-label={t.title} onKeyDown={onKeyDown}>
+          <h3>{t.title}</h3>
           <button
             type="button"
             className="menu-item"
@@ -98,7 +97,7 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
             onClick={subs.turnOff}
           >
             <span className="chk">{!isOn && <Icon name="check" size={18} />}</span>
-            Desactivados
+            {t.off}
           </button>
           {selection.kind === "file" && (
             <button type="button" className="menu-item" role="menuitemradio" aria-checked="true">
@@ -114,11 +113,7 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
           {subs.hasKey ? (
             <>
               {langs.length > 1 && (
-                <div
-                  className="flex gap-1.5 px-4 pt-2 pb-1"
-                  role="group"
-                  aria-label="Idioma de los subtítulos"
-                >
+                <div className="flex gap-1.5 px-4 pt-2 pb-1" role="group" aria-label={t.language}>
                   {langs.map((code) => (
                     <button
                       key={code}
@@ -134,14 +129,12 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
               )}
               {options.isPending ? (
                 <p className="m-0 px-4 py-2.5 text-sm text-muted" role="status">
-                  Buscando en OpenSubtitles…
+                  {t.searching}
                 </p>
               ) : options.isError ? (
                 <p className="m-0 px-4 py-2.5 text-sm text-muted">{describeError(options.error).title}</p>
               ) : options.data.length === 0 ? (
-                <p className="m-0 px-4 py-2.5 text-sm text-muted">
-                  No hay subtítulos en {langLabel(subs.shownLang).toLowerCase()} para esta película.
-                </p>
+                <p className="m-0 px-4 py-2.5 text-sm text-muted">{t.noneIn(langName(subs.shownLang))}</p>
               ) : (
                 <>
                   {quota.exhausted && (
@@ -160,14 +153,14 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
                           className="menu-item disabled:cursor-not-allowed disabled:opacity-50"
                           role="menuitem"
                           disabled={!url}
-                          title={url ? "Abrir su página en OpenSubtitles para descargarlo" : undefined}
+                          title={url ? t.openPage : undefined}
                           onClick={() => url && void openExternalUrl(url).catch(() => undefined)}
                         >
                           <span className="chk text-text-2">{url && <Icon name="external" size={18} />}</span>
                           <span className="min-w-0 flex-1">
                             <span className="block truncate">{o.label}</span>
                             <OptionMeta o={o} quota />
-                            {url && <span className="sr-only"> (abre su página en OpenSubtitles)</span>}
+                            {url && <span className="sr-only"> {t.opensPage}</span>}
                           </span>
                         </button>
                       );
@@ -186,7 +179,7 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
                         <span className="chk">{on && <Icon name="check" size={18} />}</span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate" title={o.label}>
-                            {loadingId === o.id ? "Cargando…" : o.label}
+                            {loadingId === o.id ? t.loading : o.label}
                           </span>
                           <OptionMeta o={o} quota={quota.exhausted} />
                         </span>
@@ -198,9 +191,9 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
             </>
           ) : (
             <div className="grid gap-1.5 px-4 py-2.5 text-sm text-muted">
-              <span>Para buscarlos falta la clave de OpenSubtitles.</span>
+              <span>{t.noKey}</span>
               <Link to="/settings" hash="s-subs" className="font-semibold text-green hover:underline">
-                Añadirla en Ajustes › Subtítulos
+                {t.addKey}
               </Link>
             </div>
           )}
@@ -215,13 +208,13 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
             <span className="chk text-text-2">
               <Icon name="upload" size={18} />
             </span>
-            Cargar archivo .srt o .vtt…
+            {t.loadFile}
           </button>
 
           <hr />
-          <h3>Sincronía</h3>
+          <h3>{t.sync}</h3>
           <div className="flex items-center gap-2 px-4 pt-1.5 pb-2 text-sm text-text-2">
-            <span>Retraso</span>
+            <span>{t.delay}</span>
             <output className="ml-auto min-w-14 text-center font-bold text-text tnum" aria-live="polite">
               {formatDelay(subs.delay)}
             </output>
@@ -229,7 +222,7 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
               type="button"
               role="menuitem"
               className="inline-grid size-[30px] place-items-center rounded-full ring-1 ring-line-hi hover:bg-white/8"
-              aria-label="Adelantar subtítulos 0,1 s (G)"
+              aria-label={t.earlier}
               onClick={() => subs.nudgeDelay(-1)}
             >
               <Icon name="minus" size={16} />
@@ -238,7 +231,7 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
               type="button"
               role="menuitem"
               className="inline-grid size-[30px] place-items-center rounded-full ring-1 ring-line-hi hover:bg-white/8"
-              aria-label="Retrasar subtítulos 0,1 s (H)"
+              aria-label={t.later}
               onClick={() => subs.nudgeDelay(1)}
             >
               <Icon name="plus" size={16} />

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useClearCache, useMoveDownloads, useStorageUsage, useUpdateSettings } from "../../api/queries";
 import { pickFolder, toAppError } from "../../api/tauri";
 import type { Settings, StorageUsage } from "../../api/types";
+import { useT } from "../../i18n";
 import { formatBytes } from "../../lib/format";
 import { samePath } from "../../lib/paths";
 import { moveRunning, useMoveStore } from "../../store/moveDownloads";
@@ -46,9 +47,6 @@ type FolderKey = "downloadsDir" | "cacheDir";
 const FOLDERS: Record<
   FolderKey,
   {
-    title: string;
-    help: string;
-    missing: string;
     used: (u: StorageUsage) => number;
     free: (u: StorageUsage) => number;
     available: (u: StorageUsage) => boolean;
@@ -57,20 +55,12 @@ const FOLDERS: Record<
   }
 > = {
   downloadsDir: {
-    title: "Carpeta de descargas",
-    help: "Las descargas nuevas se guardan aquí. Las que ya tienes se quedan donde están hasta que las muevas.",
-    missing:
-      "No encontramos esta carpeta (¿un disco desconectado?). Las descargas que viven ahí aparecen como «Carpeta no disponible» y siguen solas cuando vuelva.",
     used: (u) => u.libraryBytes,
     free: (u) => u.downloadsFreeBytes,
     available: (u) => u.downloadsDirAvailable,
     fallback: (u) => u.defaultDownloadsDir,
   },
   cacheDir: {
-    title: "Carpeta de la caché de streaming",
-    help: "Lo que ves sin descargar. Al cambiarla se vacía la caché actual; no toca tus descargas.",
-    missing:
-      "No encontramos esta carpeta (¿un disco desconectado?). Mientras tanto, el streaming usa la carpeta por defecto.",
     used: (u) => u.cacheBytes,
     free: (u) => u.cacheFreeBytes,
     available: (u) => u.cacheDirAvailable,
@@ -89,7 +79,8 @@ function FolderRow({
   usage: StorageUsage | undefined;
 }) {
   const update = useUpdateSettings();
-  const meta = FOLDERS[field];
+  const t = useT().storage;
+  const meta = { ...FOLDERS[field], ...t.folders[field] };
   const path = settings[field];
   const id = `${field}-title`;
 
@@ -99,7 +90,7 @@ function FolderRow({
       picked = await pickFolder(meta.title, path);
     } catch (err) {
       console.warn("folder picker failed", toAppError(err).message);
-      showToast("No se pudo abrir el selector de carpetas", "error");
+      showToast(t.pickerFailed, "error");
       return;
     }
     if (picked && !samePath(picked, path)) update.mutate({ [field]: picked });
@@ -122,11 +113,11 @@ function FolderRow({
           type="button"
           className="btn btn-line btn-sm"
           disabled={update.isPending}
-          aria-label={`Cambiar la ${meta.title.toLowerCase()}`}
+          aria-label={meta.change}
           onClick={() => void change()}
         >
           <Icon name="folder" size={18} />
-          Cambiar…
+          {t.changeShort}
         </button>
         {/* Only once the backend says which folder is the default one. */}
         {usage && !samePath(path, meta.fallback(usage)) && (
@@ -134,17 +125,17 @@ function FolderRow({
             type="button"
             className="btn btn-line btn-sm"
             disabled={update.isPending}
-            aria-label={`Restablecer la ${meta.title.toLowerCase()}`}
+            aria-label={meta.reset}
             onClick={() => update.mutate({ [field]: null })}
           >
             <Icon name="refresh" size={18} />
-            Restablecer
+            {t.resetShort}
           </button>
         )}
       </div>
       {usage && (
         <p className="!mt-0 tnum">
-          Libre en ese disco: {formatBytes(meta.free(usage))} · Ocupa: {formatBytes(meta.used(usage))}
+          {t.diskUsage(formatBytes(meta.free(usage)), formatBytes(meta.used(usage)))}
         </p>
       )}
       {usage && !meta.available(usage) && (
@@ -160,6 +151,7 @@ function FolderRow({
 /** "Mover también las descargas existentes" once downloadsDir changes, with its progress dialog. */
 function MoveOffer({ usage }: { usage: StorageUsage | undefined }) {
   const move = useMoveDownloads();
+  const t = useT().storage;
   const running = useMoveStore(moveRunning);
   const open = useMoveStore((s) => s.open);
   const outside = usage?.downloadsOutsideDir ?? 0;
@@ -167,21 +159,14 @@ function MoveOffer({ usage }: { usage: StorageUsage | undefined }) {
   return (
     <>
       {(outside > 0 || running) && (
-        <SetRow
-          title="Descargas en otra carpeta"
-          help={
-            running
-              ? "Moviendo las descargas a la carpeta nueva…"
-              : `${outside === 1 ? "1 descarga sigue" : `${outside} descargas siguen`} en una carpeta anterior. Se ven igual; muévelas si quieres tenerlo todo junto.`
-          }
-        >
+        <SetRow title={t.elsewhere} help={running ? t.movingNow : t.elsewhereHelp(outside)}>
           {running ? (
             <button
               type="button"
               className="btn btn-line btn-sm"
               onClick={() => useMoveStore.setState({ open: true })}
             >
-              Ver progreso
+              {t.seeProgress}
             </button>
           ) : (
             <button
@@ -190,7 +175,7 @@ function MoveOffer({ usage }: { usage: StorageUsage | undefined }) {
               disabled={move.isPending}
               onClick={() => move.mutate()}
             >
-              Mover también las descargas existentes
+              {t.moveToo}
             </button>
           )}
         </SetRow>
@@ -203,6 +188,7 @@ function MoveOffer({ usage }: { usage: StorageUsage | undefined }) {
 /** Ajustes › Almacenamiento: cache use vs. its limit, the limit itself and "Vaciar caché ahora". */
 export function StorageSection({ settings }: { settings: Settings }) {
   const usage = useStorageUsage();
+  const t = useT();
   const update = useUpdateSettings();
   const clear = useClearCache();
 
@@ -241,20 +227,20 @@ export function StorageSection({ settings }: { settings: Settings }) {
   const fill = u && u.cacheLimitBytes > 0 ? Math.min(1, u.cacheBytes / u.cacheLimitBytes) : 0;
 
   return (
-    <SetSection id="s-disk" title="Almacenamiento">
+    <SetSection id="s-disk" title={t.storage.title}>
       <dl
         className="m-0 mb-2 grid grid-cols-2 border-y border-line max-[640px]:grid-cols-1"
         aria-busy={usage.isPending || undefined}
       >
         <Usage
-          label="Caché de streaming"
-          value={u ? `${formatBytes(u.cacheBytes)} de ${formatBytes(u.cacheLimitBytes)}` : "—"}
-          note="Se vacía sola, empezando por lo menos usado"
+          label={t.downloads.cacheLabel}
+          value={u ? t.downloads.of(formatBytes(u.cacheBytes), formatBytes(u.cacheLimitBytes)) : "—"}
+          note={t.downloads.cacheNote}
         >
           <div
             className={`meter ${u && u.cacheBytes > u.cacheLimitBytes ? "meter-over" : ""}`}
             role="meter"
-            aria-label="Uso de la caché"
+            aria-label={t.downloads.cacheMeter}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(fill * 100)}
@@ -262,17 +248,21 @@ export function StorageSection({ settings }: { settings: Settings }) {
             <i style={{ width: `${(fill * 100).toFixed(1)}%` }} />
           </div>
         </Usage>
-        <Usage label="Biblioteca" value={u ? formatBytes(u.libraryBytes) : "—"} note="Descargas guardadas" />
+        <Usage
+          label={t.downloads.libraryLabel}
+          value={u ? formatBytes(u.libraryBytes) : "—"}
+          note={t.storage.saved}
+        />
       </dl>
       {usage.isError && (
         <p className="m-0 mb-2 text-[13.5px] text-muted" role="status">
-          No se pudo medir el espacio.{" "}
+          {t.storage.measureFailed}{" "}
           <button
             type="button"
             className="font-semibold text-green hover:underline"
             onClick={() => void usage.refetch()}
           >
-            Reintentar
+            {t.common.retry}
           </button>
         </p>
       )}
@@ -281,12 +271,7 @@ export function StorageSection({ settings }: { settings: Settings }) {
       <MoveOffer usage={u} />
       <FolderRow field="cacheDir" settings={settings} usage={u} />
 
-      <SetRow
-        stack
-        title="Límite de la caché de streaming"
-        help="Lo que ves sin descargar ocupa espacio temporal. Al pasar el límite se borra lo menos usado; nunca lo que estás viendo ni tu biblioteca."
-        id="cache-limit-title"
-      >
+      <SetRow stack title={t.storage.limit} help={t.storage.limitHelp} id="cache-limit-title">
         <div className="flex items-center gap-4">
           <input
             className="range"
@@ -305,19 +290,16 @@ export function StorageSection({ settings }: { settings: Settings }) {
           </output>
         </div>
         {shrinking && (
-          <p className="!mt-0 text-warn">
-            Ahora hay {formatBytes(cacheBytes)} en caché: se borrará lo menos usado hasta bajar de {limitGb}{" "}
-            GB.
-          </p>
+          <p className="!mt-0 text-warn">{t.storage.shrinking(formatBytes(cacheBytes), limitGb)}</p>
         )}
       </SetRow>
 
       <SetRow
-        title="Vaciar caché ahora"
+        title={t.storage.clearNow}
         help={
           <span className="tnum">
-            {u ? `${formatBytes(u.cacheBytes)} en uso. ` : ""}No toca las descargas de tu biblioteca ni lo que
-            se está reproduciendo.
+            {u ? t.storage.inUse(formatBytes(u.cacheBytes)) : ""}
+            {t.storage.clearHelp}
           </span>
         }
       >
@@ -328,7 +310,7 @@ export function StorageSection({ settings }: { settings: Settings }) {
           onClick={() => clear.mutate()}
         >
           <Icon name="trash" size={18} />
-          {clear.isPending ? "Vaciando…" : "Vaciar caché"}
+          {clear.isPending ? t.storage.clearing : t.storage.clear}
         </button>
       </SetRow>
     </SetSection>

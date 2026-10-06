@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useApiStatus, useUpdateSettings } from "../../api/queries";
 import type { ApiEndpointStatus } from "../../api/types";
+import { useT } from "../../i18n";
 import { validateBaseUrl } from "../../lib/settings";
 import { showToast } from "../../store/toast";
 import { Icon } from "../Icon";
@@ -21,14 +22,15 @@ function EndpointStatus({
   status: ApiEndpointStatus | undefined;
   measuring: boolean;
 }) {
+  const t = useT().catalog;
   const ms = status?.latencyMs != null ? ` · ${status.latencyMs} ms` : "";
   const [dot, text] = !status
-    ? ["status-standby", measuring ? "Midiendo…" : "Sin medir"]
+    ? ["status-standby", measuring ? t.measuring : t.notMeasured]
     : !status.ok
-      ? ["status-down", "No responde"]
+      ? ["status-down", t.down]
       : status.role === "active"
-        ? ["status-live", `En uso${ms}`]
-        : ["status-standby", `Respaldo${ms}`];
+        ? ["status-live", `${t.inUse}${ms}`]
+        : ["status-standby", `${t.backup}${ms}`];
   return (
     <span className="inline-flex items-center gap-[7px] text-[12.5px] whitespace-nowrap text-text-2 tnum">
       <i className={`status-dot ${dot}`} aria-hidden="true" />
@@ -43,6 +45,7 @@ const iconBtn =
 /** Ajustes › Catálogo: YTS base URLs in failover order, with their live latency. */
 export function CatalogSection({ urls }: { urls: string[] }) {
   const update = useUpdateSettings();
+  const t = useT().catalog;
   const status = useApiStatus({ live: true });
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -62,15 +65,15 @@ export function CatalogSection({ urls }: { urls: string[] }) {
   const test = async () => {
     const r = await status.refetch();
     if (!r.data) {
-      showToast("No se pudo medir la conexión", "error");
+      showToast(t.measureFailed, "error");
       return;
     }
     showToast(
       r.data
         .map((s) =>
           s.ok && s.latencyMs !== null
-            ? `${host(s.baseUrl)} responde en ${s.latencyMs} ms`
-            : `${host(s.baseUrl)} no responde`,
+            ? t.respondsIn(host(s.baseUrl), s.latencyMs)
+            : t.notResponding(host(s.baseUrl)),
         )
         .join(" · "),
       r.data.some((s) => s.ok) ? "ok" : "error",
@@ -78,12 +81,8 @@ export function CatalogSection({ urls }: { urls: string[] }) {
   };
 
   return (
-    <SetSection
-      id="s-catalogo"
-      title="Catálogo"
-      lede="De dónde se lee el catálogo de YTS. Si un servidor no responde se prueba el siguiente, en este orden."
-    >
-      <ul className="m-0 list-none rounded-lg border border-line p-0" aria-label="Servidores del catálogo">
+    <SetSection id="s-catalogo" title={t.title} lede={t.lede}>
+      <ul className="m-0 list-none rounded-lg border border-line p-0" aria-label={t.servers}>
         {urls.map((url, i) => (
           <li
             key={url}
@@ -103,7 +102,7 @@ export function CatalogSection({ urls }: { urls: string[] }) {
               <button
                 type="button"
                 className={iconBtn}
-                aria-label={`Subir ${host(url)} en la lista`}
+                aria-label={t.moveUp(host(url))}
                 disabled={i === 0}
                 onClick={() => {
                   const next = [...urls];
@@ -116,8 +115,8 @@ export function CatalogSection({ urls }: { urls: string[] }) {
               <button
                 type="button"
                 className={iconBtn}
-                aria-label={`Quitar ${host(url)}`}
-                title={urls.length === 1 ? "Tiene que quedar al menos un servidor" : undefined}
+                aria-label={t.remove(host(url))}
+                title={urls.length === 1 ? t.lastOne : undefined}
                 disabled={urls.length === 1}
                 onClick={() => save(urls.filter((u) => u !== url))}
               >
@@ -132,8 +131,8 @@ export function CatalogSection({ urls }: { urls: string[] }) {
         <div className="flex gap-2 max-[640px]:flex-wrap">
           <input
             className="input input-mono min-w-0 flex-1 max-[640px]:basis-full"
-            placeholder="https://otro-espejo.ejemplo/api/v2/"
-            aria-label="Añadir servidor"
+            placeholder={t.placeholder}
+            aria-label={t.addServer}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? "catalog-url-error" : undefined}
             value={draft}
@@ -147,7 +146,7 @@ export function CatalogSection({ urls }: { urls: string[] }) {
           />
           <button type="submit" className="btn btn-line btn-sm">
             <Icon name="plus" size={18} />
-            Añadir
+            {t.add}
           </button>
           <button
             type="button"
@@ -156,7 +155,7 @@ export function CatalogSection({ urls }: { urls: string[] }) {
             disabled={status.isFetching}
           >
             <Icon name="refresh" size={18} />
-            Probar conexión
+            {t.test}
           </button>
         </div>
         {error && (

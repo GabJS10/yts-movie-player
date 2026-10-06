@@ -2,6 +2,8 @@ import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useSettings } from "../api/queries";
 import { ErrorState } from "../components/ErrorState";
+import { useT, type Messages } from "../i18n";
+import { LanguageSection } from "../components/settings/LanguageSection";
 import { AboutSection } from "../components/settings/AboutSection";
 import { CatalogSection } from "../components/settings/CatalogSection";
 import { PlaybackSection } from "../components/settings/PlaybackSection";
@@ -11,13 +13,14 @@ import { TorrentSection } from "../components/settings/TorrentSection";
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
 
-const SECTIONS = [
-  { id: "s-catalogo", label: "Catálogo" },
-  { id: "s-subs", label: "Subtítulos" },
-  { id: "s-play", label: "Reproducción" },
-  { id: "s-torrent", label: "Torrent" },
-  { id: "s-disk", label: "Almacenamiento" },
-  { id: "s-about", label: "Acerca de" },
+const SECTIONS: { id: string; label: (t: Messages) => string }[] = [
+  { id: "s-lang", label: (t) => t.language.title },
+  { id: "s-catalogo", label: (t) => t.catalog.title },
+  { id: "s-subs", label: (t) => t.subtitlesSettings.title },
+  { id: "s-play", label: (t) => t.playback.title },
+  { id: "s-torrent", label: () => "Torrent" },
+  { id: "s-disk", label: (t) => t.storage.title },
+  { id: "s-about", label: (t) => t.about.title },
 ];
 
 /** Highlights the section in view (scroll spy). */
@@ -39,6 +42,7 @@ function useActiveSection(ready: boolean) {
 
 function SettingsPage() {
   const settings = useSettings();
+  const t = useT();
   const [active, setActive] = useActiveSection(!!settings.data);
   // Deep links such as /settings#s-subs (from the player): scroll once the sections exist.
   const hash = useRouterState({ select: (s) => s.location.hash });
@@ -55,15 +59,15 @@ function SettingsPage() {
 
   return (
     <div className="min-h-screen px-gutter pt-[calc(var(--spacing-nav)+36px)] pb-24">
-      <h1 className="m-0 mb-1.5 text-headline font-[850] uppercase stretch-condensed">Ajustes</h1>
-      <p className="m-0 mb-8 text-[15px] text-muted">Los cambios se guardan al momento.</p>
+      <h1 className="m-0 mb-1.5 text-headline font-[850] uppercase stretch-condensed">{t.nav.settings}</h1>
+      <p className="m-0 mb-8 text-[15px] text-muted">{t.settings.lede}</p>
 
       {settings.isError ? (
         <ErrorState error={settings.error} onRetry={() => void settings.refetch()} />
       ) : (
         <div className="grid grid-cols-[200px_minmax(0,760px)] gap-14 max-[900px]:grid-cols-[minmax(0,1fr)] max-[900px]:gap-0">
           <nav
-            aria-label="Secciones"
+            aria-label={t.settings.sections}
             className="sticky top-[calc(var(--spacing-nav)+32px)] grid gap-0.5 self-start max-[900px]:static max-[900px]:mb-6 max-[900px]:flex max-[900px]:overflow-x-auto"
           >
             {SECTIONS.map((s) => (
@@ -77,12 +81,13 @@ function SettingsPage() {
                 }}
                 className="rounded-md px-3 py-2 text-[14.5px] font-medium whitespace-nowrap text-text-2 hover:bg-white/4 hover:text-text aria-[current]:bg-white/6 aria-[current]:font-bold aria-[current]:text-text"
               >
-                {s.label}
+                {s.label(t)}
               </a>
             ))}
           </nav>
           {settings.data ? (
             <div>
+              <LanguageSection />
               <CatalogSection urls={settings.data.apiBaseUrls} />
               <SubtitlesSection settings={settings.data} />
               <PlaybackSection settings={settings.data} />
@@ -91,7 +96,7 @@ function SettingsPage() {
               <AboutSection />
             </div>
           ) : (
-            <div aria-busy="true" aria-label="Cargando ajustes">
+            <div aria-busy="true" aria-label={t.settings.loading}>
               <div className="skeleton mb-4 h-8 w-48" />
               <div className="skeleton mb-3 h-28" />
               <div className="skeleton mb-3 h-12" />

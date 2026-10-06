@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { afterEach } from "vitest";
+import { setLanguagePreference } from "../i18n";
 import { setMockTrailerMode, setMockUpdate } from "../mocks/backend";
 import { resetConnectivity } from "../store/connectivity";
 import { resetMove } from "../store/moveDownloads";
@@ -12,6 +13,9 @@ import { useToastStore } from "../store/toast";
 import { installIntersectionObserver } from "./intersection";
 
 installIntersectionObserver();
+
+// Tests assert the Spanish copy; jsdom reports en-US, so pin the language instead of following it.
+setLanguagePreference("es");
 
 // findBy*/waitFor default to 1 s; lazy route chunks + the mock IPC can exceed it in a loaded parallel run.
 configure({ asyncUtilTimeout: 4000 });
@@ -27,6 +31,7 @@ afterEach(() => {
   resetUpdateNotice();
   setMockUpdate(null);
   setMockTrailerMode("youtube");
+  setLanguagePreference("es");
 });
 
 // jsdom has no media playback: play()/pause() flip `paused` and fire the matching events.

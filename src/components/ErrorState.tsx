@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { describeError, ERROR_NEXT } from "../api/errors";
 import type { AppError } from "../api/types";
+import { useT } from "../i18n";
 import { Icon } from "./Icon";
 
 type Props = {
@@ -13,10 +14,11 @@ type Props = {
 };
 
 /**
- * Error with its Spanish explanation and the next actions for its code (ERROR_NEXT): retry when it can
+ * Error with its explanation and the next actions for its code (ERROR_NEXT): retry when it can
  * help, and where to fix it. Never shows `message` (technical, English).
  */
-export function ErrorState({ error, onRetry, onBack, backLabel = "Volver", compact = false }: Props) {
+export function ErrorState({ error, onRetry, onBack, backLabel, compact = false }: Props) {
+  const t = useT();
   const copy = describeError(error);
   const next = ERROR_NEXT[error.code];
   const retry = next.retry && onRetry;
@@ -34,18 +36,18 @@ export function ErrorState({ error, onRetry, onBack, backLabel = "Volver", compa
         {retry && (
           <button type="button" className="btn btn-line btn-sm" data-testid="error-retry" onClick={onRetry}>
             <Icon name="refresh" size={18} />
-            Reintentar
+            {t.common.retry}
           </button>
         )}
         {next.link && (
           <Link to={next.link.to} hash={next.link.hash} className={btn} data-testid="error-link">
-            {next.link.label}
+            {t.errorLinks[next.link.label]}
           </Link>
         )}
         {onBack && (
           <button type="button" className={btn} data-testid="error-back" onClick={onBack}>
             <Icon name="back" size={18} />
-            {backLabel}
+            {backLabel ?? t.common.back}
           </button>
         )}
       </div>

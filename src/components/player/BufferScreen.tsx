@@ -8,7 +8,8 @@ import type {
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { formatCount, formatSpeed } from "../../lib/format";
-import { PHASE_TEXT } from "../../lib/player";
+import { oneDecimal, useT } from "../../i18n";
+import { phaseText } from "../../lib/player";
 import { betterSwarm, SOURCE_LABEL } from "../../lib/versions";
 import { Icon } from "../Icon";
 import { ReleaseTag } from "../ReleaseTag";
@@ -28,7 +29,6 @@ type Props = {
   onBack: () => void;
 };
 
-const nf1 = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const MB = 1024 * 1024;
 
 /** Pre-roll: the swarm fills the buffer ahead of the playhead before the first frame. */
@@ -42,9 +42,10 @@ export function BufferScreen({
   resumeAtS,
   onBack,
 }: Props) {
+  const t = useT().buffer;
   const target = session?.bufferTargetBytes ?? 8 * MB;
   const buffered = Math.min(stats?.bufferedAheadBytes ?? 0, target);
-  const phase = stats ? PHASE_TEXT[stats.phase] : "Conectando al enjambre…";
+  const phase = phaseText(stats?.phase ?? "connecting");
   const noPeers = stats?.phase === "no_peers";
   const stalled = stats?.phase === "stalled" || noPeers;
   // no_peers is a decision point; "Seguir esperando" goes back to the regular screen (the torrent keeps trying).
@@ -62,15 +63,12 @@ export function BufferScreen({
           <ReleaseTag torrent={torrent} on />
           {/* Seeds are YTS's static count (IPC v0.5); only peers are live. */}
           <SwarmSignal seeds={torrent.seeds} peers={torrent.peers} />
-          {resumeAtS ? <span className="text-[13px] text-muted">Retomando donde lo dejaste</span> : null}
+          {resumeAtS ? <span className="text-[13px] text-muted">{t.resuming}</span> : null}
         </div>
 
         {session && !session.likelyPlayable && (
           <div className="mb-7 border-y border-line py-4">
-            <p className="m-0 mb-3 text-sm text-text-2">
-              Esta versión es {torrent.videoCodec} (HEVC): el reproductor integrado probablemente no pueda
-              mostrarla. Puedes abrirla en VLC desde ya, mientras se descarga.
-            </p>
+            <p className="m-0 mb-3 text-sm text-text-2">{t.hevc(torrent.videoCodec)}</p>
             <ExternalPlayerActions
               movieId={movie.id}
               infohash={torrent.infohash}
@@ -82,9 +80,7 @@ export function BufferScreen({
         )}
         {session?.likelyPlayable && (
           <div className="mb-7 flex flex-wrap items-center gap-x-4 gap-y-2" data-testid="buffer-vlc">
-            <p className="m-0 text-sm text-muted">
-              ¿Prefieres VLC? Puedes abrirla desde ya, mientras se descarga.
-            </p>
+            <p className="m-0 text-sm text-muted">{t.preferVlc}</p>
             <ExternalPlayerActions
               movieId={movie.id}
               infohash={torrent.infohash}
@@ -107,22 +103,22 @@ export function BufferScreen({
 
         <dl className="mt-7 grid grid-cols-3 border-t border-line">
           <div className="pt-3.5">
-            <dt className="field-label">Peers</dt>
+            <dt className="field-label">{t.peers}</dt>
             <dd className="m-0 mt-0.5 text-[28px] font-extrabold stretch-semi tnum max-[900px]:text-xl">
               {stats?.peers ?? 0}
             </dd>
           </div>
           <div className="border-l border-line pt-3.5 pl-5">
-            <dt className="field-label">Velocidad</dt>
+            <dt className="field-label">{t.speed}</dt>
             <dd className="m-0 mt-0.5 text-[28px] font-extrabold stretch-semi tnum max-[900px]:text-xl">
               {formatSpeed(stats?.downSpeedBps ?? 0).replace(" MB/s", "")}
               <small className="ml-1 text-sm font-semibold text-muted">MB/s</small>
             </dd>
           </div>
           <div className="border-l border-line pt-3.5 pl-5">
-            <dt className="field-label">Búfer</dt>
+            <dt className="field-label">{t.buffer}</dt>
             <dd className="m-0 mt-0.5 text-[28px] font-extrabold stretch-semi tnum max-[900px]:text-xl">
-              {nf1.format(buffered / MB)}
+              {oneDecimal().format(buffered / MB)}
               <small className="ml-1 text-sm font-semibold text-muted">/ {Math.round(target / MB)} MB</small>
             </dd>
           </div>
@@ -131,20 +127,16 @@ export function BufferScreen({
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3 text-[13px] text-muted">
           <button type="button" className="btn btn-line btn-sm" onClick={onBack}>
             <Icon name="back" size={18} />
-            Volver
+            {t.back}
           </button>
           <span>
-            {noPeers
-              ? "Seguimos buscando a alguien que la comparta."
-              : stalled
-                ? "Si sigue sin datos, prueba otra versión con más seeds."
-                : `Empieza en cuanto haya ${Math.round(target / MB)} MB · `}
+            {noPeers ? t.stillLooking : stalled ? t.stalledHint : `${t.startsAt(Math.round(target / MB))} · `}
             {!stalled && (
               <>
                 <kbd className="rounded-sm border border-line-hi px-1.5 text-[11px] font-bold text-text-2">
                   Enter
                 </kbd>{" "}
-                para empezar ya
+                {t.startNow}
               </>
             )}
           </span>
@@ -166,6 +158,7 @@ function NoPeers({
   onWait: () => void;
   onBack: () => void;
 }) {
+  const t = useT().buffer;
   const other = betterSwarm(movie.torrents, torrent);
   return (
     <div className="absolute inset-0 grid place-items-center overflow-y-auto p-6" data-testid="no-peers">
@@ -175,12 +168,9 @@ function NoPeers({
         </p>
         <h1 className="m-0 mb-3 flex items-center gap-3 text-[clamp(1.6rem,3vw,2.2rem)] leading-tight font-[850]">
           <Icon name="alert" size={28} className="flex-none text-warn" />
-          Nadie está compartiendo esta versión
+          {t.noPeersTitle}
         </h1>
-        <p className="m-0 mb-7 text-[15px] text-text-2">
-          Llevamos un minuto sin encontrar a nadie que la tenga. El torrent sigue intentándolo por si aparece
-          alguien, pero lo más rápido es probar otra versión.
-        </p>
+        <p className="m-0 mb-7 text-[15px] text-text-2">{t.noPeersBody}</p>
         <div className="flex flex-wrap gap-3">
           {other && (
             <Link
@@ -192,22 +182,22 @@ function NoPeers({
               data-testid="no-peers-alternative"
             >
               <Icon name="play" size={22} />
-              Probar {other.quality} {SOURCE_LABEL[other.source]} {other.videoCodec} ·{" "}
-              {formatCount(other.seeds)} seeds
+              {t.tryOther(
+                `${other.quality} ${SOURCE_LABEL[other.source]} ${other.videoCodec}`,
+                formatCount(other.seeds),
+              )}
             </Link>
           )}
           <button type="button" className="btn btn-line" data-testid="no-peers-wait" onClick={onWait}>
             <Icon name="refresh" size={22} />
-            Seguir esperando
+            {t.keepWaiting}
           </button>
           <button type="button" className="btn btn-line" data-testid="no-peers-back" onClick={onBack}>
             <Icon name="back" size={22} />
-            Volver
+            {t.back}
           </button>
         </div>
-        {!other && (
-          <p className="m-0 mt-5 text-sm text-muted">Ninguna otra versión tiene más seeds ahora mismo.</p>
-        )}
+        {!other && <p className="m-0 mt-5 text-sm text-muted">{t.noBetter}</p>}
       </div>
     </div>
   );

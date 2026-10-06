@@ -5,6 +5,7 @@ import { ErrorState } from "../components/ErrorState";
 import { Icon } from "../components/Icon";
 import { MovieCard, MovieCardSkeleton } from "../components/MovieCard";
 import { SearchFilters } from "../components/SearchFilters";
+import { numberFormat, useT } from "../i18n";
 import { validateCatalogSearch, type CatalogSearch } from "../lib/searchParams";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
 import { useSearchMemory } from "../store/searchMemory";
@@ -16,10 +17,10 @@ export const Route = createFileRoute("/search")({
 });
 
 export const SEARCH_DEBOUNCE_MS = 300;
-const nf = new Intl.NumberFormat("es-ES");
 
 function SearchPage() {
   const search = Route.useSearch();
+  const t = useT();
   const navigate = Route.useNavigate();
   const [text, setText] = useState(search.query ?? "");
   const debounced = useDebouncedValue(text, SEARCH_DEBOUNCE_MS);
@@ -58,7 +59,7 @@ function SearchPage() {
 
   return (
     <div className="min-h-screen px-gutter pt-[calc(var(--spacing-nav)+36px)] pb-24">
-      <h1 className="sr-only">Buscar</h1>
+      <h1 className="sr-only">{t.nav.search}</h1>
       <div className="relative mb-4 max-w-[880px]">
         <Icon
           name="search"
@@ -69,8 +70,8 @@ function SearchPage() {
           type="search"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Título, año o código IMDb"
-          aria-label="Buscar películas"
+          placeholder={t.search.placeholder}
+          aria-label={t.search.label}
           data-testid="search-input"
           autoComplete="off"
           autoFocus={!filtered}
@@ -93,6 +94,7 @@ function Results({
   canClear: boolean;
 }) {
   const q = useInfiniteMovies({ ...search, limit: 30 });
+  const t = useT();
   const [sentinel, nearEnd] = useInView<HTMLDivElement>({ rootMargin: "0px 0px 800px 0px" });
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = q;
   useEffect(() => {
@@ -105,15 +107,12 @@ function Results({
     return (
       <div className="grid max-w-[460px] justify-items-start gap-3.5 py-16">
         <h2 className="m-0 text-[22px] font-extrabold">
-          {search.query ? `Nada coincide con «${search.query}»` : "Ninguna película cumple estos filtros"}
+          {search.query ? t.search.noMatch(search.query) : t.search.noFilterMatch}
         </h2>
-        <p className="m-0 text-muted">
-          Prueba con otro título, revisa la ortografía o quita algún filtro. También puedes buscar por año o
-          por código IMDb (tt…).
-        </p>
+        <p className="m-0 text-muted">{t.search.emptyHint}</p>
         {canClear && (
           <button type="button" className="btn btn-line btn-sm" onClick={onClear}>
-            Quitar filtros
+            {t.search.clear}
           </button>
         )}
       </div>
@@ -125,10 +124,8 @@ function Results({
       <div className="mb-[18px] flex items-baseline gap-3.5">
         <h2 className="m-0 text-lg font-bold tnum" aria-live="polite">
           {q.isSuccess
-            ? q.data.total === 1
-              ? "1 película"
-              : `${nf.format(q.data.total)} películas`
-            : "Buscando…"}
+            ? t.search.count(q.data.total, numberFormat().format(q.data.total))
+            : t.search.searching}
         </h2>
         {canClear && (
           <button
@@ -136,7 +133,7 @@ function Results({
             className="cursor-pointer border-0 bg-transparent p-0 text-sm font-semibold text-green hover:underline"
             onClick={onClear}
           >
-            Quitar filtros
+            {t.search.clear}
           </button>
         )}
       </div>

@@ -1,3 +1,5 @@
+import { getLocale, getT, oneDecimal } from "../i18n";
+
 // Pure subtitle logic: WebVTT parsing, the active cue with the user's delay, cue markup and copy.
 // The player draws cues itself (see SubtitleLayer), so nothing here depends on how WebKitGTK renders tracks.
 
@@ -95,12 +97,10 @@ export const DELAY_STEP = 0.1;
 /** Rounded to tenths so repeated ±0,1 never drifts (0.1 + 0.2). */
 export const stepDelay = (delay: number, dir: 1 | -1) => Math.round((delay + dir * DELAY_STEP) * 10) / 10;
 
-const nf1 = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
 /** "+0,3 s" / "−1,2 s" / "0,0 s". */
 export function formatDelay(delay: number): string {
-  if (Math.abs(delay) < 0.05) return "0,0 s";
-  return `${delay > 0 ? "+" : "−"}${nf1.format(Math.abs(delay))} s`;
+  if (Math.abs(delay) < 0.05) return `${oneDecimal().format(0)} s`;
+  return `${delay > 0 ? "+" : "−"}${oneDecimal().format(Math.abs(delay))} s`;
 }
 
 /** Quota renewal in local time, "HH:MM". */
@@ -108,7 +108,7 @@ export function formatResetTime(iso: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat("es-ES", { hour: "2-digit", minute: "2-digit" }).format(d);
+  return new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit" }).format(d);
 }
 
 /** Subtitle languages offered in Ajustes and the player (ISO 639-1 → name in its own language). */
@@ -122,7 +122,19 @@ export const SUBTITLE_LANGS: { code: string; label: string }[] = [
 ];
 
 export const langLabel = (code: string | null) =>
-  (code && SUBTITLE_LANGS.find((l) => l.code === code)?.label) ?? code?.toUpperCase() ?? "Subtítulos";
+  (code && SUBTITLE_LANGS.find((l) => l.code === code)?.label) ??
+  code?.toUpperCase() ??
+  getT().subtitleLangFallback;
+
+/** Language name for running text, in the UI language ("Spanish" / "español"). */
+export function langName(code: string | null): string {
+  if (!code) return getT().subtitleLangFallback;
+  try {
+    return new Intl.DisplayNames([getLocale()], { type: "language" }).of(code) ?? langLabel(code);
+  } catch {
+    return langLabel(code);
+  }
+}
 
 export const FALLBACK_LANG = "en";
 

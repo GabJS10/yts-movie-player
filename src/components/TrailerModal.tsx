@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { openExternalUrl, openTrailerWindow } from "../api/tauri";
+import { getT, useT } from "../i18n";
 import { originOf, parseTrailerMessage, TRAILER_TIMEOUT_MS, youtubeWatchUrl } from "../lib/trailer";
 import { showToast } from "../store/toast";
 import { Icon } from "./Icon";
@@ -25,6 +26,7 @@ type Phase = "loading" | "ok" | "fallback" | "browser" | "stuck";
  * step of the chain runs by itself (a separate window, then the browser) and the dialog closes.
  */
 export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
+  const t = useT().trailer;
   const frame = useRef<HTMLIFrameElement>(null);
   const [phase, setPhase] = useState<Phase>(src ? "loading" : "fallback");
 
@@ -56,11 +58,11 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
       try {
         if (phase === "browser") throw new Error("YouTube refused the embed");
         await openTrailerWindow(ytTrailerCode, title);
-        if (!gone) showToast("El tráiler se abrió en otra ventana");
+        if (!gone) showToast(getT().trailer.openedWindow);
       } catch {
         try {
           await openExternalUrl(youtubeWatchUrl(ytTrailerCode));
-          if (!gone) showToast("El tráiler se abrió en el navegador");
+          if (!gone) showToast(getT().trailer.openedBrowser);
         } catch {
           if (!gone) setPhase("stuck");
           return;
@@ -74,9 +76,7 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
   }, [phase, ytTrailerCode, title, onClose]);
 
   const openYoutube = () =>
-    void openExternalUrl(youtubeWatchUrl(ytTrailerCode)).catch(() =>
-      showToast("No se pudo abrir el navegador", "error"),
-    );
+    void openExternalUrl(youtubeWatchUrl(ytTrailerCode)).catch(() => showToast(t.browserFailed, "error"));
 
   return (
     <Modal
@@ -87,7 +87,7 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
     >
       <div className="flex items-center gap-3 bg-surface py-2.5 pr-2.5 pl-5">
         <h2 id="trailer-title" className="m-0 min-w-0 truncate text-base font-bold">
-          Tráiler · {title}
+          {t.heading(title)}
         </h2>
         <button
           type="button"
@@ -96,12 +96,12 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
           onClick={openYoutube}
         >
           <Icon name="external" size={15} />
-          Ver en YouTube
+          {t.youtube}
         </button>
         <button
           type="button"
           className="inline-grid size-10 place-items-center rounded-full text-text-2 hover:bg-white/8 hover:text-text"
-          aria-label="Cerrar tráiler"
+          aria-label={t.close}
           data-testid="trailer-close"
           data-autofocus
           onClick={onClose}
@@ -113,7 +113,7 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
         <iframe
           ref={frame}
           src={src}
-          title={`Tráiler de ${title}`}
+          title={t.frame(title)}
           data-testid="trailer-frame"
           data-phase={phase}
           className="block aspect-video w-full border-0"
@@ -127,15 +127,9 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
       ) : (
         <div className="grid aspect-video w-full place-items-center p-6 text-center" role="status">
           {phase === "stuck" ? (
-            <p className="m-0 max-w-[44ch] text-text-2">
-              No se pudo abrir el tráiler aquí ni en otra ventana. Prueba con «Ver en YouTube».
-            </p>
+            <p className="m-0 max-w-[44ch] text-text-2">{t.stuck}</p>
           ) : (
-            <p className="m-0 text-text-2">
-              {phase === "browser"
-                ? "Abriendo el tráiler en YouTube…"
-                : "Abriendo el tráiler en otra ventana…"}
-            </p>
+            <p className="m-0 text-text-2">{phase === "browser" ? t.openingBrowser : t.openingWindow}</p>
           )}
         </div>
       )}

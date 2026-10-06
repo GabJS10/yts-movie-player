@@ -10,6 +10,7 @@ import { Poster } from "../components/Poster";
 import { StaticMovieRow } from "../components/MovieRow";
 import { TrailerModal } from "../components/TrailerModal";
 import { VersionsTable } from "../components/VersionsTable";
+import { useT } from "../i18n";
 import { downloadForMovie, isActive, roundPercent } from "../lib/downloads";
 import { genreLabel } from "../lib/genres";
 import { toSummary } from "../lib/movie";
@@ -31,6 +32,7 @@ export const Route = createFileRoute("/movie/$movieId")({
 
 function MoviePage() {
   const { movieId } = Route.useParams();
+  const t = useT();
   const movie = useMovie(movieId);
   // Without network (or from the saved copy) there are no suggestions to ask for.
   const offline = useConnectivity((s) => s.offline) || !!movie.data?.offline;
@@ -48,7 +50,7 @@ function MoviePage() {
       {movie.data ? <MovieBody key={movie.data.id} movie={movie.data} /> : <MovieSkeleton />}
       <div className="mt-12 pb-20">
         {!offline && (
-          <StaticMovieRow title="Similares" movies={suggestions.data} loading={suggestions.isPending} />
+          <StaticMovieRow title={t.movie.similar} movies={suggestions.data} loading={suggestions.isPending} />
         )}
       </div>
     </>
@@ -68,7 +70,7 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
   // The saved copy (offline) can only play the downloaded version.
   const torrents = useMemo(() => {
     const all = sortForDisplay(movie.torrents);
-    const local = movie.offline ? all.filter((t) => t.infohash === movie.download?.infohash) : [];
+    const local = movie.offline ? all.filter((tr) => tr.infohash === movie.download?.infohash) : [];
     return local.length > 0 ? local : all;
   }, [movie.torrents, movie.offline, movie.download?.infohash]);
   // Until the user picks a row: the downloaded version (starts at once from the library), else the
@@ -76,8 +78,8 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
   const prefs = useTorrentPrefs();
   const [picked, setPicked] = useState<string | null>(null);
   const chosen =
-    torrents.find((t) => t.infohash === picked) ??
-    torrents.find((t) => t.infohash === library) ??
+    torrents.find((tr) => tr.infohash === picked) ??
+    torrents.find((tr) => tr.infohash === library) ??
     pickDefaultTorrent(torrents, prefs) ??
     undefined;
   const resume = movie.progress && !movie.progress.finished ? movie.progress : null;
@@ -85,7 +87,8 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
   // The trailer needs the network; a saved copy (offline) has none to show.
   const offline = useConnectivity((s) => s.offline) || movie.offline;
   const [trailerOpen, setTrailerOpen] = useState(false);
-  const closeTrailer = useCallback(() => setTrailerOpen(false), []);
+  const closeTrailer = useCallback(() => setTrailerOpen(false), [setTrailerOpen]);
+  const t = useT();
   // Sharp still first; the blurred background next; the poster (blurred further) as a last resort.
   const still = movie.screenshotUrls[0] ?? movie.backgroundUrl;
   const art = still ?? movie.coverLargeUrl ?? movie.coverUrl;
@@ -106,7 +109,7 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
 
       <div className="relative z-[2] -mt-[38vh] grid grid-cols-[clamp(180px,18vw,260px)_minmax(0,1fr)] gap-x-[clamp(24px,3.2vw,48px)] overflow-x-clip px-gutter max-[900px]:-mt-[22vh] max-[900px]:grid-cols-[minmax(0,1fr)]">
         <div className="self-start overflow-hidden rounded-lg shadow-[0_24px_48px_rgba(0,0,0,.6)] max-[900px]:mb-5 max-[900px]:w-[140px]">
-          <div className="aspect-[2/3]" role="img" aria-label={`Póster de ${movie.title}`}>
+          <div className="aspect-[2/3]" role="img" aria-label={t.movie.poster(movie.title)}>
             <Poster src={movie.coverLargeUrl ?? movie.coverUrl} title={movie.title} eager />
           </div>
         </div>
@@ -136,7 +139,7 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
                   data-testid="movie-play"
                 >
                   <Icon name="play" size={22} />
-                  {resume ? `Continuar (${formatClock(resume.positionS)})` : `Reproducir ${chosen.quality}`}
+                  {resume ? t.movie.resume(formatClock(resume.positionS)) : t.movie.play(chosen.quality)}
                 </Link>
                 {resume && (
                   <Link
@@ -147,14 +150,14 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
                     data-testid="movie-restart"
                   >
                     <Icon name="refresh" size={22} />
-                    Desde el principio
+                    {t.movie.fromStart}
                   </Link>
                 )}
               </>
             ) : (
               <button type="button" className="btn btn-play" disabled>
                 <Icon name="play" size={22} />
-                Reproducir
+                {t.hero.play}
               </button>
             )}
             <FavoriteButton movie={summary} isFavorite={movie.isFavorite} testId="movie-favorite" />
@@ -167,23 +170,21 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
                 onClick={() => setTrailerOpen(true)}
               >
                 <Icon name="film" size={22} />
-                Tráiler
+                {t.movie.trailer}
               </button>
             )}
           </div>
           {movie.offline && (
             <p className="-mt-3 mb-5 flex items-center gap-2 text-[13.5px] text-muted" role="status">
               <Icon name="info" size={16} />
-              Sin conexión: es la copia guardada al descargarla. Se reproduce desde tu biblioteca.
+              {t.movie.offlineCopy}
             </p>
           )}
 
-          <p className="m-0 mb-5 max-w-[68ch] text-lead text-text-2">
-            {movie.summary || "Sin sinopsis disponible."}
-          </p>
+          <p className="m-0 mb-5 max-w-[68ch] text-lead text-text-2">{movie.summary || t.movie.noSummary}</p>
           {movie.cast.length > 0 && (
             <p className="m-0 flex flex-wrap gap-x-2.5 gap-y-1 text-sm text-muted">
-              <span>Reparto:</span>
+              <span>{t.movie.cast}</span>
               {movie.cast.map((c, i) => (
                 <span key={`${c.name}-${i}`}>
                   <b className="font-semibold text-text-2">{c.name}</b>
@@ -196,9 +197,9 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
 
         <section className="col-span-full mt-12 min-w-0" aria-labelledby="versions-title">
           <h2 id="versions-title" className="m-0 mb-3.5 text-title font-[750]">
-            Elige versión
+            {t.movie.chooseVersion}
             <small className="ml-3 text-[13px] font-medium text-muted max-[900px]:mt-1 max-[900px]:ml-0 max-[900px]:block">
-              Los seeds son quienes tienen el archivo completo; más seeds, arranque más rápido.
+              {t.movie.seedsHint}
             </small>
           </h2>
           {torrents.length > 0 ? (
@@ -209,7 +210,7 @@ function MovieBody({ movie }: { movie: MovieDetail }) {
               labelledBy="versions-title"
             />
           ) : (
-            <p className="text-muted">YTS no tiene versiones disponibles para esta película.</p>
+            <p className="text-muted">{t.movie.noVersions}</p>
           )}
         </section>
       </div>
@@ -236,6 +237,7 @@ function DownloadButton({
   torrent: Torrent | undefined;
 }) {
   const start = useStartDownload();
+  const t = useT().movie;
   if (!download) {
     return (
       <button
@@ -244,36 +246,36 @@ function DownloadButton({
         data-testid="movie-download"
         data-state="none"
         disabled={!torrent || start.isPending}
-        title={torrent ? `Guardar la versión ${torrent.quality} para verla sin conexión` : undefined}
+        title={torrent ? t.saveVersion(torrent.quality) : undefined}
         onClick={() => torrent && start.mutate({ movie, infohash: torrent.infohash })}
       >
         <Icon name="download" size={22} />
-        {start.isPending ? "Preparando…" : "Descargar"}
+        {start.isPending ? t.preparing : t.download}
       </button>
     );
   }
   const label =
     download.state === "unavailable"
-      ? "Carpeta no disponible"
+      ? t.downloadState.unavailable
       : download.state === "moving"
-        ? "Moviendo…"
+        ? t.downloadState.moving
         : download.state === "done"
-          ? "Descargada"
+          ? t.downloadState.done
           : download.state === "queued"
-            ? "En cola"
+            ? t.downloadState.queued
             : download.state === "paused"
-              ? `En pausa ${roundPercent(download.progress)}`
+              ? t.downloadState.paused(roundPercent(download.progress))
               : download.state === "error"
-                ? "Falló la descarga"
-                : `Descargando ${roundPercent(download.progress)}`;
+                ? t.downloadState.error
+                : t.downloadState.active(roundPercent(download.progress));
   return (
     <Link
       to="/downloads"
       className="btn btn-line tnum"
       data-testid="movie-download"
       data-state={download.state}
-      title={`${download.quality} · ver en Descargas`}
-      aria-label={`${label} (${download.quality}), ver en Descargas`}
+      title={t.seeInDownloads(download.quality)}
+      aria-label={t.downloadLabel(label, download.quality)}
     >
       <Icon
         name={
@@ -294,8 +296,9 @@ function DownloadButton({
 }
 
 function MovieSkeleton() {
+  const t = useT();
   return (
-    <div aria-busy="true" aria-label="Cargando película">
+    <div aria-busy="true" aria-label={t.movie.loading}>
       <div className="skeleton h-[54vh] min-h-[380px] rounded-none" />
       <div className="relative -mt-[38vh] grid grid-cols-[clamp(180px,18vw,260px)_minmax(0,1fr)] gap-x-12 px-gutter max-[900px]:-mt-[22vh] max-[900px]:grid-cols-1">
         <div className="skeleton aspect-[2/3] max-[900px]:w-[140px]" />

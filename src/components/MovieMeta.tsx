@@ -1,4 +1,5 @@
 import type { MovieSummary } from "../api/types";
+import { useLanguage } from "../i18n";
 import { formatRating, formatRuntime } from "../lib/format";
 import { genreLabel } from "../lib/genres";
 import { Icon } from "./Icon";
@@ -9,6 +10,7 @@ const Sep = () => <span aria-hidden="true" className="size-[3px] rounded-full bg
 
 /** ★ 8,7 IMDb · 2014 · 2 h 49 min · PG-13 · Acción · Aventura */
 export function MovieMeta({ movie, mpaRating, genres = 0, className = "" }: Props) {
+  useLanguage(); // genre labels and number formats follow the UI language
   return (
     <div
       className={`flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[15px] text-text-2 tnum ${className}`}

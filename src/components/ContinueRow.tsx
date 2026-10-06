@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useContinueWatching, useRemoveProgress } from "../api/queries";
 import type { ContinueItem } from "../api/types";
+import { useT } from "../i18n";
 import { timeLeft } from "../lib/format";
 import { formatClock } from "../lib/player";
 import { Icon } from "./Icon";
@@ -9,6 +10,7 @@ import { RowShell } from "./MovieRow";
 
 function ContinueCard({ item, onRemove }: { item: ContinueItem; onRemove: () => void }) {
   const { movie, progress } = item;
+  const t = useT().continueRow;
   const left = timeLeft(progress.positionS, progress.durationS);
   const fraction = progress.durationS > 0 ? Math.min(1, progress.positionS / progress.durationS) : 0;
   return (
@@ -17,7 +19,7 @@ function ContinueCard({ item, onRemove }: { item: ContinueItem; onRemove: () => 
         to="/play/$movieId"
         params={{ movieId: movie.id }}
         className="wide"
-        aria-label={`Continuar ${movie.title}, ${left.toLowerCase()}`}
+        aria-label={t.resume(movie.title, left.toLowerCase())}
         data-card
       >
         {/* Landscape art: the background still; the poster (cropped) when YTS has none. */}
@@ -34,7 +36,7 @@ function ContinueCard({ item, onRemove }: { item: ContinueItem; onRemove: () => 
             {movie.title}
           </h3>
           <div className="text-[12.5px] text-text-2 tnum">
-            {left} · {formatClock(progress.positionS)} de {formatClock(progress.durationS)}
+            {left} · {t.position(formatClock(progress.positionS), formatClock(progress.durationS))}
           </div>
         </div>
         <div className="absolute inset-x-0 bottom-0 z-[1] h-1 bg-white/18" aria-hidden="true">
@@ -44,8 +46,8 @@ function ContinueCard({ item, onRemove }: { item: ContinueItem; onRemove: () => 
       <button
         type="button"
         className="wide-remove"
-        aria-label={`Quitar ${movie.title} de Continuar viendo`}
-        title="Quitar de Continuar viendo"
+        aria-label={t.removeTitle(movie.title)}
+        title={t.remove}
         onClick={onRemove}
       >
         <Icon name="x" size={16} />
@@ -58,9 +60,10 @@ function ContinueCard({ item, onRemove }: { item: ContinueItem; onRemove: () => 
 export function ContinueRow() {
   const q = useContinueWatching();
   const remove = useRemoveProgress();
+  const t = useT().continueRow;
   if (!q.data || q.data.length === 0) return null;
   return (
-    <RowShell title="Continuar viendo">
+    <RowShell title={t.title}>
       {q.data.map((item) => (
         <ContinueCard key={item.movie.id} item={item} onRemove={() => remove.mutate(item.movie.id)} />
       ))}
