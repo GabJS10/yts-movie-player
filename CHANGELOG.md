@@ -2,6 +2,11 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado [semántico](https://semver.org/lang/es/).
 
+## [1.1.1] - 2026-10-05
+
+### Cambios
+- "Abrir en VLC" está siempre disponible, con cualquier versión y no solo con las HEVC/4K: en la pantalla de búfer ("¿Prefieres VLC?") y en los controles del reproductor (botón y tecla V). Pausa el video integrado, sale de pantalla completa y abre VLC con el subtítulo activo y su retraso.
+
 ## [1.1.0] - 2026-10-05
 
 Soporte de Windows 10/11.
@@ -49,5 +54,6 @@ Primera versión pública. Linux: `.deb`, `.rpm` y AppImage.
 - Logs a archivo con rotación, "Acerca de" y aviso de nuevas versiones.
 - Tests: unitarios e integración en Rust (torrent local sin internet), Vitest en el front, E2E con WebdriverIO sobre la app real y Playwright + axe sobre la interfaz.
 
+[1.1.1]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.1
 [1.1.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.0
 [1.0.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.0.0

@@ -14,7 +14,7 @@ Guía para agentes de IA (y personas) que trabajen en este repositorio.
 - Prototipo navegable de todas las pantallas: `design/prototype/index.html` (servir con `python3 -m http.server` desde esa carpeta)
 - Web pública (Astro + Netlify, repo aparte `../yts-movie-player-web`): brief en [`docs/WEB.md`](docs/WEB.md)
 
-**Estado actual:** v1.1.0 (Linux: `.deb`, `.rpm`, AppImage; Windows 10/11: instalador `.exe`); fases 0–9 terminadas. Siguiente: por decidir (backlog en `docs/ROADMAP.md`).
+**Estado actual:** v1.1.1 (Linux: `.deb`, `.rpm`, AppImage; Windows 10/11: instalador `.exe`); fases 0–9 terminadas. Siguiente: por decidir (backlog en `docs/ROADMAP.md`).
 
 ## Forma de trabajo (multi-agente)
 El proyecto se desarrolla con **4 agentes en paralelo**, cada uno en su propia tab del workspace `yts-movie-player` de [Herdr](https://herdr.dev). Hoy todos son Claude Code, pero el flujo no depende del harness (puede entrar Codex u otro): **este `AGENTS.md` es la fuente de verdad**, y `CLAUDE.md` solo lo importa.
