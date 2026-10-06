@@ -72,7 +72,7 @@ Cómo marcar: `[x]` bien, `[!]` falla (anotar el detalle debajo), `[-]` no aplic
 - [ ] Toda la app usable solo con teclado; foco visible en todo.
 - [ ] Contraste legible en textos secundarios; nada depende solo del color.
 - [ ] Las pantallas coinciden con el prototipo (`design/prototype/`); textos en español sin erratas.
-- [ ] Idioma: con el sistema en inglés (`LANGUAGE=en ./yts-player` en Linux) la app arranca en inglés y con el sistema en español, en español. Ajustes › Idioma cambia toda la interfaz al momento (navegación, toasts, reproductor) y la elección se mantiene al reiniciar; "Automático" vuelve a seguir al sistema. En inglés, ningún texto se corta ni se desborda.
+- [ ] Idioma: con el sistema en inglés (`LC_ALL=en_US.UTF-8 ./yts-player` en Linux; WebKitGTK ignora `LANGUAGE`) la app arranca en inglés y con el sistema en español, en español. Ajustes › Idioma cambia toda la interfaz al momento (navegación, toasts, reproductor) y la elección se mantiene al reiniciar; "Automático" vuelve a seguir al sistema. En inglés, ningún texto se corta ni se desborda.
 
 ## 10. Windows (ronda en el Windows del usuario)
 Se instala el `.exe` del borrador de la release (o del artefacto `smoke-windows` del CI). Lo que no cambia respecto a Linux se repasa por encima; lo propio de Windows, con detalle. Anotar: versión de Windows, versión de WebView2 (`edge://version` no aplica: Ajustes → Aplicaciones → "Microsoft Edge WebView2 Runtime"), si hay VLC y la extensión HEVC.
