@@ -11,6 +11,7 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": [
+          "English",
           "Spanish"
         ],
         "displayLanguageSelector": false,
