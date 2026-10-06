@@ -5,6 +5,7 @@ Web pública de YTS Player: landing + documentación, estática con **Astro**, d
 - **Repo:** aparte, `/home/gabriel/datos/projects/yts-movie-player-web` → GitHub `GabJS10/yts-movie-player-web`.
 - **Agente:** `web` (tab `web` de Herdr). Es dueño de ese repo. Este repo (`/home/gabriel/datos/projects/yts-movie-player`, el de la app) **solo se lee**, nunca se edita desde `web`; si algo de aquí debe cambiar, se pide a `plan`.
 - **Orquesta:** `plan`.
+- **Estado:** hitos 0–3 terminados. Producción: https://yts-player.netlify.app. Al publicar una release, `.github/workflows/web-rebuild.yml` llama al build hook de Netlify (secreto `NETLIFY_BUILD_HOOK`); el hook solo compila cuando el sitio está conectado al repo de GitHub (deploy continuo, requiere `netlify init` con OAuth del usuario).
 
 ## Público y objetivo
 La persona de [`PRODUCT.md`](../PRODUCT.md): alguien en Linux o Windows que hoy baja películas a mano de yts.gg y quiere explorar el catálogo y darle a play. La web tiene que convencerle en un vistazo y llevarle a **descargar el instalador correcto para su sistema**. Todo el copy en **español**.

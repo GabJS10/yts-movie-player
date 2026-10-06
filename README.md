@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://yts-player.netlify.app">Web</a> ·
   <a href="https://github.com/GabJS10/yts-movie-player/releases/latest">Descargar</a> ·
   <a href="CHANGELOG.md">Novedades</a> ·
   <a href="docs/PLAN.md">Arquitectura</a>

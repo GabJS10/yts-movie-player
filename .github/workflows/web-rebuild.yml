@@ -1,0 +1,24 @@
+name: Web rebuild
+
+# When a release is published (the draft from release.yml, by hand), trigger the Netlify build
+# hook of the website (GabJS10/yts-movie-player-web) so its download links show the new version.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Netlify build hook
+        env:
+          NETLIFY_BUILD_HOOK: ${{ secrets.NETLIFY_BUILD_HOOK }}
+        run: |
+          if [ -z "$NETLIFY_BUILD_HOOK" ]; then
+            echo "::warning::NETLIFY_BUILD_HOOK secret is not set; skipping"
+            exit 0
+          fi
+          curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK"
