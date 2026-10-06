@@ -66,7 +66,12 @@ async fn live_opensubtitles() {
     for o in results.iter().take(5) {
         println!(
             "  {} match={} hi={} ai={} dl={} {}",
-            o.id, o.matches_release, o.hearing_impaired, o.ai_translated, o.downloads, o.label
+            o.id,
+            o.matches_release,
+            o.hearing_impaired,
+            o.ai_translated,
+            o.downloads,
+            o.label.as_deref().unwrap_or("-")
         );
     }
     let first = results.first().expect("some Spanish subtitles");

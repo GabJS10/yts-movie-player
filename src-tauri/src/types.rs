@@ -296,7 +296,8 @@ pub struct StreamSession {
 pub struct SubtitleOption {
     pub id: String,
     pub lang: String,
-    pub label: String,
+    /// Release or file name; `null` when OpenSubtitles gives neither (the UI names it).
+    pub label: Option<String>,
     pub downloads: u64,
     pub hearing_impaired: bool,
     pub matches_release: bool,
@@ -313,7 +314,8 @@ pub struct SubtitleOption {
 pub struct SubtitleTrack {
     pub track_url: String,
     pub lang: Option<String>,
-    pub label: String,
+    /// `null` when unknown (the UI names it).
+    pub label: Option<String>,
 }
 
 /// Result of `get_subtitles_status` (the "Probar" button in Settings).
@@ -1088,7 +1090,7 @@ mod tests {
         let option = SubtitleOption {
             id: "123".into(),
             lang: "es".into(),
-            label: "Release.1080p".into(),
+            label: Some("Release.1080p".into()),
             downloads: 5,
             hearing_impaired: false,
             matches_release: true,
@@ -1118,11 +1120,11 @@ mod tests {
         let track = SubtitleTrack {
             track_url: "http://127.0.0.1:1/subs/123.vtt".into(),
             lang: None,
-            label: "manual.srt".into(),
+            label: None,
         };
         assert_eq!(
             to_json(&track),
-            json!({ "trackUrl": "http://127.0.0.1:1/subs/123.vtt", "lang": null, "label": "manual.srt" })
+            json!({ "trackUrl": "http://127.0.0.1:1/subs/123.vtt", "lang": null, "label": null })
         );
         let status = SubtitlesStatus {
             configured: true,

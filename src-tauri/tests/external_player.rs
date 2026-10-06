@@ -51,7 +51,7 @@ fn option(id: &str) -> SubtitleOption {
     SubtitleOption {
         id: id.into(),
         lang: "es".into(),
-        label: "x".into(),
+        label: Some("x".into()),
         downloads: 1,
         hearing_impaired: false,
         matches_release: true,

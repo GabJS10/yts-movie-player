@@ -159,13 +159,14 @@ fn escape_html(s: &str) -> String {
 /// `enablejsapi=1`). `origin` is this server's origin (`http://127.0.0.1:<port>`), sent by
 /// the player iframe as `Referer`. Player events go to `window.parent` (the app's modal)
 /// and `window.opener` as `postMessage({ source: "yts-trailer", event, code? })`
-/// (`docs/IPC.md`, "Tráiler"); a failure to load the API counts as `error`.
+/// (`docs/IPC.md`, "Tráiler"); a failure to load the API counts as `error`. The page has
+/// no text of its own (no fixed language): its `<title>` is the `title` it is given.
 pub fn trailer_page(code: &str, title: &str, origin: &str) -> String {
     // `code` is validated ([A-Za-z0-9_-]); JSON keeps `origin` safe inside the script.
     let origin_js = serde_json::to_string(origin).unwrap_or_else(|_| "\"\"".into());
     format!(
         r#"<!doctype html>
-<html lang="es">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -233,11 +234,7 @@ async fn trailer(
         .and_then(|h| h.to_str().ok())
         .filter(|h| h.starts_with("127.0.0.1:") || h.starts_with("localhost:"))
         .unwrap_or("127.0.0.1");
-    let title = if q.title.trim().is_empty() {
-        "Tráiler".to_owned()
-    } else {
-        q.title.chars().take(200).collect()
-    };
+    let title: String = q.title.trim().chars().take(200).collect();
     (
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
@@ -371,6 +368,8 @@ mod tests {
         assert!(page.contains(r#"content="strict-origin-when-cross-origin""#));
         assert!(page.contains("<title>Tom &amp; &quot;Jerry&quot; &lt;3</title>"));
         assert!(!page.contains("<3"));
+        assert!(!page.contains("lang="));
+        assert!(trailer_page("9ix7TUGVYIo", "", "http://127.0.0.1:1").contains("<title></title>"));
         assert_eq!(
             trailer_url("http://127.0.0.1:4321/", "9ix7TUGVYIo", "Dune: Parte 2"),
             "http://127.0.0.1:4321/trailer/9ix7TUGVYIo?title=Dune%3A+Parte+2"

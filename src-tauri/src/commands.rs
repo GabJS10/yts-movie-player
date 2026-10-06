@@ -559,6 +559,7 @@ const TRAILER_WINDOW: &str = "trailer";
 /// Plan B for the trailer: a separate window with the local `/trailer/<code>` page (see
 /// `stream.rs`: the embed needs a `Referer`, which this page provides). Reuses the window
 /// if it is already open. The window has no IPC access (no capability lists it).
+/// `title` is the window title as the UI wants it (already localized), used as is.
 #[tauri::command]
 pub async fn open_trailer_window(
     app: AppHandle,
@@ -576,23 +577,18 @@ pub async fn open_trailer_window(
     let url = crate::stream::trailer_url(local_base(&state), code, &title);
     let parsed =
         url::Url::parse(&url).map_err(|e| AppError::Internal(format!("trailer URL {url}: {e}")))?;
-    let window_title = if title.is_empty() {
-        "Tráiler".to_owned()
-    } else {
-        format!("{title} · Tráiler")
-    };
     tracing::info!(%code, "opening trailer window");
     use tauri::Manager;
     if let Some(window) = app.get_webview_window(TRAILER_WINDOW) {
         window
             .navigate(parsed)
-            .and_then(|()| window.set_title(&window_title))
+            .and_then(|()| window.set_title(&title))
             .and_then(|()| window.set_focus())
             .map_err(|e| AppError::Internal(format!("trailer window: {e}")))?;
         return Ok(());
     }
     tauri::WebviewWindowBuilder::new(&app, TRAILER_WINDOW, tauri::WebviewUrl::External(parsed))
-        .title(window_title)
+        .title(&title)
         .inner_size(1280.0, 720.0)
         .min_inner_size(480.0, 270.0)
         .center()

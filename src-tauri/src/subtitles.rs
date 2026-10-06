@@ -287,7 +287,7 @@ pub struct SubtitlesClient {
     login: tokio::sync::Mutex<Login>,
     quota: Mutex<Quota>,
     /// file id → (lang, label), from searches, to label loaded tracks.
-    labels: Mutex<HashMap<String, (String, String)>>,
+    labels: Mutex<HashMap<String, (String, Option<String>)>>,
 }
 
 fn net_err(e: reqwest::Error) -> AppError {
@@ -526,10 +526,11 @@ impl SubtitlesClient {
                     .map(str::trim)
                     .filter(|r| !r.is_empty())
                     .or(file.file_name.as_deref())
-                    .unwrap_or("Subtítulo")
-                    .to_owned();
+                    .map(str::to_owned);
                 Some(SubtitleOption {
-                    matches_release: release.is_some_and(|r| matches_release(&label, &r)),
+                    matches_release: release
+                        .zip(label.as_deref())
+                        .is_some_and(|(r, l)| matches_release(l, &r)),
                     lang: a
                         .language
                         .as_deref()
@@ -558,7 +559,7 @@ impl SubtitlesClient {
         Ok(options)
     }
 
-    fn track(&self, id: &str, lang: Option<String>, label: String) -> SubtitleTrack {
+    fn track(&self, id: &str, lang: Option<String>, label: Option<String>) -> SubtitleTrack {
         SubtitleTrack {
             track_url: format!(
                 "{}/subs/{id}.vtt",
@@ -569,10 +570,10 @@ impl SubtitlesClient {
         }
     }
 
-    fn label_of(&self, id: &str) -> (Option<String>, String) {
+    fn label_of(&self, id: &str) -> (Option<String>, Option<String>) {
         match self.labels.lock().ok().and_then(|l| l.get(id).cloned()) {
             Some((lang, label)) => (Some(lang), label),
-            None => (None, "Subtítulos".into()),
+            None => (None, None),
         }
     }
 
@@ -704,10 +705,7 @@ impl SubtitlesClient {
             .ok_or_else(|| AppError::InvalidInput("no subtitles found in the file".into()))?;
         let id = format!("f-{}", &hex::encode(Sha256::digest(vtt.as_bytes()))[..16]);
         write_atomically(&vtt_path(&self.cfg.subs_dir, &id), vtt.as_bytes()).await?;
-        let label = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Subtítulos".into());
+        let label = path.file_name().map(|n| n.to_string_lossy().into_owned());
         tracing::info!(%id, "local subtitle loaded");
         let track = self.track(&id, None, label);
         Ok((id, track))
@@ -796,7 +794,7 @@ mod tests {
         SubtitleOption {
             id: id.into(),
             lang: "es".into(),
-            label: id.into(),
+            label: Some(id.into()),
             downloads,
             hearing_impaired: hi,
             matches_release: matches,

@@ -227,7 +227,7 @@ type ExternalPlayerResult = {
 type SubtitleOption = {
   id: string;                      // id de OpenSubtitles (file_id)
   lang: string;                    // ISO 639-1: "es", "en"
-  label: string;                   // nombre del release
+  label: string | null;            // nombre del release (o del archivo); null si OpenSubtitles no da ninguno
   downloads: number;
   hearingImpaired: boolean;
   matchesRelease: boolean;         // coincide con el release de YTS del infohash dado
@@ -239,7 +239,7 @@ type SubtitleOption = {
 type SubtitleTrack = {
   trackUrl: string;                // .vtt servido por el servidor local (ya convertido de SRT y en UTF-8)
   lang: string | null;
-  label: string;
+  label: string | null;            // release (si vino de una búsqueda) o nombre del archivo; null si no se sabe
 };
 
 type SubtitlesStatus = {
@@ -259,6 +259,7 @@ type SubtitlesStatus = {
 - `load_subtitle_file` acepta `.srt` y `.vtt`; la ruta llega del diálogo de archivo o del drag & drop de Tauri (`onDragDropEvent`, que da rutas reales).
 - La búsqueda usa el `imdbCode` de la película: el backend lo obtiene a partir de `movieId`.
 - El retraso de los subtítulos lo aplica el front, desplazando los `cue`. No pasa por IPC.
+- El backend no arma textos de UI: con `label: null`, el front pone el nombre localizado ("Subtítulo", "Subtítulos"…).
 
 ### Mi lista
 
@@ -408,6 +409,9 @@ type SettingsPatch = Partial<Settings>;
 |---|---|---|
 | `open_trailer_window` | `{ ytTrailerCode: string, title: string }` | `void` |
 
+- `title` es el **título de la ventana tal cual**, ya localizado por el front (p. ej. `"Dune · Tráiler"` / `"Dune · Trailer"`); el backend no le agrega nada. También va como `?title=` a la página `/trailer`.
+- La página `/trailer` no tiene texto propio ni `lang` fijo: su `<title>` es el `?title=` recibido (vacío si no llega). En `MovieDetail.trailerUrl` lleva el título de la película.
+
 Cadena del tráiler: (1) el modal de la app carga `MovieDetail.trailerUrl` en un `<iframe>`; (2) si falla, `open_trailer_window` abre esa misma página en una `WebviewWindow` aparte; (3) si también falla, el front abre `https://www.youtube.com/watch?v=<code>` en el navegador. El embed solo funciona desde la página local (`http://127.0.0.1`), porque YouTube exige un `Referer` válido (error 153) y `tauri://localhost` no lo manda.
 
 **Mensajes de la página `/trailer` al padre** (`window.parent.postMessage`, y `window.opener` si lo hay). La página carga el embed con `enablejsapi=1` y reenvía los eventos de la API de YouTube:
@@ -552,3 +556,4 @@ Solo escucha en `127.0.0.1`, en un puerto aleatorio que se elige al arrancar. Re
 - **v0.12.1** (2026-10-04): `MovieDetail.trailerUrl` (página local del tráiler, solo para la sesión) y mensajes `TrailerMessage` de la página `/trailer` al padre por `postMessage`; cadena modal → ventana → navegador.
 - **v0.13** (2026-10-04): fase 8. Comandos `get_app_info`, `check_for_update` (aviso de nueva versión vía GitHub Releases, nunca falla) y `open_logs_folder`; logs a archivo con rotación.
 - **v0.14** (2026-10-04): Windows. Sin comandos nuevos. Rutas por defecto según la plataforma (Windows: `%LOCALAPPDATA%\yts-player\`, con `cache`, `library` y `logs`); `get_app_info.dataDir`/`logsDir` con valor real en Windows; variable `YTS_PLAYER_DATA_DIR` (E2E, todas las plataformas) que sustituye la carpeta de datos y lleva los logs a `<dir>/logs` (sin ella, en Linux los logs siguen en `~/.local/state/yts-player/logs`).
+- **v0.15** (2026-10-06): i18n. El backend deja de armar textos de UI en español. `open_trailer_window.title` se usa tal cual como título de la ventana (antes el backend agregaba ` · Tráiler`, o ponía `Tráiler` si venía vacío); la página `/trailer` ya no tiene título por defecto ni `lang="es"`. `SubtitleOption.label` y `SubtitleTrack.label` pasan a `string | null` (antes `"Subtítulo"`/`"Subtítulos"` de relleno); el front pone el nombre localizado.

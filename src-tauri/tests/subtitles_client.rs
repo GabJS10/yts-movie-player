@@ -163,7 +163,12 @@ async fn search_ranks_and_flags_results() {
     assert!(by_id("9004").ai_translated); // machine_translated
     assert!(by_id("9006").ai_translated);
     assert_eq!(by_id("9008").lang, "pt");
-    assert_eq!(by_id("9003").label, "The.Matrix.1999.1080p.BrRip.x264.YIFY");
+    assert_eq!(
+        by_id("9003").label.as_deref(),
+        Some("The.Matrix.1999.1080p.BrRip.x264.YIFY")
+    );
+    // No release and no file name → null label (the UI names it).
+    assert_eq!(by_id("9006").label, None);
     // pageUrl from attributes.url; missing or not an opensubtitles https page → null.
     assert_eq!(
         by_id("9003").page_url.as_deref(),
@@ -196,7 +201,7 @@ async fn without_key_api_calls_fail_with_subtitles_auth_but_files_load() {
     let file = h.tmp.path().join("Mi Película.SRT");
     std::fs::write(&file, fixture_bytes("subs/messy-cp1252.srt")).unwrap();
     let track = h.client.load_file(&file).await.unwrap();
-    assert_eq!(track.label, "Mi Película.SRT");
+    assert_eq!(track.label.as_deref(), Some("Mi Película.SRT"));
     assert_eq!(track.lang, None);
     let id = track
         .track_url
@@ -244,7 +249,10 @@ async fn download_converts_and_disk_cache_avoids_a_second_download() {
     let track = h.client.load("9003").await.unwrap();
     assert_eq!(track.track_url, format!("{LOCAL}/subs/9003.vtt"));
     assert_eq!(track.lang.as_deref(), Some("es"));
-    assert_eq!(track.label, "The.Matrix.1999.1080p.BrRip.x264.YIFY");
+    assert_eq!(
+        track.label.as_deref(),
+        Some("The.Matrix.1999.1080p.BrRip.x264.YIFY")
+    );
     let cached = h.tmp.path().join("subs/9003.vtt");
     assert_eq!(
         std::fs::read_to_string(&cached).unwrap(),
