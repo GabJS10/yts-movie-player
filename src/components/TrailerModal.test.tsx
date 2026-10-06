@@ -50,7 +50,7 @@ describe("Tráiler: modal → separate window → browser", () => {
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "open_trailer_window")?.args).toEqual({
         ytTrailerCode: CODE,
-        title: "Interstellar",
+        title: "Interstellar · Tráiler", // the window title, localized here (IPC v0.15)
       }),
     );
     expect(await screen.findByText("El tráiler se abrió en otra ventana")).toBeInTheDocument();

@@ -189,7 +189,8 @@ export type ExternalPlayerResult = {
 export type SubtitleOption = {
   id: string;
   lang: string;
-  label: string;
+  /** Release (or file) name; null when OpenSubtitles gives none: the UI names it. */
+  label: string | null;
   downloads: number;
   hearingImpaired: boolean;
   matchesRelease: boolean;
@@ -204,7 +205,8 @@ export type SubtitleOption = {
 export type SubtitleTrack = {
   trackUrl: string;
   lang: string | null;
-  label: string;
+  /** Release or file name; null when unknown. */
+  label: string | null;
 };
 
 export type SubtitlesStatus = {

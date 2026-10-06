@@ -57,7 +57,7 @@ export function TrailerModal({ title, ytTrailerCode, src, onClose }: Props) {
     (async () => {
       try {
         if (phase === "browser") throw new Error("YouTube refused the embed");
-        await openTrailerWindow(ytTrailerCode, title);
+        await openTrailerWindow(ytTrailerCode, getT().trailer.windowTitle(title));
         if (!gone) showToast(getT().trailer.openedWindow);
       } catch {
         try {

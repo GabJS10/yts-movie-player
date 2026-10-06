@@ -528,7 +528,11 @@ export function createMockBackend({ platform = "linux" }: { platform?: MockPlatf
       const release = t
         ? `${t.quality}.${t.source === "bluray" ? "BluRay" : "WEBRip"}.x264`
         : "1080p.BluRay.x264";
-      const option = (n: number, label: string, over: Partial<SubtitleOption> = {}): SubtitleOption => {
+      const option = (
+        n: number,
+        label: string | null,
+        over: Partial<SubtitleOption> = {},
+      ): SubtitleOption => {
         const id = `${m.id}-${lang}-${n}`;
         return {
           id,
@@ -548,7 +552,8 @@ export function createMockBackend({ platform = "linux" }: { platform?: MockPlatf
       return [
         option(1, `${m.title}.${m.year}.${release}-[YTS.MX]`, { downloads: 4812, matchesRelease: !!t }),
         option(2, `${m.title}.${m.year}.720p.WEBRip.x264-[YTS.MX]`, { downloads: 2304 }),
-        option(3, `${m.title}.${m.year}.BRRip.XviD`, { downloads: 980 }),
+        // No release name (contract v0.15): the UI names it by language.
+        option(3, null, { downloads: 980 }),
         option(4, `${m.title}.${m.year}.1080p.BluRay.SDH`, { downloads: 1290, hearingImpaired: true }),
         option(5, `${m.title}.${m.year}.WEB-DL (traducción automática)`, {
           downloads: 40,
@@ -567,7 +572,7 @@ export function createMockBackend({ platform = "linux" }: { platform?: MockPlatf
       }
       const [id, lang] = subtitleId.split("-");
       const title = byId.get(Number(id))?.title ?? "";
-      return { trackUrl: mockVtt(lang ?? "es", title), lang: lang ?? null, label: "OpenSubtitles" };
+      return { trackUrl: mockVtt(lang ?? "es", title), lang: lang ?? null, label: null };
     },
     load_subtitle_file: ({ path }) => {
       if (!/\.(srt|vtt)$/i.test(path)) fail("invalid_input", `not a subtitle file: ${path}`);

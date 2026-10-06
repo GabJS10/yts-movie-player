@@ -192,6 +192,8 @@ export const es = {
     youtube: "Ver en YouTube",
     close: "Cerrar tráiler",
     frame: (title: string) => `Tráiler de ${title}`,
+    /** Title of the separate trailer window. */
+    windowTitle: (title: string) => (title ? `${title} · Tráiler` : "Tráiler"),
     stuck: "No se pudo abrir el tráiler aquí ni en otra ventana. Prueba con «Ver en YouTube».",
     openingBrowser: "Abriendo el tráiler en YouTube…",
     openingWindow: "Abriendo el tráiler en otra ventana…",
@@ -495,6 +497,8 @@ export const es = {
 
   subtitleMenu: {
     title: "Subtítulos",
+    /** An option OpenSubtitles gives no release or file name for. */
+    unnamed: (lang: string) => `Subtítulo en ${lang}`,
     downloads: (n: string) => `${n} descargas`,
     cached: "Ya descargado",
     noPage: "Sin página en OpenSubtitles",

@@ -32,6 +32,9 @@ function OptionMeta({ o, quota }: { o: SubtitleOption; quota: boolean }) {
   );
 }
 
+/** The release name, or "Spanish subtitle" when OpenSubtitles gives none. */
+const optionLabel = (o: SubtitleOption) => o.label ?? getT().subtitleMenu.unnamed(langName(o.lang));
+
 const quotaLine = (resetAt: string | null) => getT().subtitleMenu.quota(formatResetTime(resetAt));
 
 /** Player subtitle menu (prototype): off, options per language, "Cargar archivo…" and the delay. */
@@ -158,7 +161,7 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
                         >
                           <span className="chk text-text-2">{url && <Icon name="external" size={18} />}</span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate">{o.label}</span>
+                            <span className="block truncate">{optionLabel(o)}</span>
                             <OptionMeta o={o} quota />
                             {url && <span className="sr-only"> {t.opensPage}</span>}
                           </span>
@@ -178,8 +181,8 @@ export function SubtitleMenu({ subs, open, onOpenChange }: Props) {
                       >
                         <span className="chk">{on && <Icon name="check" size={18} />}</span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate" title={o.label}>
-                            {loadingId === o.id ? t.loading : o.label}
+                          <span className="block truncate" title={optionLabel(o)}>
+                            {loadingId === o.id ? t.loading : optionLabel(o)}
                           </span>
                           <OptionMeta o={o} quota={quota.exhausted} />
                         </span>

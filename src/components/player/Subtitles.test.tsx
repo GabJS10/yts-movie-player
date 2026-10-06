@@ -170,6 +170,8 @@ describe("Player subtitles", () => {
     expect(items).toHaveLength(6);
     expect(items[1]).toHaveAttribute("aria-checked", "true");
     expect(within(items[1]!).getByText("Tu versión")).toBeInTheDocument();
+    // No release name from OpenSubtitles: named by its language.
+    expect(items[3]).toHaveTextContent(/^Subtítulo en español/);
     expect(within(items[4]!).getByText(/Para sordos/)).toBeInTheDocument();
     expect(within(items[5]!).getByText(/Traducción automática/)).toBeInTheDocument();
 
@@ -310,7 +312,7 @@ describe("Player subtitles", () => {
     expect(cmds(calls, "load_subtitle")).toEqual([{ subtitleId: "1632-es-1" }]); // only the failed auto-load
 
     // 3: no page → disabled.
-    expect(within(menu).getByRole("menuitem", { name: /BRRip/ })).toBeDisabled();
+    expect(within(menu).getByRole("menuitem", { name: /^Subtítulo en español/ })).toBeDisabled();
 
     // 2: cached → loads as usual, no quota spent.
     const cached = within(menu).getByRole("menuitemradio", { name: /720p\.WEBRip/ });

@@ -191,6 +191,7 @@ export const en: Messages = {
     youtube: "Watch on YouTube",
     close: "Close trailer",
     frame: (title: string) => `${title} trailer`,
+    windowTitle: (title: string) => (title ? `${title} · Trailer` : "Trailer"),
     stuck: "Couldn't open the trailer here or in another window. Try “Watch on YouTube”.",
     openingBrowser: "Opening the trailer on YouTube…",
     openingWindow: "Opening the trailer in another window…",
@@ -491,6 +492,7 @@ export const en: Messages = {
 
   subtitleMenu: {
     title: "Subtitles",
+    unnamed: (lang: string) => `${lang} subtitle`,
     downloads: (n: string) => `${n} downloads`,
     cached: "Already downloaded",
     noPage: "No page on OpenSubtitles",

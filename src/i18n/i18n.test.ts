@@ -44,4 +44,18 @@ describe("i18n", () => {
     setLanguagePreference("es");
     expect(langName("pt")).toBe("portugués");
   });
+
+  it("builds the trailer window title, with or without a movie title", () => {
+    expect(es.trailer.windowTitle("Dune")).toBe("Dune · Tráiler");
+    expect(es.trailer.windowTitle("")).toBe("Tráiler");
+    expect(en.trailer.windowTitle("Dune")).toBe("Dune · Trailer");
+    expect(en.trailer.windowTitle("")).toBe("Trailer");
+  });
+
+  it("names a subtitle without a release name by its language", () => {
+    setLanguagePreference("en");
+    expect(getT().subtitleMenu.unnamed(langName("es"))).toBe("Spanish subtitle");
+    setLanguagePreference("es");
+    expect(getT().subtitleMenu.unnamed(langName("es"))).toBe("Subtítulo en español");
+  });
 });
