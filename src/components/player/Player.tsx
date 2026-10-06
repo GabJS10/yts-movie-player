@@ -23,7 +23,9 @@ import { CodecError } from "./CodecError";
 import { PlayerControls } from "./PlayerControls";
 import { SubtitleLayer } from "./SubtitleLayer";
 import { SubtitleMenu } from "./SubtitleMenu";
+import { ExternalNotice } from "./ExternalNotice";
 import { SubtitleNotice } from "./SubtitleNotice";
+import { useOpenExternal } from "./useOpenExternal";
 import { useProgressSaver } from "./useProgressSaver";
 import { useSubtitles } from "./useSubtitles";
 
@@ -167,6 +169,18 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
     [nudgeDelay, flash, movie.id],
   );
 
+  // ── "Abrir en VLC": pause the built-in <video> (no double audio) and leave fullscreen so VLC shows ──
+  const external = useOpenExternal({ infohash, subtitles: subs.externalArgs });
+  const { open: openExternal } = external;
+  const openInVlc = useCallback(async () => {
+    video.current?.pause();
+    if (root.current && (await isFullscreen())) {
+      await setFullscreen(false, root.current).catch(() => undefined);
+      setFs(await isFullscreen());
+    }
+    await openExternal();
+  }, [openExternal]);
+
   // Dropping a .srt/.vtt on the window loads it (Tauri gives the real path).
   const [dragging, setDragging] = useState(false);
   useEffect(() => {
@@ -235,6 +249,9 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
         case "subsLater":
           nudge(1);
           break;
+        case "openExternal":
+          if (!external.opening) void openInVlc();
+          break;
         case "escape":
           void isFullscreen().then((fs) => (fs ? toggleFullscreen() : back()));
           break;
@@ -254,6 +271,8 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
     showChrome,
     toggleFullscreen,
     nudge,
+    openInVlc,
+    external.opening,
   ]);
 
   // ── Progress: save_progress every 10 s, on pause, on ended and on leave ──
@@ -366,6 +385,15 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
         />
       )}
 
+      {(external.error || external.note) && (
+        <ExternalNotice
+          error={external.error}
+          note={external.note}
+          onDismiss={external.dismiss}
+          lower={playable && !!subs.notice}
+        />
+      )}
+
       {osd && (
         <div
           role="status"
@@ -453,6 +481,8 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
             onMute={toggleMuted}
             onFullscreen={() => void toggleFullscreen()}
             onBack={back}
+            onOpenExternal={() => void openInVlc()}
+            externalOpening={external.opening}
             subtitles={
               <SubtitleMenu
                 subs={subs}

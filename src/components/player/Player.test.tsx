@@ -32,15 +32,15 @@ const push = (s: TorrentStats) => act(() => useSwarmStore.getState().push(s));
 const status = () => document.querySelector("[data-status]")?.getAttribute("data-status");
 const video = () => screen.getByTestId("video") as HTMLVideoElement;
 
-async function mount(t: Torrent) {
-  const r = await renderWithProviders(<Player movie={movie} torrent={t} />);
+async function mount(t: Torrent, options: Parameters<typeof renderWithProviders>[1] = {}) {
+  const r = await renderWithProviders(<Player movie={movie} torrent={t} />, options);
   await waitFor(() => expect(r.calls.some((c) => c.cmd === "start_stream")).toBe(true));
   await waitFor(() => expect(status()).toBe("buffering"));
   return r;
 }
 
-async function startPlaying(t: Torrent) {
-  const r = await mount(t);
+async function startPlaying(t: Torrent, options: Parameters<typeof renderWithProviders>[1] = {}) {
+  const r = await mount(t, options);
   push(stats(t, { phase: "ready", bufferedAheadBytes: 8 * MB }));
   await waitFor(() => expect(status()).toBe("playing"));
   return r;
@@ -166,6 +166,62 @@ describe("Player", () => {
     await mount(x265);
     expect(screen.getByText(/probablemente no pueda mostrarla/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Abrir en VLC/ })).toBeInTheDocument();
+  });
+
+  it("offers VLC from the buffer screen for an x264 version too", async () => {
+    const user = userEvent.setup();
+    const { calls } = await mount(x264);
+    expect(screen.queryByText(/probablemente no pueda mostrarla/)).not.toBeInTheDocument();
+    expect(screen.getByText(/¿Prefieres VLC\?/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Abrir en VLC/ }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "open_external_player")?.args).toEqual(
+        expect.objectContaining({ infohash: x264.infohash }),
+      ),
+    );
+  });
+
+  describe("Abrir en VLC from the controls", () => {
+    it("pauses the built-in video and opens VLC with the active subtitle", async () => {
+      const user = userEvent.setup();
+      useUiStore.setState({ subtitleDelay: { [movie.id]: 0.3 } });
+      const { calls } = await startPlaying(x264);
+      // The automatic Spanish subtitle is the active one.
+      await waitFor(() => expect(calls.some((c) => c.cmd === "load_subtitle")).toBe(true));
+      const v = video();
+      act(() => void v.play());
+      await user.click(screen.getByTestId("player-open-external"));
+      expect(v.paused).toBe(true);
+      await waitFor(() => expect(calls.some((c) => c.cmd === "open_external_player")).toBe(true));
+      const args = calls.find((c) => c.cmd === "open_external_player")!.args as Record<string, unknown>;
+      expect(args).toEqual({
+        infohash: x264.infohash,
+        subtitleId: expect.stringMatching(/^1632-es-/),
+        subtitleDelayMs: 300,
+      });
+      useUiStore.setState({ subtitleDelay: {} });
+    });
+
+    it("V opens VLC too", async () => {
+      const user = userEvent.setup();
+      const { calls } = await startPlaying(x264);
+      await user.keyboard("v");
+      await waitFor(() => expect(calls.some((c) => c.cmd === "open_external_player")).toBe(true));
+    });
+
+    it("VLC missing: a notice explains it and links to Ajustes", async () => {
+      const user = userEvent.setup();
+      await startPlaying(x264, {
+        fail: { open_external_player: { code: "external_player_missing", message: "vlc not found" } },
+      });
+      await user.click(screen.getByRole("button", { name: "Abrir en VLC (V)" }));
+      const notice = await screen.findByTestId("external-notice");
+      expect(notice).toHaveTextContent("No encontramos VLC");
+      expect(notice).toHaveAttribute("role", "alert");
+      expect(screen.getByRole("link", { name: "Ir a Ajustes" })).toHaveAttribute("href", "/settings#s-play");
+      await user.click(screen.getByRole("button", { name: "Cerrar aviso" }));
+      expect(screen.queryByTestId("external-notice")).not.toBeInTheDocument();
+    });
   });
 
   it("keyboard shortcuts drive the <video>", async () => {

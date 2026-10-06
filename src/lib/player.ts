@@ -237,7 +237,8 @@ export type PlayerAction =
   | "volUp"
   | "volDown"
   | "subsEarlier"
-  | "subsLater";
+  | "subsLater"
+  | "openExternal";
 
 export function shortcutAction(key: string): PlayerAction | null {
   switch (key) {
@@ -268,6 +269,9 @@ export function shortcutAction(key: string): PlayerAction | null {
     case "h":
     case "H":
       return "subsLater";
+    case "v":
+    case "V":
+      return "openExternal";
     default:
       return null;
   }

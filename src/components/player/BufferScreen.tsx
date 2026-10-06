@@ -80,6 +80,20 @@ export function BufferScreen({
             />
           </div>
         )}
+        {session?.likelyPlayable && (
+          <div className="mb-7 flex flex-wrap items-center gap-x-4 gap-y-2" data-testid="buffer-vlc">
+            <p className="m-0 text-sm text-muted">
+              ¿Prefieres VLC? Puedes abrirla desde ya, mientras se descarga.
+            </p>
+            <ExternalPlayerActions
+              movieId={movie.id}
+              infohash={torrent.infohash}
+              alternative={null}
+              subtitles={subtitles}
+              primary={false}
+            />
+          </div>
+        )}
 
         <p className="m-0 mb-3 flex items-center gap-2.5 text-[15px] font-semibold">
           {stalled ? (

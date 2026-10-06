@@ -26,6 +26,10 @@ type Props = {
   onBack: () => void;
   /** Subtitle menu (cc button + popover), before fullscreen. */
   subtitles?: ReactNode;
+  /** "Abrir en VLC" from the same local stream. */
+  onOpenExternal: () => void;
+  /** VLC is being launched: the button waits. */
+  externalOpening?: boolean;
 };
 
 const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
@@ -190,6 +194,16 @@ export function PlayerControls(p: Props) {
           </span>
           <span className="ml-auto" />
           {p.subtitles}
+          <button
+            type="button"
+            className="ctrl-btn"
+            aria-label="Abrir en VLC (V)"
+            data-testid="player-open-external"
+            onClick={p.onOpenExternal}
+            disabled={p.externalOpening}
+          >
+            <Icon name="external" size={26} />
+          </button>
           <button
             type="button"
             className="ctrl-btn"
