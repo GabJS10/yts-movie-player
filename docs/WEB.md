@@ -13,13 +13,13 @@ La persona de [`PRODUCT.md`](../PRODUCT.md): alguien en Linux o Windows que hoy 
 ## Mapa del sitio
 | Ruta | Contenido | Fuente |
 |---|---|---|
-| `/` | Landing: hero, features, capturas, descargas por SO, FAQ corta, aviso legal breve, footer | README "Qué hace", `docs/screenshots/` |
-| `/descargar` | Instaladores por plataforma con comandos y avisos (SmartScreen, firewall, GStreamer, VLC) | README "Instalación (Windows/Linux)" |
-| `/docs/subtitulos` | Cómo conseguir y poner la API key de OpenSubtitles, cupos | README "Subtítulos" |
-| `/docs/datos` | Dónde guarda ajustes, caché, descargas y logs | README "Dónde guarda las cosas" |
-| `/docs/compilar` | Compilar desde el código, stack, tests | README "Compilar desde el código" |
+| `/` | Landing: hero, features, capturas, descargas por SO, FAQ corta, aviso legal breve, footer | README "What it does", `docs/screenshots/` |
+| `/descargar` | Instaladores por plataforma con comandos y avisos (SmartScreen, firewall, GStreamer, VLC) | README "Installation (Windows/Linux)" |
+| `/docs/subtitulos` | Cómo conseguir y poner la API key de OpenSubtitles, cupos | README "Subtitles" |
+| `/docs/datos` | Dónde guarda ajustes, caché, descargas y logs | README "Where it keeps things" |
+| `/docs/compilar` | Compilar desde el código, stack, tests | README "Building from source" |
 | `/novedades` | Changelog renderizado | `CHANGELOG.md` |
-| `/legal` | Aviso legal completo y licencia | README "Aviso legal" y "Licencia" |
+| `/legal` | Aviso legal completo y licencia | README "Legal notice" y "License" |
 
 Footer en todas: GitHub (`https://github.com/GabJS10/yts-movie-player`), licencia MIT, Novedades, Legal.
 
@@ -61,7 +61,7 @@ Copiar (no enlazar) al `public/` del repo web:
   | Cualquier Linux | `_amd64.AppImage` | `YTS.Player_1.1.0_amd64.AppImage` |
 - Si la API falla (rate limit, sin red), no romper el build: enlazar a `https://github.com/GabJS10/yts-movie-player/releases/latest`. Usar `GITHUB_TOKEN` del entorno si existe.
 - Los comandos de instalación de `/descargar` se generan con el nombre real del asset.
-- `/novedades`: `https://raw.githubusercontent.com/GabJS10/yts-movie-player/main/CHANGELOG.md` en build, renderizado como Markdown (fallback: copia local).
+- `/novedades`: `https://raw.githubusercontent.com/GabJS10/yts-movie-player/main/CHANGELOG.md` en build, renderizado como Markdown (fallback: copia local). El README y el CHANGELOG están en inglés (desde 2026-10-06); la versión en español de la web los traduce o los muestra tal cual.
 - `plan` añade en el repo de la app un workflow que dispara el build hook de Netlify al publicar una release, así la web se actualiza sola.
 
 ## Técnico

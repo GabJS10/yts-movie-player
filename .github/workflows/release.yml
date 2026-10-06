@@ -55,7 +55,7 @@ jobs:
         with:
           tagName: ${{ env.TAG }}
           releaseName: "YTS Player ${{ env.TAG }}"
-          releaseBody: "Ver CHANGELOG.md. Windows 10/11: instalador .exe. Linux: .deb (Debian/Ubuntu/Mint), .rpm (Fedora/openSUSE) y AppImage (cualquier distro)."
+          releaseBody: "See CHANGELOG.md. Windows 10/11: .exe installer. Linux: .deb (Debian/Ubuntu/Mint), .rpm (Fedora/openSUSE) and AppImage (any distro)."
           releaseDraft: true
           prerelease: ${{ contains(env.TAG, '-') }}
           args: --bundles deb,rpm,appimage

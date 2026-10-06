@@ -1,59 +1,65 @@
 # Changelog
 
-Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado [semántico](https://semver.org/lang/es/).
+Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); [semantic](https://semver.org/) versioning.
+
+## [Unreleased]
+
+### Added
+- The app is available in Spanish and English. By default it follows the system language (Spanish if the system prefers it, English otherwise); it can be changed in Settings › Language and the choice is remembered. The subtitle language is still a separate setting.
 
 ## [1.1.1] - 2026-10-05
 
-### Cambios
-- "Abrir en VLC" está siempre disponible, con cualquier versión y no solo con las HEVC/4K: en la pantalla de búfer ("¿Prefieres VLC?") y en los controles del reproductor (botón y tecla V). Pausa el video integrado, sale de pantalla completa y abre VLC con el subtítulo activo y su retraso.
+### Changed
+- "Open in VLC" is always available, with any version and not only with HEVC/4K ones: on the buffering screen ("Prefer VLC?") and in the player controls (button and the V key). It pauses the built-in video, leaves full screen and opens VLC with the active subtitle and its delay.
 
 ## [1.1.0] - 2026-10-05
 
-Soporte de Windows 10/11.
+Windows 10/11 support.
 
 ### Windows
-- Instalador para Windows 10/11 (`.exe`, por usuario, sin administrador).
-- Datos, caché, descargas y logs en `%LOCALAPPDATA%\yts-player\`.
-- VLC y mpv se encuentran aunque no estén en el `PATH` (registro y Program Files) y se abren sin ventana de consola.
-- Mover descargas entre discos, espacio libre real y archivos en uso (VLC, el stream) que se reintentan en vez de fallar.
+- Installer for Windows 10/11 (`.exe`, per user, no administrator rights).
+- Data, cache, downloads and logs in `%LOCALAPPDATA%\yts-player\`.
+- VLC and mpv are found even when they're not on the `PATH` (registry and Program Files) and open without a console window.
+- Moving downloads between drives, real free space, and files in use (VLC, the stream) are retried instead of failing.
 
-### Cambios
-- Con una versión HEVC que la app no puede decodificar ya no sigue sonando el audio detrás de "Abrir en VLC".
-- Las rutas largas de las carpetas se recortan por el medio y siempre dejan ver la última carpeta.
+### Changed
+- With an HEVC version the app can't decode, the audio no longer keeps playing behind "Open in VLC".
+- Long folder paths are shortened in the middle and always show the last folder.
 
 ## [1.0.0] - 2026-10-04
 
-Primera versión pública. Linux: `.deb`, `.rpm` y AppImage.
+First public release. Linux: `.deb`, `.rpm` and AppImage.
 
-### Catálogo
-- Inicio estilo Netflix con banner rotativo de recomendaciones según tu historial ("Porque viste X", "Porque está en tu lista", tus géneros) y filas personalizadas.
-- Búsqueda con filtros de género, calidad, valoración y orden, que se conservan al volver.
-- Ficha con sinopsis, reparto, capturas, versiones (calidad, códec, seeds) y Similares.
-- La URL de la API de YTS es configurable, con failover automático entre dominios.
+### Catalog
+- Netflix-style home with a rotating banner of recommendations based on your history ("Because you watched X", "Because it's in your list", your genres) and personalized rows.
+- Search with genre, quality, rating and sort filters, kept when you come back.
+- Movie page with synopsis, cast, stills, versions (quality, codec, seeds) and Similar movies.
+- Configurable YTS API URL, with automatic failover between domains.
 
-### Reproducción
-- Streaming desde el torrent con búfer de ~8 MB: la película empieza en segundos y se puede adelantar a cualquier punto.
-- Controles propios con atajos (espacio, ←/→, F, M, G/H) y barra con visto / en búfer / descargado.
-- Versiones x265/HEVC: "Abrir en VLC" (o mpv) con los subtítulos y su retraso.
-- Pantalla "sin peers" a los 60 s con alternativas.
+### Playback
+- Streaming from the torrent with a ~8 MB buffer: the movie starts in seconds and you can skip to any point.
+- Custom controls with shortcuts (space, ←/→, F, M, G/H) and a bar showing watched / buffered / downloaded.
+- x265/HEVC versions: "Open in VLC" (or mpv) with the subtitles and their delay.
+- "No peers" screen after 60 s, with alternatives.
 
-### Subtítulos
-- Subtítulos en español automáticos desde OpenSubtitles (API key gratuita), ordenados por coincidencia con el release.
-- Retraso ajustable, `.srt` propio por diálogo o arrastrándolo, caché en disco que no gasta cupo y página de OpenSubtitles cuando se agota el cupo.
+### Subtitles
+- Automatic Spanish subtitles from OpenSubtitles (free API key), ranked by how well they match the release.
+- Adjustable delay, your own `.srt` through a dialog or drag and drop, a disk cache that doesn't use up the quota, and the OpenSubtitles page when the quota runs out.
 
-### Mi lista, Continuar viendo y descargas
-- Mi lista y Continuar viendo (retoma en el segundo exacto; a partir del 92 % se da por vista).
-- Descargas para ver sin conexión, con pausa/reanudación que sobrevive al reinicio y paso de streaming a descarga sin volver a bajar.
-- Carpetas de descargas y de caché elegibles, con movimiento entre discos.
-- Límite de caché LRU, límites de velocidad en caliente y opción de seguir compartiendo.
+### My list, Continue watching and downloads
+- My list and Continue watching (resumes at the exact second; from 92 % on it counts as watched).
+- Downloads to watch offline, with pause/resume that survives a restart and switching from streaming to download without downloading again.
+- Selectable downloads and cache folders, with moving between drives.
+- LRU cache limit, live speed limits and an option to keep seeding.
 
-### Calidad
-- Una pantalla o mensaje con acción para cada error; modo sin conexión.
-- Tráiler en la app (con alternativas si YouTube no lo permite).
-- Navegación completa con teclado, foco visible, `prefers-reduced-motion` y contraste AA.
-- Logs a archivo con rotación, "Acerca de" y aviso de nuevas versiones.
-- Tests: unitarios e integración en Rust (torrent local sin internet), Vitest en el front, E2E con WebdriverIO sobre la app real y Playwright + axe sobre la interfaz.
+### Quality
+- A screen or message with an action for every error; offline mode.
+- Trailer inside the app (with fallbacks when YouTube doesn't allow it).
+- Full keyboard navigation, visible focus, `prefers-reduced-motion` and AA contrast.
+- Rotating log files, "About" and new version notices.
+- Tests: Rust unit and integration tests (local torrent, no internet), Vitest on the frontend, E2E with WebdriverIO on the real app and Playwright + axe on the interface.
 
+[Unreleased]: https://github.com/GabJS10/yts-movie-player/compare/v1.1.1...HEAD
 [1.1.1]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.1
 [1.1.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.0
 [1.0.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.0.0
