@@ -140,6 +140,8 @@ struct Record {
     moving: bool,
     /// Last time a stalled torrent was restarted to look for peers again.
     last_kick: Option<tokio::time::Instant>,
+    /// Why it can't leave `cache/` yet (logged when it changes).
+    promote_blocker: Option<String>,
 }
 
 impl Record {
@@ -151,6 +153,7 @@ impl Record {
             unavailable: false,
             moving: false,
             last_kick: None,
+            promote_blocker: None,
         }
     }
 }
@@ -1145,9 +1148,25 @@ impl DownloadManager {
                 self.emit_if_changed(&infohash);
                 continue;
             }
-            if in_cache && !resolving && self.cfg.engine.can_promote(&infohash) {
-                self.spawn_promote(&infohash, PathBuf::from(&row.path));
-                continue;
+            if in_cache && !resolving {
+                let blocker = self.cfg.engine.promote_blocker(&infohash);
+                let changed = self
+                    .with_record(&infohash, |r| {
+                        let changed = r.promote_blocker != blocker;
+                        r.promote_blocker.clone_from(&blocker);
+                        changed
+                    })
+                    .unwrap_or(false);
+                match &blocker {
+                    None => {
+                        self.spawn_promote(&infohash, PathBuf::from(&row.path));
+                        continue;
+                    }
+                    Some(reason) if changed => {
+                        tracing::info!(%infohash, reason, "download waiting to move to library");
+                    }
+                    Some(_) => {}
+                }
             }
             let stats = self.cfg.engine.download_stats(&infohash);
             match stats {

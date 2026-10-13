@@ -1115,14 +1115,26 @@ impl TorrentEngine {
         })
     }
 
-    /// Whether [`Self::promote`] would move the torrent now (no stream, no reader).
-    pub fn can_promote(&self, infohash: &str) -> bool {
-        self.entry(&infohash.to_ascii_lowercase()).is_some_and(|e| {
-            e.output.is_cache()
-                && e.active.get().is_some()
-                && e.stopped.load(Ordering::Relaxed)
-                && !e.readers.has_open()
-        })
+    /// Why [`Self::promote`] would not move the torrent now (a stream or a reader still
+    /// uses it), or `None` if it would.
+    pub fn promote_blocker(&self, infohash: &str) -> Option<String> {
+        let Some(e) = self.entry(&infohash.to_ascii_lowercase()) else {
+            return Some("not in the session".into());
+        };
+        if !e.output.is_cache() {
+            return Some("not in cache/".into());
+        }
+        if e.active.get().is_none() {
+            return Some("torrent not active".into());
+        }
+        if !e.stopped.load(Ordering::Relaxed) {
+            return Some("stream not stopped".into());
+        }
+        let (positions, _) = e.readers.snapshot();
+        if !positions.is_empty() {
+            return Some(format!("open readers at bytes {positions:?}"));
+        }
+        None
     }
 
     /// Moves everything in `cache/<infohash>/` into `folder` (merging) and deletes the
