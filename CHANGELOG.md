@@ -2,6 +2,11 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); [semantic](https://semver.org/) versioning.
 
+## [1.2.1] - 2026-10-12
+
+### Fixed
+- Linux: playing a movie no longer fills the system disk. WebKit kept a hidden full copy of every movie played in `/var/tmp`, and the space was only freed when the app was closed.
+
 ## [1.2.0] - 2026-10-06
 
 ### Added
@@ -60,6 +65,7 @@ First public release. Linux: `.deb`, `.rpm` and AppImage.
 - Rotating log files, "About" and new version notices.
 - Tests: Rust unit and integration tests (local torrent, no internet), Vitest on the frontend, E2E with WebdriverIO on the real app and Playwright + axe on the interface.
 
+[1.2.1]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.2.1
 [1.2.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.2.0
 [1.1.1]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.1
 [1.1.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.0
