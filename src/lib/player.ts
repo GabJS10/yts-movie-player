@@ -159,7 +159,12 @@ export const isAudioOnly = (video: Pick<HTMLVideoElement, "videoWidth" | "videoH
 // WebKitGTK copies the whole file to /var/tmp (GStreamer on-disk buffering) unless the media loops,
 // so the <video> loops except in its last seconds (the real `ended` still fires). Detaching a
 // <video> only pauses it: its pipeline and that copy live until GC, so they're freed explicitly.
+// WebKitGTK only: WebView2 has no such buffer, and there this left a connection to the stream
+// open that kept a finished download from moving to the library.
 // See docs/bugs/webkit-media-buffers-llenan-raiz.md.
+
+/** The WebView is WebKitGTK, not WebView2 (Chromium). */
+export const isWebKitGtk = (userAgent: string = navigator.userAgent): boolean => !/Chrome\//.test(userAgent);
 
 export const LOOP_GUARD_END_S = 5;
 

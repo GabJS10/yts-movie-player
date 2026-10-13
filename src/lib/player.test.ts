@@ -10,6 +10,7 @@ import {
   playerReducer,
   scrubLayers,
   shortcutAction,
+  isWebKitGtk,
   shouldLoop,
   type PlayerEvent,
   type PlayerState,
@@ -263,6 +264,17 @@ describe("helpers", () => {
     expect(formatClock(65)).toBe("1:05");
     expect(formatClock(3725)).toBe("1:02:05");
     expect(formatClock(NaN)).toBe("0:00");
+  });
+});
+
+describe("isWebKitGtk", () => {
+  it("tells WebKitGTK from WebView2", () => {
+    const gtk =
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+    const webview2 =
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";
+    expect(isWebKitGtk(gtk)).toBe(true);
+    expect(isWebKitGtk(webview2)).toBe(false);
   });
 });
 

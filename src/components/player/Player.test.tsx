@@ -279,6 +279,29 @@ describe("Player", () => {
     }
   });
 
+  it("on WebView2 it neither loops nor releases the <video> (the release kept the stream busy)", async () => {
+    const ua = vi
+      .spyOn(navigator, "userAgent", "get")
+      .mockReturnValue(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+      );
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load");
+    try {
+      const { unmount } = await startPlaying(x264);
+      const v = video();
+      expect(v.loop).toBe(false);
+      fireEvent.ended(v);
+      expect(v.loop).toBe(false);
+      unmount();
+      await act(async () => {});
+      expect(v).toHaveAttribute("src");
+      expect(load.mock.contexts).not.toContain(v);
+    } finally {
+      load.mockRestore();
+      ua.mockRestore();
+    }
+  });
+
   it("keeps the <video> loaded through StrictMode's dev-only ref detach/re-attach", async () => {
     const load = vi.spyOn(HTMLMediaElement.prototype, "load");
     try {
