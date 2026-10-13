@@ -48,6 +48,25 @@ El proyecto se desarrolla con **4 agentes en paralelo**, cada uno en su propia t
 - Decisiones de arquitectura nuevas: las registra `plan` en `docs/PLAN.md` (o en `docs/decisions/`).
 - No cerrar ni mover tabs/panes de otros agentes.
 
+### Modelo y esfuerzo por tarea
+Objetivo: gastar menos tokens sin perder calidad. **`plan` asigna a cada tarea un modelo (Haiku, Sonnet u Opus) y un esfuerzo (`low` · `medium` · `high` · `xhigh`)**: lo más barato que la haga bien. Lo indica al repartirla, por ejemplo `modelo: sonnet · esfuerzo: high`.
+- **El tope es `xhigh`.** El esfuerzo `max` está prohibido, también con Opus.
+- **Cómo se aplica:**
+  - Agente de Herdr: antes de enviarle la tarea, y comprobando que no esté `working`, se envían `herdr agent prompt <agente> "/model sonnet"` y `herdr agent prompt <agente> "/effort high"`. Ojo: `/model` y `/effort` también cambian el valor por defecto de las sesiones nuevas.
+  - Subagente: parámetros `model` y `effort` de la herramienta Agent.
+- **Agentes de Herdr o subagentes:** los agentes de Herdr son para trabajo largo y continuo de un área (una fase, varias tareas seguidas en las que conviene conservar el contexto). Los subagentes de `plan` son para tareas acotadas y ya especificadas. Los subagentes no hacen commits: `plan` revisa su diff y hace él el commit.
+- **Guía:**
+
+  | Modelo · esfuerzo | Para qué |
+  |---|---|
+  | Haiku · `low`/`medium` | Tareas mecánicas y totalmente especificadas: textos i18n, renombrados, aplicar un diff ya decidido, correr lint y tests e informar, búsquedas, docs cortas a partir de un borrador |
+  | Sonnet · `medium`/`high` | El trabajo de siempre en un área con la especificación clara: componentes, comandos Tauri, tests, specs E2E, bugs con la causa ya conocida, refactors acotados |
+  | Opus · `medium` | Tareas especificadas con sutilezas que Sonnet podría pasar por alto: ciclo de vida de React o del `<video>`, condiciones de carrera acotadas, revisar diffs medianos, planes de features medianas |
+  | Opus · `high` | Arquitectura, cambios al contrato IPC, bugs con causa desconocida, rarezas de WebKitGTK/GStreamer/WebView2, el interior del torrent y del streaming, concurrencia, seguridad |
+  | Opus · `xhigh` | Lo más difícil: investigaciones largas con muchas hipótesis, o cuando Opus · `high` ya falló |
+
+- **Escalar en vez de repetir:** si una tarea falla la revisión o el agente se atasca, se sube un nivel (de modelo o de esfuerzo) en lugar de reintentar igual. Si falla con Opus · `xhigh`, no se sube a `max`: se divide la tarea, se replantea o se consulta al usuario.
+
 ## Stack
 - **Escritorio:** Tauri 2
 - **Frontend:** React + TypeScript + Vite, Tailwind, TanStack Query (datos remotos), Zustand (estado de UI), TanStack Router (rutas basadas en archivos, `src/routes/`)
