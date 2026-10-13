@@ -850,7 +850,15 @@ impl DownloadManager {
             torrent_bytes: row.torrent.clone().map(Bytes::from),
             run,
         };
-        let result = self.cfg.engine.add_download(req).await;
+        let add = self.cfg.engine.add_download(req);
+        tokio::pin!(add);
+        let result = match tokio::time::timeout(Duration::from_secs(10), &mut add).await {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(%infohash, "adding the download to the engine takes over 10 s");
+                add.await
+            }
+        };
         let _ops = self.ops.lock().await;
         let Some(row) = self.row(infohash) else {
             // Removed while resolving.
@@ -877,6 +885,7 @@ impl DownloadManager {
                         tracing::warn!(%infohash, error = %e, "could not save the torrent");
                     }
                 }
+                tracing::info!(%infohash, in_cache = t.in_cache, "download added to the engine");
                 self.with_record(infohash, |r| {
                     r.resolving = false;
                     r.in_cache = t.in_cache;

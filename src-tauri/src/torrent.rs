@@ -1037,6 +1037,7 @@ impl TorrentEngine {
                 e
             })
             .await?;
+        tracing::info!(%infohash, "add_download: entry locked");
         entry.set_download(Some(d.run));
         let active = match self.activate(&infohash, &entry).await {
             Ok(active) => active,
@@ -1045,7 +1046,9 @@ impl TorrentEngine {
                 return Err(e);
             }
         };
+        tracing::info!(%infohash, paused = active.handle.is_paused(), "add_download: active");
         self.reconcile(&entry).await?;
+        tracing::info!(%infohash, "add_download: reconciled");
         download_torrent(active, entry.output.is_cache())
     }
 
