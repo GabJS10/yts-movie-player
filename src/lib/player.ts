@@ -155,6 +155,25 @@ export const isCodecError = (code: number | undefined) =>
 export const isAudioOnly = (video: Pick<HTMLVideoElement, "videoWidth" | "videoHeight">) =>
   video.videoWidth === 0 || video.videoHeight === 0;
 
+// ───────── Media buffer release ─────────
+// WebKitGTK copies the whole file to /var/tmp (GStreamer on-disk buffering) unless the media loops,
+// so the <video> loops except in its last seconds (the real `ended` still fires). Detaching a
+// <video> only pauses it: its pipeline and that copy live until GC, so they're freed explicitly.
+// See docs/bugs/webkit-media-buffers-llenan-raiz.md.
+
+export const LOOP_GUARD_END_S = 5;
+
+/** Loop unless the duration is known and playback is within its last LOOP_GUARD_END_S seconds. */
+export const shouldLoop = (currentTime: number, duration: number): boolean =>
+  !(Number.isFinite(duration) && duration > 0 && duration - currentTime <= LOOP_GUARD_END_S);
+
+/** Drops the media player (pipeline + on-disk buffer): load() with no src recreates it empty. */
+export function releaseMedia(v: HTMLMediaElement): void {
+  v.pause();
+  v.removeAttribute("src");
+  v.load();
+}
+
 // ───────── Progress bar layers ─────────
 
 export type Span = { start: number; end: number }; // fractions 0–1

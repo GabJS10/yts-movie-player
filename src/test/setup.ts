@@ -34,7 +34,7 @@ afterEach(() => {
   setLanguagePreference("es");
 });
 
-// jsdom has no media playback: play()/pause() flip `paused` and fire the matching events.
+// jsdom has no media playback: play()/pause() flip `paused` and fire the matching events; load() resets it.
 Object.defineProperty(HTMLMediaElement.prototype, "paused", {
   configurable: true,
   get(this: HTMLMediaElement & { _paused?: boolean }) {
@@ -49,4 +49,7 @@ HTMLMediaElement.prototype.play = function (this: HTMLMediaElement & { _paused?:
 HTMLMediaElement.prototype.pause = function (this: HTMLMediaElement & { _paused?: boolean }) {
   this._paused = true;
   this.dispatchEvent(new Event("pause"));
+};
+HTMLMediaElement.prototype.load = function (this: HTMLMediaElement & { _paused?: boolean }) {
+  this._paused = true;
 };

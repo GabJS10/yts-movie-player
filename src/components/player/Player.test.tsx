@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { StrictMode, type ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MovieDetail, Torrent, TorrentStats } from "../../api/types";
 import { createMockBackend } from "../../mocks/backend";
 import { useSwarmStore } from "../../store/swarm";
@@ -32,15 +33,23 @@ const push = (s: TorrentStats) => act(() => useSwarmStore.getState().push(s));
 const status = () => document.querySelector("[data-status]")?.getAttribute("data-status");
 const video = () => screen.getByTestId("video") as HTMLVideoElement;
 
-async function mount(t: Torrent, options: Parameters<typeof renderWithProviders>[1] = {}) {
-  const r = await renderWithProviders(<Player movie={movie} torrent={t} />, options);
+async function mount(
+  t: Torrent,
+  options: Parameters<typeof renderWithProviders>[1] = {},
+  wrap: (player: ReactElement) => ReactElement = (p) => p,
+) {
+  const r = await renderWithProviders(wrap(<Player movie={movie} torrent={t} />), options);
   await waitFor(() => expect(r.calls.some((c) => c.cmd === "start_stream")).toBe(true));
   await waitFor(() => expect(status()).toBe("buffering"));
   return r;
 }
 
-async function startPlaying(t: Torrent, options: Parameters<typeof renderWithProviders>[1] = {}) {
-  const r = await mount(t, options);
+async function startPlaying(
+  t: Torrent,
+  options: Parameters<typeof renderWithProviders>[1] = {},
+  wrap?: (player: ReactElement) => ReactElement,
+) {
+  const r = await mount(t, options, wrap);
   push(stats(t, { phase: "ready", bufferedAheadBytes: 8 * MB }));
   await waitFor(() => expect(status()).toBe("playing"));
   return r;
@@ -160,6 +169,7 @@ describe("Player", () => {
     fireEvent.loadedMetadata(video());
     await waitFor(() => expect(status()).toBe("codec-error"));
     expect(video().paused).toBe(true); // no audio behind the error screen (Chromium plays it)
+    expect(video()).not.toHaveAttribute("src"); // its pipeline and on-disk buffer are released
   });
 
   it("offers VLC from the buffer screen when the version is not likely playable", async () => {
@@ -255,6 +265,33 @@ describe("Player", () => {
     expect(calls.filter((c) => c.cmd === "stop_stream").at(-1)?.args).toEqual({ infohash: x264.infohash });
   });
 
+  it("releases the <video> pipeline when leaving (WebKitGTK only pauses a detached one)", async () => {
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load");
+    try {
+      const { unmount } = await startPlaying(x264);
+      const v = video();
+      expect(v).toHaveAttribute("src");
+      unmount();
+      await waitFor(() => expect(v).not.toHaveAttribute("src")); // released after the commit
+      expect(load.mock.contexts).toContain(v);
+    } finally {
+      load.mockRestore();
+    }
+  });
+
+  it("keeps the <video> loaded through StrictMode's dev-only ref detach/re-attach", async () => {
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load");
+    try {
+      await startPlaying(x264, {}, (p) => <StrictMode>{p}</StrictMode>);
+      await act(async () => {});
+      const v = video();
+      expect(v).toHaveAttribute("src");
+      expect(load.mock.contexts).not.toContain(v);
+    } finally {
+      load.mockRestore();
+    }
+  });
+
   describe("progress", () => {
     // Mock: Spider-Verse has progress at 3720 s (1:02:00).
     const resumable = createMockBackend().handle("get_movie", { movieId: 10960 }) as MovieDetail;
@@ -306,6 +343,44 @@ describe("Player", () => {
       expect(calls.filter((c) => c.cmd === "save_progress").at(-1)?.args).toEqual(
         expect.objectContaining({ positionS: 7000, durationS: 7000 }),
       );
+    });
+  });
+
+  describe("loop guard (WebKitGTK skips on-disk buffering for looping media)", () => {
+    const resumable = createMockBackend().handle("get_movie", { movieId: 10960 }) as MovieDetail;
+    const t = resumable.torrents.find((x) => x.quality === "1080p" && x.videoCodec === "x264")!;
+
+    async function play() {
+      await renderWithProviders(<Player movie={resumable} torrent={t} fromStart />);
+      await waitFor(() => expect(status()).toBe("buffering"));
+      push(stats(t, { phase: "ready", bufferedAheadBytes: 8 * MB }));
+      await waitFor(() => expect(status()).toBe("playing"));
+      const v = video();
+      Object.defineProperty(v, "duration", { value: 7000, configurable: true });
+      return v;
+    }
+
+    it("loops until the last seconds, then again after ended", async () => {
+      const v = await play();
+      expect(v.loop).toBe(true);
+      v.currentTime = 3000;
+      fireEvent.timeUpdate(v);
+      expect(v.loop).toBe(true);
+      v.currentTime = 6997;
+      fireEvent.timeUpdate(v);
+      expect(v.loop).toBe(false);
+      fireEvent.ended(v);
+      expect(v.loop).toBe(true);
+    });
+
+    it("a seek near the end turns loop off before it lands", async () => {
+      const user = userEvent.setup();
+      const v = await play();
+      v.currentTime = 6992;
+      act(() => void v.play());
+      await user.keyboard("{ArrowRight}");
+      expect(v.currentTime).toBe(7000);
+      expect(v.loop).toBe(false);
     });
   });
 

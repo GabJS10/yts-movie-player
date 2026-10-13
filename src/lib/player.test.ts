@@ -10,6 +10,7 @@ import {
   playerReducer,
   scrubLayers,
   shortcutAction,
+  shouldLoop,
   type PlayerEvent,
   type PlayerState,
 } from "./player";
@@ -262,5 +263,19 @@ describe("helpers", () => {
     expect(formatClock(65)).toBe("1:05");
     expect(formatClock(3725)).toBe("1:02:05");
     expect(formatClock(NaN)).toBe("0:00");
+  });
+});
+
+describe("shouldLoop (WebKitGTK on-disk buffering guard)", () => {
+  it("loops while the duration is unknown", () => {
+    expect([NaN, Infinity, 0].map((d) => shouldLoop(0, d))).toEqual([true, true, true]);
+  });
+
+  it("loops mid-movie and stops in the last 5 s, so `ended` still fires", () => {
+    expect(shouldLoop(3600, 7000)).toBe(true);
+    expect(shouldLoop(6994, 7000)).toBe(true);
+    expect(shouldLoop(6995, 7000)).toBe(false);
+    expect(shouldLoop(6998, 7000)).toBe(false);
+    expect(shouldLoop(7000, 7000)).toBe(false);
   });
 });

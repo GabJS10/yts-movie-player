@@ -9,8 +9,10 @@ import {
   isAudioOnly,
   isCodecError,
   playerReducer,
+  releaseMedia,
   scrubLayers,
   shortcutAction,
+  shouldLoop,
 } from "../../lib/player";
 import { onFileDrop } from "../../lib/fileDrop";
 import { toSummary } from "../../lib/movie";
@@ -46,7 +48,20 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(playerReducer, initialPlayerState);
   const root = useRef<HTMLDivElement>(null);
-  const video = useRef<HTMLVideoElement>(null);
+  const video = useRef<HTMLVideoElement | null>(null);
+  // Unmounting the <video> only pauses it in WebKitGTK; free its pipeline and on-disk buffer once
+  // it has really left the page.
+  const videoRef = useCallback((el: HTMLVideoElement | null) => {
+    video.current = el;
+    return () => {
+      video.current = null;
+      // After the commit: StrictMode's dev-only detach/re-attach leaves the element in the page.
+      if (el)
+        queueMicrotask(() => {
+          if (!el.isConnected) releaseMedia(el);
+        });
+    };
+  }, []);
   const { infohash } = torrent;
 
   // ── Session: start on mount, stop on leave (any route change, back, unmount) ──
@@ -131,7 +146,10 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
     (seconds: number) => {
       const v = video.current;
       if (!v || !Number.isFinite(v.duration)) return;
-      v.currentTime = Math.min(v.duration, Math.max(0, seconds));
+      const target = Math.min(v.duration, Math.max(0, seconds));
+      // Before seeking: a jump to the end must end the movie, not loop it back to the start.
+      v.loop = shouldLoop(target, v.duration);
+      v.currentTime = target;
       showChrome();
     },
     [showChrome],
@@ -149,6 +167,11 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
     document.addEventListener("fullscreenchange", sync);
     return () => document.removeEventListener("fullscreenchange", sync);
   }, []);
+
+  // The <video> stays mounted (invisible) behind the codec error, maybe while VLC plays: release it.
+  useEffect(() => {
+    if (state.status === "codec-error" && video.current) releaseMedia(video.current);
+  }, [state.status]);
 
   // ── Subtitles ──
   const preroll = state.status === "starting" || state.status === "buffering";
@@ -331,14 +354,20 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
 
       {showVideo && state.session && (
         <video
-          ref={video}
+          ref={videoRef}
           src={state.session.streamUrl}
           autoPlay
+          // Constant, so React never rewrites it: shouldLoop() turns it off near the end (WebKitGTK
+          // skips on-disk buffering for looping media, docs/bugs/webkit-media-buffers-llenan-raiz.md).
+          loop
           playsInline
           className={`absolute inset-0 size-full bg-black object-contain ${state.status === "codec-error" ? "invisible" : ""}`}
           onLoadedMetadata={onLoadedMetadata}
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
+            // Only on change: every write is an attribute mutation that WebKit forwards to GStreamer.
+            const loop = shouldLoop(v.currentTime, v.duration);
+            if (v.loop !== loop) v.loop = loop;
             setTime({ current: v.currentTime, duration: v.duration });
             setIsPaused(v.paused);
             progress.track();
@@ -364,7 +393,11 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
             setChromeVisible(true);
             progress.onPause();
           }}
-          onEnded={() => progress.onEnded()}
+          onEnded={(e) => {
+            // Replaying from the end goes through play() with loop on again.
+            e.currentTarget.loop = true;
+            progress.onEnded();
+          }}
           onWaiting={() => dispatch({ type: "video-waiting" })}
           onSeeking={() => dispatch({ type: "video-seeking" })}
           onSeeked={onResumable}
