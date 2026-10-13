@@ -2,6 +2,11 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); [semantic](https://semver.org/) versioning.
 
+## [1.2.3] - 2026-10-13
+
+### Fixed
+- Leaving the player could leave the movie's torrent running in the background. A download of that movie then stayed in the cache and never moved to the library.
+
 ## [1.2.2] - 2026-10-12
 
 ### Fixed
@@ -65,6 +70,7 @@ First public release. Linux: `.deb`, `.rpm` and AppImage.
 - Rotating log files, "About" and new version notices.
 - Tests: Rust unit and integration tests (local torrent, no internet), Vitest on the frontend, E2E with WebdriverIO on the real app and Playwright + axe on the interface.
 
+[1.2.3]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.2.3
 [1.2.2]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.2.2
 [1.2.0]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.2.0
 [1.1.1]: https://github.com/GabJS10/yts-movie-player/releases/tag/v1.1.1
