@@ -1,6 +1,8 @@
 // Real app, offline: Inicio → Ficha → Reproducir (torrent from the local seeder)
 // → progreso guardado → Mi lista → Descargar → reproducir desde la biblioteca.
+// On Linux it also checks that WebKit leaves no /var/tmp/WebKit-Media-* buffers open.
 import { browser, $, $$, expect } from "@wdio/globals";
+import { openWebKitMediaFiles } from "../webkit-media";
 
 const movieId = process.env.E2E_PLAYABLE_MOVIE_ID!;
 const byId = (id: string) => $(`[data-testid="${id}"]`);
@@ -30,12 +32,22 @@ describe("YTS Player (app real, sin internet)", () => {
       async () => (await browser.execute(() => document.querySelector("video")?.currentTime ?? 0)) > 7, // progress under 5 s is not saved
       { timeout: 90_000, timeoutMsg: "el video no avanzó: ¿llega el torrent del seeder?" },
     );
+    // Loop guard: WebKit must never create the on-disk buffer of the whole file.
+    expect(openWebKitMediaFiles()).toEqual([]);
   });
 
   it("guarda el progreso al salir y la Ficha ofrece Continuar", async () => {
     await byId("player-back").click();
     await expect(byId("movie-title")).toBeDisplayed();
     await expect(byId("movie-restart")).toBeDisplayed();
+    // Pipeline teardown can be async.
+    // (timeoutMsg is evaluated eagerly, so the last list is reported from a catch.)
+    let open: string[] = [];
+    try {
+      await browser.waitUntil(() => (open = openWebKitMediaFiles()).length === 0, { timeout: 10_000 });
+    } catch {
+      throw new Error(`WebKit sigue con buffers de video abiertos en /var/tmp: ${open.join(", ")}`);
+    }
   });
 
   it("agrega a Mi lista", async () => {
