@@ -262,7 +262,27 @@ describe("Player", () => {
   it("stops the stream when leaving", async () => {
     const { calls, unmount } = await mount(x264);
     unmount();
-    expect(calls.filter((c) => c.cmd === "stop_stream").at(-1)?.args).toEqual({ infohash: x264.infohash });
+    await waitFor(() =>
+      expect(calls.filter((c) => c.cmd === "stop_stream").at(-1)?.args).toEqual({ infohash: x264.infohash }),
+    );
+  });
+
+  it("stops only after start_stream is done (a stop that overtakes it leaves the stream running)", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { calls, unmount } = await renderWithProviders(<Player movie={movie} torrent={x264} />, {
+      before: (b) => {
+        const handle = b.handle;
+        b.handle = (cmd, args) =>
+          cmd === "start_stream" ? gate.then(() => handle(cmd, args)) : handle(cmd, args);
+      },
+    });
+    await waitFor(() => expect(calls.some((c) => c.cmd === "start_stream")).toBe(true));
+    unmount();
+    await act(async () => {});
+    expect(calls.some((c) => c.cmd === "stop_stream")).toBe(false);
+    release();
+    await waitFor(() => expect(calls.at(-1)?.cmd).toBe("stop_stream"));
   });
 
   it("releases the <video> pipeline when leaving (WebKitGTK only pauses a detached one)", async () => {

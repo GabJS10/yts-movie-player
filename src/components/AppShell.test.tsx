@@ -49,6 +49,17 @@ describe("AppShell", () => {
     expect(await screen.findByRole("heading", { name: "Interstellar" })).toBeInTheDocument();
   });
 
+  it("leaving the player doesn't mount it again on the way out (one start, one stop)", async () => {
+    const { router, calls } = await renderApp("/play/1632");
+    const count = (cmd: string) => calls.filter((c) => c.cmd === cmd).length;
+    await waitFor(() => expect(count("start_stream")).toBe(1));
+    await router.navigate({ to: "/movie/$movieId", params: { movieId: 1632 } });
+    await waitFor(() => expect(count("stop_stream")).toBe(1));
+    await screen.findByRole("heading", { level: 1, name: "Interstellar" });
+    expect(count("start_stream")).toBe(1);
+    expect(count("stop_stream")).toBe(1);
+  });
+
   it("passes validated search params to /search", async () => {
     const { router } = await renderApp("/search?query=matrix&quality=1080p&minimumRating=7");
     const match = router.state.matches.find((m) => m.routeId === "/search");

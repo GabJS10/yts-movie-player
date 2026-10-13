@@ -70,14 +70,18 @@ export function Player({ movie, torrent, fromStart = false }: Props) {
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
-    startStream(movie.id, infohash)
+    const started = startStream(movie.id, infohash)
       .then((session) => alive && dispatch({ type: "session", session }))
       .catch((err: unknown) => alive && dispatch({ type: "start-failed", error: toAppError(err) }));
     return () => {
       alive = false;
-      stopStream(infohash).catch(() => {
-        // Leaving anyway; the backend pauses idle streams on its own.
-      });
+      // Only once start_stream is done: the backend runs commands concurrently, and a stop that
+      // overtakes the start leaves the stream running (a download then never leaves cache/).
+      void started.then(() =>
+        stopStream(infohash).catch(() => {
+          // Leaving anyway; the backend pauses idle streams on its own.
+        }),
+      );
     };
   }, [movie.id, infohash, attempt]);
 
