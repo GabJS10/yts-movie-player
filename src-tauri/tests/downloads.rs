@@ -279,9 +279,15 @@ async fn download_pause_resume_finish_play_from_library_and_remove() {
     assert_eq!(std::fs::read(&video).unwrap(), seeder.video);
     // Never touched the cache.
     assert!(!app.engine.torrent_dir(&ih).exists());
-    // Without seedAfterDownload the torrent is paused once finished.
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(app.engine.is_paused(&ih), Some(true));
+    // Without seedAfterDownload the torrent is paused once finished. The pause comes right
+    // after the Done state, not with it: wait for it instead of a fixed delay.
+    let paused = tokio::time::timeout(Duration::from_secs(10), async {
+        while app.engine.is_paused(&ih) != Some(true) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    assert!(paused.is_ok(), "{:?}", app.engine.is_paused(&ih));
 
     let seen = states(&mut rx);
     let mut dedup = seen.clone();
