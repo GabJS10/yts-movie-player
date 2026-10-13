@@ -164,3 +164,5 @@ jobs:
       - run: e2e/scripts/build-app.sh
       - run: npm run app
         working-directory: e2e
+        env:
+          RUST_LOG: info,yts_player_lib::commands=debug
