@@ -51,6 +51,8 @@ Solo cambios de frontend; no hay cambios en el backend.
 1. **(A) Liberar el pipeline.** `releaseMedia()` en `src/lib/player.ts` llama a `pause()`, a `removeAttribute("src")` y a `load()`. `load()` pasa por `prepareForLoad` → `createMediaPlayer()`, que destruye el reproductor anterior junto con su archivo. `Player.tsx` lo llama desde la limpieza del ref del `<video>`, que cubre cualquier desmontaje, y al entrar en `codec-error`, porque esa pantalla puede quedarse abierta mientras VLC reproduce.
 2. **(B) Guarda de `loop`.** El `<video>` lleva `loop`, así que WebKit no activa la descarga a disco. `shouldLoop()` en `src/lib/player.ts` quita el `loop` en los últimos 5 s (`LOOP_GUARD_END_S`), y también al saltar al final con `seekTo`, para que el `ended` real siga guardando la película como vista. En `ended` se vuelve a poner el `loop`.
 
+**Solo en WebKitGTK** (`isWebKitGtk()`, por el user agent). En la v1.2.1 se aplicaba también en Windows. Allí el `<video>` en bucle o su liberación dejaban abierta una conexión al stream, y el backend no movía una descarga a la biblioteca mientras hubiera un lector abierto. Lo detectó el E2E de Windows («la descarga no terminó»), y la v1.2.2 lo limita a Linux.
+
 **Descartadas:**
 
 - `TMPDIR`: GTK ignora la variable (ruta fija `/var/tmp`). Además, en esta máquina `/var/tmp` y `~/.local/share` están en la misma partición.
