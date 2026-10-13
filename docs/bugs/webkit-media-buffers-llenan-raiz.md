@@ -3,7 +3,7 @@
 - **Versión:** v1.2.0
 - **Plataforma:** Linux (WebKitGTK 4.1)
 - **Detectado:** 2026-10-11
-- **Estado:** resuelto (2026-10-12); falta la QA manual con una película grande
+- **Estado:** resuelto (2026-10-12), con QA manual hecha
 
 ## Síntoma
 
@@ -67,5 +67,5 @@ Solo cambios de frontend; no hay cambios en el backend.
   - Con `GST_DEBUG='webkit*:5'` debe aparecer "Media is looping. Disabling deadlock-prone on-disk buffering" y nunca "Enabling on-disk buffering".
   - `for p in $(pgrep -x WebKitWebProces); do ls -l /proc/$p/fd | grep WebKit-Media; done` debe salir vacío.
 - **Resultado del E2E (2026-10-12, WebKitGTK 2.52.6):** pasa. En el log de GStreamer, los dos reproductores (stream del torrent y biblioteca) registran "Media is looping. Disabling deadlock-prone on-disk buffering" y nunca "Enabling on-disk buffering". Al salir del reproductor aparece `tearDown … Disposing player` en ese mismo momento, sin esperar al recolector de basura.
-- **Pendiente (QA manual):** con una película grande, adelantar y retroceder, reanudar, y dejar que termine (debe llegar `ended` sin volver a empezar).
+- **QA manual (2026-10-12):** con una compilación que incluye el arreglo, después de reproducir y salir del reproductor, el comando de `/proc` sale vacío. Ojo: un `yts-player` 1.2.0 abierto (el paquete instalado, sin el arreglo) sigue dejando su copia en `/var/tmp`.
 - **Efecto visible esperado:** la capa "buffered" de la barra de progreso ahora es corta. Lo descargado del torrent lo sigue mostrando `availableRanges`.
